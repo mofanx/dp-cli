@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dp-cli"
+version = "0.1.0"
+description = "A powerful CLI for DrissionPage — browser automation, structured data extraction, network listening and more."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "BSD-3-Clause" }
+keywords = ["drissionpage", "browser", "automation", "cli", "web-scraping"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Topic :: Utilities",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+dependencies = [
+    "DrissionPage>=4.0",
+    "click>=8.0",
+]
+
+[project.scripts]
+dp = "dp_cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/mofanx/dp-cli"
+Repository = "https://github.com/mofanx/dp-cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dp_cli*"]

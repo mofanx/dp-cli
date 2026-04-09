@@ -249,7 +249,8 @@ def _detect_card_list(page) -> dict:
     # ── 第一阶段：静态 lxml 扫描 ─────────────────────────────────
     all_els = page.s_eles(
         'xpath://div[@class] | xpath://article[@class] '
-        '| xpath://li[@class] | xpath://section[@class]'
+        '| xpath://li[@class] | xpath://section[@class] '
+        '| xpath://tr[@class]'
     )
     class_count: dict = {}
     for ele in all_els:
@@ -289,7 +290,7 @@ def _detect_card_list(page) -> dict:
             const els = document.querySelectorAll('[class]');
             for (const el of els) {
                 const tag = el.tagName.toLowerCase();
-                if (!['div','article','li','section','a'].includes(tag)) continue;
+                if (!['div','article','li','section','tr','a'].includes(tag)) continue;
                 const first = el.className.trim().split(/\\s+/)[0];
                 if (first && first.length >= 3 && first.length <= 60)
                     freq[first] = (freq[first] || 0) + 1;
@@ -322,6 +323,31 @@ def _detect_card_list(page) -> dict:
             result = _build_card_result(items, sel, container_class=cls, use_cdp=True)
             if result:
                 return result
+
+    # ── 第三阶段：无 class 行结构检测（极简 HTML，如 HN）─────────────────────
+    # 针对使用 table/tr 或裸 li 的页面，通过文本行密度判断
+    try:
+        row_candidates = []
+        for sel, min_count in [
+            ('xpath://table//tr[.//a]', 5),    # 带链接的 table 行
+            ('xpath://ol/li[.//a]', 5),         # 有序列表带链接
+        ]:
+            rows = page.s_eles(sel)
+            if len(rows) >= min_count:
+                sample = list(rows)[:12]
+                texts = [(r.text or '').strip() for r in sample]
+                avg_len = sum(len(t) for t in texts) / max(len(texts), 1)
+                if avg_len >= 20:  # 行内容丰富度足够
+                    row_candidates.append((avg_len, list(rows), sel))
+
+        if row_candidates:
+            row_candidates.sort(key=lambda x: -x[0])
+            best_avg, best_rows, best_sel = row_candidates[0]
+            result = _build_card_result(best_rows, best_sel, use_cdp=False)
+            if result:
+                return result
+    except Exception:
+        pass
 
     return None
 

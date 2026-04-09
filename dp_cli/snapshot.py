@@ -14,6 +14,21 @@ dp-cli snapshot 模块
 """
 import re
 
+# ── 常量定义 ───────────────────────────────────────────────────────────────────
+
+_NOISE_TAGS = {
+    'script', 'style', 'noscript', 'meta', 'link',
+    'svg', 'path', 'defs', 'symbol', 'use', 'g',
+    'iframe', 'template', 'canvas', 'video', 'audio',
+    'header', 'footer', 'nav', 'aside'
+}
+
+_CONTAINER_TAGS = {
+    'html', 'body', 'div', 'section', 'article', 'main',
+    'aside', 'nav', 'header', 'footer', 'ul', 'ol', 'dl',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'form', 'fieldset'
+}
+
 # ── CDP JS：一次性采集可交互元素（基于 a11y tree 映射回 DOM） ─────────────────
 
 _JS_INTERACTIVE = r"""
@@ -29,6 +44,33 @@ return (function() {
     var INTERACTIVE_TAGS = new Set(['input','button','select','textarea','a']);
     // 噪音祖先：在这些容器内的元素降低优先级
     var NOISE_CONTAINERS = new Set(['header','footer','nav','aside']);
+
+    // 从页面结构中提取标题，避免 document.title 被通知信息污染
+    function getPageTitle() {
+        var selectors = [
+            'h1',
+            'article h1',
+            'article h2',
+            '[class*="title"]',
+            '.post-title',
+            '.article-title',
+            '[class*="Title"]',
+            '.post-Title',
+            '.article-Title'
+        ];
+        for (var sel of selectors) {
+            var el = document.querySelector(sel);
+            if (el && el.innerText && el.innerText.trim()) {
+                var text = el.innerText.trim();
+                // 过滤掉过短的文本（可能是按钮或标签）
+                if (text.length >= 5 && text.length <= 100) {
+                    return text;
+                }
+            }
+        }
+        // 如果找不到，回退到 document.title
+        return document.title;
+    }
 
     function isVisible(el) {
         if (!el) return false;
@@ -78,17 +120,26 @@ return (function() {
     }
 
     function getLoc(el) {
+        // 优先级1: id（最稳定）
         if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) return '#' + el.id;
+
+        // 优先级2: 文本（对导航按钮最通用，dp click 可直接使用）
+        var t = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
+        if (t && t.length <= 30 && t.length >= 1) return 'text:' + t;
+
+        // 优先级3: 测试属性
         for (var attr of ['data-testid','data-qa','data-cy','aria-label','name','placeholder']) {
             var v = el.getAttribute(attr);
             if (v && v.length <= 60) return '@' + attr + '=' + v;
         }
+
+        // 优先级4: class
         var cls = Array.from(el.classList).filter(function(c){
             return c.length >= 2 && !/^[a-z]+-[a-z0-9]{5,}$/.test(c);
         });
         if (cls.length) return '.' + cls[0];
-        var t = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
-        if (t && t.length <= 30) return 'text:' + t;
+
+        // 优先级5: css path
         return 'css:' + getCssPath(el);
     }
 
@@ -98,22 +149,26 @@ return (function() {
 
     // 查找所有可交互元素
     var candidates = document.querySelectorAll(
-        'input:not([type=hidden]), button, select, textarea, a[href], ' +
+        'input:not([type=hidden]), button, select, textarea, a, ' +
         '[role="button"],[role="link"],[role="textbox"],[role="searchbox"],' +
         '[role="combobox"],[role="checkbox"],[role="radio"],[role="tab"],' +
-        '[tabindex]:not([tabindex="-1"])'
+        '[role="menuitem"],[role="option"],[tabindex]:not([tabindex="-1"]),' +
+        'label, .filter-item, .filter-option, [class*="filter"], [class*="option"]'
     );
 
     candidates.forEach(function(el) {
         if (!isVisible(el)) return;
-        var key = el.tagName + '|' + (el.id||'') + '|' + (el.className||'') + '|' + (el.getAttribute('name')||'');
-        if (seen.has(key)) return;
-        seen.add(key);
 
         var tag = el.tagName.toLowerCase();
         var role = el.getAttribute('role') || tag;
         var text = (el.innerText || el.value || el.getAttribute('aria-label') ||
                     el.getAttribute('title') || el.getAttribute('placeholder') || '').trim().substring(0, 100);
+
+        // 加入文本作为去重依据，防止重复的导航按钮被过滤
+        var key = el.tagName + '|' + (el.id||'') + '|' + (el.className||'') + '|' + (el.getAttribute('name')||'') + '|' + text;
+        if (seen.has(key)) return;
+        seen.add(key);
+
         var inNoise = inNoiseContainer(el);
 
         var item = {
@@ -134,7 +189,10 @@ return (function() {
         results.push(item);
     });
 
-    return results;
+    return {
+        interactive: results,
+        page_title: getPageTitle()
+    };
 })()
 """
 
@@ -169,7 +227,18 @@ return (function() {
         var tag = el.tagName.toLowerCase();
         if (NOISE_TAGS.has(tag)) return true;
         var role = el.getAttribute('role') || '';
-        return NOISE_ROLES.has(role);
+        if (NOISE_ROLES.has(role)) return true;
+        // 基于 class 的噪音识别（通用关键词）
+        var cls = el.className ? el.className.toString().toLowerCase() : '';
+        if (cls.indexOf('footer') !== -1 || cls.indexOf('copyright') !== -1 ||
+            cls.indexOf('icp') !== -1 || cls.indexOf('beian') !== -1 ||
+            cls.indexOf('boss-info') !== -1 || cls.indexOf('hot-link') !== -1 ||
+            cls.indexOf('hot') !== -1 || cls.indexOf('recommend') !== -1 ||
+            cls.indexOf('sidebar') !== -1 || cls.indexOf('breadcrumb') !== -1 ||
+            cls.indexOf('c-breadcrumb') !== -1 || cls.indexOf('toolbar') !== -1) {
+            return true;
+        }
+        return false;
     }
 
     function hasNoiseAncestor(el, root) {
@@ -206,6 +275,80 @@ return (function() {
             parts.unshift(seg); cur = cur.parentElement;
         }
         return 'css:' + parts.join(' > ');
+    }
+
+    // 将 HTML 转换为 markdown 格式，保留超链接和图片
+    function htmlToMarkdown(el, inList) {
+        if (!el) return '';
+        if (el.nodeType === 3) { // 文本节点
+            return el.nodeValue || '';
+        }
+        if (el.nodeType !== 1) return '';
+
+        var tag = el.tagName.toLowerCase();
+        var result = '';
+
+        // 处理超链接
+        if (tag === 'a') {
+            var href = el.getAttribute('href') || '';
+            var text = '';
+            for (var i = 0; i < el.childNodes.length; i++) {
+                text += htmlToMarkdown(el.childNodes[i], inList);
+            }
+            if (href && text.trim()) {
+                return '[' + text.trim() + '](' + href + ')';
+            }
+            return text;
+        }
+
+        // 处理图片
+        if (tag === 'img') {
+            var src = el.getAttribute('src') || '';
+            var alt = el.getAttribute('alt') || '';
+            if (src) {
+                return '![alt](' + src + ')';
+            }
+            return '';
+        }
+
+        // 处理有序列表
+        if (tag === 'ol') {
+            var index = 1;
+            for (var i = 0; i < el.childNodes.length; i++) {
+                if (el.childNodes[i].tagName && el.childNodes[i].tagName.toLowerCase() === 'li') {
+                    result += index + '. ' + htmlToMarkdown(el.childNodes[i], true).trim() + '\n';
+                    index++;
+                }
+            }
+            return result;
+        }
+
+        // 处理无序列表
+        if (tag === 'ul') {
+            for (var i = 0; i < el.childNodes.length; i++) {
+                if (el.childNodes[i].tagName && el.childNodes[i].tagName.toLowerCase() === 'li') {
+                    result += '- ' + htmlToMarkdown(el.childNodes[i], true).trim() + '\n';
+                }
+            }
+            return result;
+        }
+
+        // 处理列表项
+        if (tag === 'li') {
+            for (var i = 0; i < el.childNodes.length; i++) {
+                var childText = htmlToMarkdown(el.childNodes[i], true);
+                // 移除子节点文本的多余空格
+                result += childText.replace(/^[ \t]+/gm, '').replace(/[ \t]+/g, ' ');
+            }
+            return result.trim();
+        }
+
+        // 处理其他标签
+        for (var i = 0; i < el.childNodes.length; i++) {
+            result += htmlToMarkdown(el.childNodes[i], inList);
+        }
+
+        return result;
     }
 
     // ── 第一步：找最佳主体容器 ──────────────────────────────────────────────
@@ -269,10 +412,17 @@ return (function() {
             // 输出整块内容（克隆后移除噪音子节点）
             var clone = el.cloneNode(true);
             clone.querySelectorAll('style,script,noscript').forEach(function(n){n.remove();});
-            var text = (clone.innerText || clone.textContent || '').trim();
+            // 移除页脚和侧边栏子节点
+            clone.querySelectorAll('footer,aside').forEach(function(n){n.remove();});
+            // 移除基于 class 关键词的噪音子节点
+            clone.querySelectorAll('[class*="footer"],[class*="copyright"],[class*="icp"],[class*="beian"],[class*="boss-info"],[class*="hot-link"],[class*="hot"],[class*="recommend"],[class*="sidebar"],[class*="breadcrumb"],[class*="c-breadcrumb"],[class*="toolbar"]').forEach(function(n){n.remove();});
+            var text = htmlToMarkdown(clone).trim();
             // 压缩多余空白，但保留换行（pre 里的保留完整格式）
             if (!CODE_TAGS.has(tag)) {
-                text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+                // 清理列表前面的空格，保持列表格式
+                text = text.replace(/^[ \t]+- /gm, '- ').replace(/^[ \t]+\d+\. /gm, function(m) {
+                    return m.replace(/^[ \t]+/, '');
+                }).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
             }
             if (text.length > 0) {
                 results.push({
@@ -287,7 +437,8 @@ return (function() {
 
         // 容器标签：继续递归子节点
         for (var i = 0; i < el.children.length; i++) {
-            traverse(el.children[i], depth + 1, root, results);
+            var child = el.children[i];
+            traverse(child, depth + 1, root, results);
         }
     }
 
@@ -351,11 +502,16 @@ def take_snapshot(page, mode: str = 'default',
 
     # ── default / interactive / content：全部走 CDP ──────────────────────────
     interactive = []
+    extracted_title = None
 
     if mode in ('default', 'interactive'):
         try:
             raw = page.run_js(_JS_INTERACTIVE)
-            interactive = raw if isinstance(raw, list) else []
+            if isinstance(raw, dict):
+                interactive = raw.get('interactive', [])
+                extracted_title = raw.get('page_title')
+            else:
+                interactive = raw if isinstance(raw, list) else []
         except Exception as e:
             interactive = [{'error': str(e)}]
 
@@ -369,6 +525,10 @@ def take_snapshot(page, mode: str = 'default',
                 content_data = {'nodes': [], 'error': f'unexpected result: {type(raw)}'}
         except Exception as e:
             content_data = {'nodes': [], 'error': str(e)}
+
+    # 使用从页面结构提取的标题（避免通知信息污染）
+    if extracted_title:
+        page_info['title'] = extracted_title
 
     return {
         'page': page_info,
@@ -1281,11 +1441,9 @@ def render_snapshot_text(snapshot: dict) -> str:
             lines.append('')
 
             if nav_els:
-                lines.append(f"#### 导航/工具栏 ({len(nav_els)} 个，折叠）")
-                for e in nav_els[:10]:
+                lines.append(f"#### 导航/工具栏 ({len(nav_els)} 个)")
+                for e in nav_els:
                     _render_interactive_item(e, lines)
-                if len(nav_els) > 10:
-                    lines.append(f"  ... 还有 {len(nav_els)-10} 个")
                 lines.append('')
 
         content_data = snapshot.get('content_data', {})
@@ -1315,8 +1473,7 @@ def render_snapshot_text(snapshot: dict) -> str:
                     lines.append('```')
                 # 列表项：用 - 前缀
                 elif tag == 'li':
-                    indent = '  ' * max(0, depth - 2)
-                    lines.append(f"{indent}- {text}")
+                    lines.append(f"- {text}")
                 # 块引用
                 elif tag == 'blockquote':
                     for bline in text.split('\n'):
@@ -1465,253 +1622,4 @@ def _render_tree_lines(node: dict, lines: list, indent: int) -> None:
     lines.append('  ' * indent + f"<{tag}{attr_str}>{text_str}")
     for child in children:
         _render_tree_lines(child, lines, indent + 1)
-def extract_structured(page, container: str, fields: dict,
-                       limit: int = 100) -> list:
-    """
-    结构化批量提取——核心数据提取原语。
-
-    在页面上找到所有 container 匹配的元素（每个视为一条记录），
-    然后在每个容器内按 fields 字典提取各字段值。
-
-    :param page: ChromiumPage
-    :param container: 容器定位器，如 'css:.job-card' 或 'xpath://li[@class="item"]'
-    :param fields: 字段映射字典，如
-        {
-          "title":  "css:.job-name",
-          "salary": "css:.salary",
-          "company": "css:.company-name",
-          "tags":   {"selector": "css:.tag", "multi": True},
-          "url":    {"selector": "css:a", "attr": "href"},
-        }
-        值可以是：
-        - 字符串：子元素定位器，取 text
-        - dict with 'selector': 子元素定位器
-          - 'multi': True → 返回文本列表
-          - 'attr': 'href' → 取属性值而非 text
-          - 'default': 缺失时的默认值
-    :param limit: 最多提取多少条记录
-    :return: list of dict
-    """
-    containers = page.s_eles(container)
-    if not containers:
-        return []
-
-    results = []
-    for item in list(containers)[:limit]:
-        record = {}
-        for field_name, spec in fields.items():
-            # 规范化 spec
-            if isinstance(spec, str):
-                spec = {'selector': spec}
-
-            sel = spec.get('selector', '')
-            multi = spec.get('multi', False)
-            attr = spec.get('attr', None)
-            default = spec.get('default', '')
-
-            try:
-                if multi:
-                    eles = item.s_eles(sel)
-                    record[field_name] = [
-                        (e.attr(attr) if attr else (e.text or '').strip())
-                        for e in eles
-                    ]
-                else:
-                    ele = item.s_ele(sel)
-                    if ele and ele.__class__.__name__ != 'NoneElement':
-                        if attr:
-                            record[field_name] = ele.attr(attr) or default
-                        else:
-                            record[field_name] = (ele.text or '').strip() or default
-                    else:
-                        record[field_name] = default
-            except Exception:
-                record[field_name] = default
-
-        results.append(record)
-
-    return results
-
-
-_JS_CSS_PATH = """
-var el = this;
-var parts = [];
-while (el && el !== document.body && el.nodeType === 1) {
-    var seg = el.tagName.toLowerCase();
-    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
-        parts.unshift('#' + el.id);
-        break;
-    }
-    var classes = Array.from(el.classList)
-        .filter(function(c) { return c.length >= 3; });
-    if (classes.length > 0) {
-        seg = '.' + classes[0];
-        var siblings = el.parentElement
-            ? Array.from(el.parentElement.querySelectorAll(':scope > ' + seg))
-            : [];
-        if (siblings.length > 1) {
-            var idx = siblings.indexOf(el) + 1;
-            seg = seg + ':nth-child(' + idx + ')';
-        }
-    } else {
-        var allSiblings = el.parentElement
-            ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
-            : [];
-        if (allSiblings.length > 1) {
-            var idx2 = Array.from(el.parentElement.children).indexOf(el) + 1;
-            seg = seg + ':nth-child(' + idx2 + ')';
-        }
-    }
-    parts.unshift(seg);
-    el = el.parentElement;
-}
-return parts.join(' > ');
-"""
-
-_JS_XPATH = """
-var el = this;
-var parts = [];
-while (el && el.nodeType === 1) {
-    var seg = el.tagName.toLowerCase();
-    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
-        parts.unshift('//' + seg + '[@id="' + el.id + '"]');
-        return parts.join('/');
-    }
-    var siblings = el.parentElement
-        ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
-        : [];
-    if (siblings.length > 1) {
-        var idx = siblings.indexOf(el) + 1;
-        seg = seg + '[' + idx + ']';
-    }
-    parts.unshift(seg);
-    el = el.parentElement;
-}
-return '/' + parts.join('/');
-"""
-
-
-def query_elements(page, selector: str, fields: list,
-                   limit: int = 200) -> list:
-    """
-    query 模式：找到所有匹配 selector 的元素，批量提取指定属性/文本。
-
-    :param page: ChromiumPage
-    :param selector: 元素定位器
-    :param fields: 要提取的字段列表，支持：
-                   text      → 文本内容
-                   tag       → 标签名
-                   loc       → 推荐 DrissionPage 定位器（简短，可能不唯一）
-                   css_path  → 精确 CSS 路径（JS生成，从祖先到当前元素，唯一）
-                   xpath     → 精确 XPath（JS生成）
-                   其他      → HTML 属性值（href/id/class/src 等）
-    :param limit: 最多返回多少条
-    :return: list of dict
-    """
-    need_cdp = any(f in fields for f in ('css_path', 'xpath'))
-
-    # 优先用 CDP eles（支持动态渲染内容）；静态回退用 s_eles
-    try:
-        eles = page.eles(selector, timeout=5)
-    except Exception:
-        eles = page.s_eles(selector)
-
-    results = []
-    for ele in list(eles)[:limit]:
-        record = {}
-        for f in fields:
-            try:
-                if f == 'text':
-                    record['text'] = (ele.text or '').strip()
-                elif f == 'tag':
-                    record['tag'] = ele.tag
-                elif f == 'loc':
-                    record['loc'] = _suggest_locator_static(
-                        ele.tag, ele.attrs, (ele.text or '').strip()[:50]
-                    )
-                elif f == 'css_path':
-                    # JS 生成精确 CSS 路径，输出带 css: 前缀可直接用于 dp query/click
-                    try:
-                        path = ele.run_js(_JS_CSS_PATH)
-                        record['css_path'] = f'css:{path}' if path else ''
-                    except Exception:
-                        record['css_path'] = ''
-                elif f == 'xpath':
-                    try:
-                        path = ele.run_js(_JS_XPATH)
-                        record['xpath'] = f'xpath:{path}' if path else ''
-                    except Exception:
-                        record['xpath'] = ''
-                else:
-                    val = ele.attrs.get(f, '') if hasattr(ele, 'attrs') else ''
-                    record[f] = val or ''
-            except Exception:
-                record[f] = ''
-        results.append(record)
-    return results
-
-
-def _build_tree(ele, depth: int, max_depth: int) -> dict:
-    """递归构建 DOM 树（s_ele 静态解析，高效）"""
-    if ele is None:
-        return {}
-    try:
-        tag = ele.tag.lower()
-    except Exception:
-        return {}
-
-    node = {
-        'tag': tag,
-        'attrs': _filter_attrs(ele.attrs),
-        'text': (ele.raw_text or '').strip()[:100],
-    }
-
-    if depth < max_depth and tag not in _CONTAINER_TAGS:
-        children = []
-        try:
-            for child in ele.children():
-                child_node = _build_tree(child, depth + 1, max_depth)
-                if child_node:
-                    children.append(child_node)
-        except Exception:
-            pass
-        if children:
-            node['children'] = children
-
-    return node
-
-
-def _filter_attrs(attrs: dict) -> dict:
-    """过滤掉过长或无意义的属性"""
-    result = {}
-    skip = {'style', 'srcset', 'sizes', 'integrity', 'crossorigin'}
-    for k, v in attrs.items():
-        if k in skip:
-            continue
-        if isinstance(v, str) and len(v) > 200:
-            v = v[:200] + '...'
-        result[k] = v
-    return result
-
-
-def _suggest_locator_static(tag: str, attrs: dict, text: str) -> str:
-    """为静态元素生成最优 DrissionPage 定位字符串"""
-    if attrs.get('id'):
-        return f'#{attrs["id"]}'
-
-    for semantic in ('data-testid', 'data-qa', 'data-cy', 'aria-label', 'name', 'placeholder'):
-        if attrs.get(semantic):
-            val = attrs[semantic]
-            return f'@{semantic}={val}'
-
-    cls = attrs.get('class', '')
-    if cls:
-        classes = [c for c in cls.strip().split() if not re.match(r'^[a-z]+-\w{4,}$', c)]
-        if classes:
-            return f'.{classes[0]}'
-
-    if text and len(text) <= 30:
-        return f'text:{text}'
-
-    return f't:{tag}'
 

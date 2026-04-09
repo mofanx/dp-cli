@@ -163,4 +163,163 @@ dp close-all
 
 ---
 
+## 最佳实践
+
+### 始终先使用快照
+
+编写自动化前先快照了解页面：
+```bash
+dp snapshot
+```
+
+这会显示：
+- 可交互元素及其定位器
+- 页面内容结构
+- 实际可见 vs 隐藏的内容
+
+### 复用浏览器会话
+
+需要登录的任务：
+```bash
+# 用远程调试启动浏览器
+google-chrome --remote-debugging-port=9222
+
+# 连接 dp-cli
+dp open https://example.com --port 9222
+```
+
+这保留 Cookie、登录状态，避免检测。
+
+### 使用稳定定位器
+
+优先顺序：
+1. `@id=value` 或 `#id` - 最稳定
+2. `@data-testid=value` 或 `@aria-label=value` - 语义属性
+3. `text:visible-text` - 文本稳定时适用
+4. `css:.class-name` - 类名语义时适用
+5. XPath - 最后选择
+
+### 处理动态内容
+
+通过 JavaScript 加载内容的页面：
+```bash
+dp wait --loaded
+dp wait --selector "css:.dynamic-content"
+dp snapshot
+```
+
+### 增量提取数据
+
+先小量提取验证，再扩展：
+```bash
+# 测试限制 1
+dp extract "css:.item" '{"title":"css:.title"}' --limit 1
+
+# 正确后扩展
+dp extract "css:.item" '{"title":"css:.title"}' --limit 100
+```
+
+---
+
+## 常见场景
+
+### 抓取职位列表
+
+```bash
+dp open https://www.example-jobs.com
+dp snapshot --mode content
+dp query "css:.job-title" --fields "text,loc"
+dp extract "css:.job-card" \
+  '{"title":"css:.job-title",
+    "company":"css:.company-name",
+    "location":"css:.location",
+    "salary":"css:.salary"}' \
+  --limit 50 --output csv --filename jobs.csv
+```
+
+### 自动化登录流程
+
+```bash
+dp open https://example.com/login
+dp snapshot --mode interactive
+dp fill "@name=username" myuser
+dp fill "@name=password" mypass
+dp click "text:登录"
+dp wait --text "欢迎"
+dp snapshot
+```
+
+### 监控 API 调用
+
+```bash
+dp open https://example.com
+dp listen
+dp click "text:加载更多"
+sleep 5
+dp listen-stop
+# 查看捕获的 XHR/Fetch 请求
+```
+
+### 提取文章内容
+
+```bash
+dp open https://example.com/article/123
+dp snapshot --mode content
+dp query "css:article h1" --fields "text"
+dp query "css:article p" --fields "text"
+```
+
+---
+
+## 故障排查
+
+### 元素未找到
+
+1. 快照验证元素存在：`dp snapshot`
+2. 检查内容是否动态：`dp wait --selector "css:.target"`
+3. 尝试不同定位器：`dp query "css:.target" --fields "text,loc"`
+
+### 浏览器无法连接
+
+`--port` 连接时：
+- 确保浏览器用 `--remote-debugging-port=9222` 启动
+- 检查端口正确：`dp open --port 9222`
+- 一个端口同一时间只能有一个浏览器实例
+
+### 数据提取为空
+
+1. 检查选择器匹配：`dp query "css:.target" --fields "text,loc"`
+2. 验证内容已加载：`dp wait --loaded`
+3. 尝试 `--mode content` 快照查看可用内容
+
+---
+
+## 高级功能
+
+### Shadow DOM 穿透
+
+dp-cli 自动处理 shadow-root 无需切换上下文：
+```bash
+dp click "css:my-component::shadow .button"
+```
+
+### iframe 处理
+
+直接交互无需切换上下文：
+```bash
+dp click "css:iframe >> css:.inner-button"
+```
+
+### 多标签页管理
+
+```bash
+dp tab-list
+dp tab-new https://example.com
+dp tab-select 1
+dp tab-close 2
+```
+
+---
+
 > 详细命令（HTTP模式/Storage/Cookie/PDF/JS执行等）见 `references/commands.md`
+> 数据提取模式和示例见 `references/extraction.md`

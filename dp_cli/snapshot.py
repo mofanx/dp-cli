@@ -138,53 +138,47 @@ return (function() {
 })()
 """
 
-# ── CDP JS：识别主体内容区块并提取完整 innerText ──────────────────────────────
+# ── CDP JS：识别主体容器，遍历内部语义节点，保留层级结构 ─────────────────────
 
 _JS_CONTENT_BLOCKS = r"""
 return (function() {
     var SKIP_TAGS = new Set(['script','style','noscript','head','meta','link',
-                              'svg','path','defs','symbol','use','g','br','hr',
-                              'iframe','template','canvas','video','audio']);
-    var NOISE_CONTAINERS = new Set(['header','footer','nav','aside']);
-    var NOISE_ROLES = new Set(['navigation','banner','contentinfo','complementary','toolbar','menubar']);
+                             'svg','path','defs','symbol','use','g',
+                             'iframe','template','canvas','video','audio']);
+    var NOISE_TAGS = new Set(['header','footer','nav','aside']);
+    var NOISE_ROLES = new Set(['navigation','banner','contentinfo','complementary',
+                               'toolbar','menubar','search']);
+    // 语义块级标签：遍历到这一级就输出整块文本，不再向下拆分
+    var BLOCK_TAGS = new Set([
+        'h1','h2','h3','h4','h5','h6',
+        'p','li','dt','dd','td','th',
+        'blockquote','pre','figcaption','caption',
+        'summary','label','legend'
+    ]);
+    // 代码块单独标记
+    var CODE_TAGS = new Set(['pre','code']);
 
     function isVisible(el) {
         var s = window.getComputedStyle(el);
         if (s.display === 'none' || s.visibility === 'hidden') return false;
         var r = el.getBoundingClientRect();
-        return r.width > 50 && r.height > 50;
+        return r.width > 0 && r.height > 0;
     }
 
-    function isNoiseContainer(el) {
+    function isNoise(el) {
         var tag = el.tagName.toLowerCase();
-        if (NOISE_CONTAINERS.has(tag)) return true;
+        if (NOISE_TAGS.has(tag)) return true;
         var role = el.getAttribute('role') || '';
-        if (NOISE_ROLES.has(role)) return true;
-        return false;
+        return NOISE_ROLES.has(role);
     }
 
-    function hasNoiseAncestor(el) {
+    function hasNoiseAncestor(el, root) {
         var p = el.parentElement;
-        var d = 0;
-        while (p && d < 6) {
-            if (isNoiseContainer(p)) return true;
-            p = p.parentElement; d++;
+        while (p && p !== root) {
+            if (isNoise(p)) return true;
+            p = p.parentElement;
         }
         return false;
-    }
-
-    function getInnerText(el) {
-        // 克隆节点，移除 style/script 后取 innerText
-        var clone = el.cloneNode(true);
-        clone.querySelectorAll('style,script,noscript').forEach(function(n){ n.remove(); });
-        // 临时挂载到 DOM 外以获取 innerText
-        var tmp = document.createElement('div');
-        tmp.style.cssText = 'position:absolute;left:-9999px;visibility:hidden;';
-        document.body.appendChild(tmp);
-        tmp.appendChild(clone);
-        var text = clone.innerText || clone.textContent || '';
-        document.body.removeChild(tmp);
-        return text.trim();
     }
 
     function getCssPath(el) {
@@ -192,8 +186,7 @@ return (function() {
         var cur = el;
         while (cur && cur !== document.body && cur.nodeType === 1) {
             if (cur.id && /^[a-zA-Z][\w-]*$/.test(cur.id)) {
-                parts.unshift('#' + cur.id);
-                break;
+                parts.unshift('#' + cur.id); break;
             }
             var cls = Array.from(cur.classList).filter(function(c){ return c.length >= 2; });
             var seg;
@@ -201,112 +194,121 @@ return (function() {
                 seg = '.' + cls[0];
                 var sibs = cur.parentElement
                     ? Array.from(cur.parentElement.querySelectorAll(':scope > ' + seg)) : [];
-                if (sibs.length > 1) seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
+                if (sibs.length > 1)
+                    seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
             } else {
                 seg = cur.tagName.toLowerCase();
-                var tagSibs = cur.parentElement
-                    ? Array.from(cur.parentElement.children).filter(function(c){ return c.tagName === cur.tagName; }) : [];
-                if (tagSibs.length > 1) seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
+                var tsib = cur.parentElement
+                    ? Array.from(cur.parentElement.children).filter(function(c){ return c.tagName===cur.tagName; }) : [];
+                if (tsib.length > 1)
+                    seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
             }
-            parts.unshift(seg);
-            cur = cur.parentElement;
+            parts.unshift(seg); cur = cur.parentElement;
         }
         return 'css:' + parts.join(' > ');
     }
 
-    // 语义权重
-    function semanticWeight(el) {
-        var tag = el.tagName.toLowerCase();
-        var role = el.getAttribute('role') || '';
-        if (tag === 'main' || role === 'main') return 3.0;
-        if (tag === 'article' || role === 'article') return 2.5;
-        if (tag === 'section') return 1.5;
-        if (el.id && /main|content|article|post|body|detail/i.test(el.id)) return 2.0;
-        if (el.className && /main|content|article|post|body|detail/i.test(el.className.toString())) return 1.8;
-        return 1.0;
-    }
-
-    // 视口面积
-    var vpArea = window.innerWidth * window.innerHeight;
-
-    // 采集所有候选区块
-    var candidates = [];
-    var allEls = document.querySelectorAll(
-        'main, article, [role="main"], [role="article"], ' +
-        'section, div, ul, ol, table'
-    );
-
-    allEls.forEach(function(el) {
-        if (SKIP_TAGS.has(el.tagName.toLowerCase())) return;
-        if (isNoiseContainer(el)) return;
-        if (hasNoiseAncestor(el)) return;
-        if (!isVisible(el)) return;
-
-        var r = el.getBoundingClientRect();
-        var area = r.width * r.height;
-        if (area < 8000) return; // 太小跳过
-
-        var nodeCount = Math.max(el.querySelectorAll('*').length, 1);
-        var rawText = el.textContent || '';
-        var textLen = rawText.replace(/\s+/g, ' ').trim().length;
-        if (textLen < 80) return;
-
-        var density = textLen / nodeCount;
-        var weight = semanticWeight(el);
-
-        // 面积比：占视口比例。最优区间 0.05~0.7，太大（接近全页）惩罚
-        var areaRatio = area / Math.max(vpArea, 1);
-        var areaPenalty = areaRatio > 0.85 ? 0.1 :   // 几乎等于全页，强烈惩罚
-                          areaRatio > 0.70 ? 0.4 :
-                          areaRatio > 0.50 ? 0.7 : 1.0;
-
-        var score = density * weight * areaPenalty * Math.log(textLen + 1);
-
-        candidates.push({el: el, score: score, area: area, areaRatio: areaRatio,
-                         textLen: textLen, density: Math.round(density)});
-    });
-
-    // 按分数降序排
-    candidates.sort(function(a, b){ return b.score - a.score; });
-
-    // 选取区块：优先子区块，父区块只在没有更好子区块时才选
-    var selected = [];
-    var selectedEls = [];
-    for (var i = 0; i < candidates.length && selected.length < 4; i++) {
-        var c = candidates[i];
-        // 跳过已选区块的父节点（子区块更精准）
-        var isParentOfSelected = selectedEls.some(function(child){ return c.el.contains(child); });
-        if (isParentOfSelected) continue;
-        // 跳过已选区块的子节点（避免重复）
-        var isChildOfSelected = selectedEls.some(function(parent){ return parent.contains(c.el); });
-        if (isChildOfSelected) continue;
-
-        var text = getInnerText(c.el);
-        if (text.length < 80) continue;
-
-        var tag = c.el.tagName.toLowerCase();
-        var cls = c.el.className ? c.el.className.toString().trim().split(/\s+/)[0] : '';
-        var eid = c.el.id || '';
-
-        selected.push({
-            _el: c.el,
-            tag: tag,
-            id: eid,
-            cls: cls,
-            loc: getCssPath(c.el),
-            text: text,
-            text_len: text.length,
-            score: Math.round(c.score),
-            area: Math.round(c.area)
+    // ── 第一步：找最佳主体容器 ──────────────────────────────────────────────
+    function findBestRoot() {
+        // 优先级1：语义标签
+        var byTag = document.querySelector('article, [role="article"], main, [role="main"]');
+        if (byTag) return byTag;
+        // 优先级2：常见 content class/id
+        var patterns = [
+            '[id*="content"],[id*="Content"],[id*="article"],[id*="Article"]',
+            '[id*="main"],[id*="Main"],[id*="post"],[id*="Post"]',
+            '[class*="article-body"],[class*="ArticleBody"],[class*="post-body"]',
+            '[class*="RichText"],[class*="rich-text"],[class*="richtext"]',
+            '[class*="article-content"],[class*="ArticleContent"]',
+            '[class*="post-content"],[class*="PostContent"]',
+            '[class*="entry-content"],[class*="content-body"]',
+            '[class*="detail-content"],[class*="job-detail"]',
+        ];
+        var vpArea = window.innerWidth * window.innerHeight;
+        for (var i = 0; i < patterns.length; i++) {
+            var els = Array.from(document.querySelectorAll(patterns[i]));
+            for (var j = 0; j < els.length; j++) {
+                var el = els[j];
+                if (!isVisible(el)) continue;
+                var r = el.getBoundingClientRect();
+                var area = r.width * r.height;
+                // 排除太小和接近全页的容器
+                if (area < 5000 || area > vpArea * 0.95) continue;
+                var tlen = (el.textContent || '').replace(/\s+/g,' ').trim().length;
+                if (tlen > 100) return el;
+            }
+        }
+        // 优先级3：评分找最高密度大容器
+        var vpA = window.innerWidth * window.innerHeight;
+        var best = null, bestScore = 0;
+        document.querySelectorAll('main, article, section, div').forEach(function(el){
+            if (isNoise(el) || !isVisible(el)) return;
+            var r = el.getBoundingClientRect();
+            var area = r.width * r.height;
+            if (area < 10000 || area > vpA * 0.9) return;
+            var nc = Math.max(el.querySelectorAll('*').length, 1);
+            var tl = (el.textContent||'').replace(/\s+/g,' ').trim().length;
+            if (tl < 100) return;
+            var score = (tl / nc) * Math.log(tl + 1);
+            if (score > bestScore) { bestScore = score; best = el; }
         });
-        selectedEls.push(c.el);
+        return best || document.body;
     }
 
-    // 移除内部 _el（不可序列化）
-    return selected.map(function(s){
-        return {tag: s.tag, id: s.id, cls: s.cls, loc: s.loc,
-                text: s.text, text_len: s.text_len, score: s.score};
-    });
+    // ── 第二步：遍历主体容器，按语义标签输出带层级的节点 ───────────────────
+    function traverse(el, depth, root, results) {
+        if (!el || el.nodeType !== 1) return;
+        var tag = el.tagName.toLowerCase();
+        if (SKIP_TAGS.has(tag)) return;
+        if (isNoise(el)) return;
+
+        // 不可见且非 pre/code（代码块可能被隐藏）
+        if (!CODE_TAGS.has(tag) && !isVisible(el)) return;
+
+        if (BLOCK_TAGS.has(tag)) {
+            // 输出整块内容（克隆后移除噪音子节点）
+            var clone = el.cloneNode(true);
+            clone.querySelectorAll('style,script,noscript').forEach(function(n){n.remove();});
+            var text = (clone.innerText || clone.textContent || '').trim();
+            // 压缩多余空白，但保留换行（pre 里的保留完整格式）
+            if (!CODE_TAGS.has(tag)) {
+                text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+            }
+            if (text.length > 0) {
+                results.push({
+                    depth: depth,
+                    tag: tag,
+                    text: text,
+                    loc: getCssPath(el)
+                });
+            }
+            return; // 不再递归（整块已输出）
+        }
+
+        // 容器标签：继续递归子节点
+        for (var i = 0; i < el.children.length; i++) {
+            traverse(el.children[i], depth + 1, root, results);
+        }
+    }
+
+    // ── 执行 ────────────────────────────────────────────────────────────────
+    var root = findBestRoot();
+    var rootTag = root.tagName.toLowerCase();
+    var rootCls = root.className ? root.className.toString().trim().split(/\s+/)[0] : '';
+    var rootId  = root.id || '';
+
+    var results = [];
+    for (var i = 0; i < root.children.length; i++) {
+        traverse(root.children[i], 1, root, results);
+    }
+
+    return {
+        root_tag: rootTag,
+        root_cls: rootCls,
+        root_id:  rootId,
+        root_loc: getCssPath(root),
+        nodes: results
+    };
 })()
 """
 
@@ -349,7 +351,6 @@ def take_snapshot(page, mode: str = 'default',
 
     # ── default / interactive / content：全部走 CDP ──────────────────────────
     interactive = []
-    content_blocks = []
 
     if mode in ('default', 'interactive'):
         try:
@@ -358,28 +359,22 @@ def take_snapshot(page, mode: str = 'default',
         except Exception as e:
             interactive = [{'error': str(e)}]
 
+    content_data = {}
     if mode in ('default', 'content'):
-        scope_js = _JS_CONTENT_BLOCKS
-        if selector:
-            # 限定 selector 范围
-            scope_js = f"""
-(function(){{
-    var root = document.querySelector({repr(selector.replace('css:','').replace('xpath:',''))});
-    if (!root) return [];
-    {_JS_CONTENT_BLOCKS.strip()[12:-3]}  // 不能直接嵌套，退化到全页
-}})()
-"""
         try:
             raw = page.run_js(_JS_CONTENT_BLOCKS)
-            content_blocks = raw if isinstance(raw, list) else []
+            if isinstance(raw, dict):
+                content_data = raw
+            else:
+                content_data = {'nodes': [], 'error': f'unexpected result: {type(raw)}'}
         except Exception as e:
-            content_blocks = [{'error': str(e)}]
+            content_data = {'nodes': [], 'error': str(e)}
 
     return {
         'page': page_info,
         'mode': mode,
         'interactive': interactive,
-        'content_blocks': content_blocks,
+        'content_data': content_data,
     }
 
 
@@ -1293,30 +1288,48 @@ def render_snapshot_text(snapshot: dict) -> str:
                     lines.append(f"  ... 还有 {len(nav_els)-10} 个")
                 lines.append('')
 
-        if content_blocks:
-            lines.append(f"### 主体内容 ({len(content_blocks)} 个区块)")
+        content_data = snapshot.get('content_data', {})
+        nodes = content_data.get('nodes', [])
+        if nodes:
+            root_loc = content_data.get('root_loc', '')
+            root_label = (content_data.get('root_id') or
+                          content_data.get('root_cls') or
+                          content_data.get('root_tag', ''))
+            lines.append(f"### 主体内容  [{root_label}]  loc: {root_loc}")
             lines.append('')
-            for i, blk in enumerate(content_blocks):
-                tag  = blk.get('tag', 'div')
-                cls  = blk.get('cls', '')
-                eid  = blk.get('id', '')
-                loc  = blk.get('loc', '')
-                text = blk.get('text', '')
-                tlen = blk.get('text_len', len(text))
-                label = eid or cls or tag
-                lines.append(f"#### 区块{i+1}：{label}  ({tlen} 字)")
-                lines.append(f"  → loc: {loc}")
-                lines.append('')
-                # 输出完整文本，但超长时截断并提示
-                if len(text) > 3000:
-                    lines.append(text[:3000])
-                    lines.append(f"  ... （共 {tlen} 字，使用 dp query \"{loc}\" --fields text 获取全文）")
+            for node in nodes:
+                tag  = node.get('tag', 'p')
+                text = node.get('text', '')
+                depth = node.get('depth', 1)
+                loc  = node.get('loc', '')
+                if not text:
+                    continue
+                # 标题：用 Markdown # 表示
+                if tag in ('h1','h2','h3','h4','h5','h6'):
+                    level = int(tag[1])
+                    lines.append(f"{'#' * level} {text}")
+                # 代码块：用 ``` 包裹
+                elif tag == 'pre':
+                    lines.append('```')
+                    lines.append(text)
+                    lines.append('```')
+                # 列表项：用 - 前缀
+                elif tag == 'li':
+                    indent = '  ' * max(0, depth - 2)
+                    lines.append(f"{indent}- {text}")
+                # 块引用
+                elif tag == 'blockquote':
+                    for bline in text.split('\n'):
+                        lines.append(f"> {bline}")
+                # 普通段落和其他块级元素
                 else:
                     lines.append(text)
                 lines.append('')
 
-        if not interactive and not content_blocks:
+        if not interactive and not nodes:
             lines.append("（快照为空，页面可能未加载完成，请先 dp wait --loaded）")
+        if content_data.get('error'):
+            lines.append(f"⚠ 内容提取警告: {content_data['error']}")
 
     # ── text 模式 ────────────────────────────────────────────────────────────
     elif mode == 'text':

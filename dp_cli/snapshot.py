@@ -1,234 +1,389 @@
 # -*- coding:utf-8 -*-
 """
 dp-cli snapshot 模块
-基于 lxml s_ele() 生成页面结构快照，比 a11y tree 信息更丰富、更高效。
+
+核心设计：两层采集，站在巨人肩膀上
+  1. 可交互元素：CDP Accessibility Tree（浏览器原生过滤，角色语义完整）
+  2. 主体内容：CDP JS innerText（按视觉面积×语义权重识别主体区块，不截断）
+
+优于纯 lxml 静态解析的关键：
+  - 支持 JS 动态渲染内容（SPA/Vue/React）
+  - a11y tree 天然过滤不可见/装饰性节点
+  - innerText 不包含 style/script 内容（浏览器原生过滤反爬注入）
+  - 不依赖 lxml 版本兼容性
 """
 import re
-from copy import deepcopy
 
-try:
-    from lxml import etree as _lxml_etree
-    _LXML_OK = True
-except ImportError:
-    _lxml_etree = None
-    _LXML_OK = False
+# ── CDP JS：一次性采集可交互元素（基于 a11y tree 映射回 DOM） ─────────────────
+
+_JS_INTERACTIVE = r"""
+return (function() {
+    // 可交互的 a11y role 集合
+    var INTERACTIVE_ROLES = new Set([
+        'button','link','textbox','searchbox','combobox','listbox',
+        'checkbox','radio','switch','slider','spinbutton','menuitem',
+        'menuitemcheckbox','menuitemradio','option','tab','treeitem',
+        'gridcell','columnheader','rowheader'
+    ]);
+    // 可交互 HTML 标签
+    var INTERACTIVE_TAGS = new Set(['input','button','select','textarea','a']);
+    // 噪音祖先：在这些容器内的元素降低优先级
+    var NOISE_CONTAINERS = new Set(['header','footer','nav','aside']);
+
+    function isVisible(el) {
+        if (!el) return false;
+        var s = window.getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    }
+
+    function inNoiseContainer(el) {
+        var p = el.parentElement;
+        var d = 0;
+        while (p && d < 8) {
+            var t = p.tagName.toLowerCase();
+            if (NOISE_CONTAINERS.has(t)) return true;
+            var role = p.getAttribute('role') || '';
+            if (role === 'navigation' || role === 'banner' || role === 'contentinfo') return true;
+            p = p.parentElement; d++;
+        }
+        return false;
+    }
+
+    function getCssPath(el) {
+        var parts = [];
+        while (el && el !== document.body && el.nodeType === 1) {
+            if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) {
+                parts.unshift('#' + el.id);
+                break;
+            }
+            var cls = Array.from(el.classList).filter(function(c){ return c.length >= 2; });
+            var seg;
+            if (cls.length > 0) {
+                seg = '.' + cls[0];
+                var sibs = el.parentElement
+                    ? Array.from(el.parentElement.querySelectorAll(':scope > ' + seg)) : [];
+                if (sibs.length > 1) seg += ':nth-child(' + (Array.from(el.parentElement.children).indexOf(el)+1) + ')';
+            } else {
+                seg = el.tagName.toLowerCase();
+                var tagSibs = el.parentElement
+                    ? Array.from(el.parentElement.children).filter(function(c){ return c.tagName === el.tagName; }) : [];
+                if (tagSibs.length > 1) seg += ':nth-child(' + (Array.from(el.parentElement.children).indexOf(el)+1) + ')';
+            }
+            parts.unshift(seg);
+            el = el.parentElement;
+        }
+        return parts.join(' > ');
+    }
+
+    function getLoc(el) {
+        if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) return '#' + el.id;
+        for (var attr of ['data-testid','data-qa','data-cy','aria-label','name','placeholder']) {
+            var v = el.getAttribute(attr);
+            if (v && v.length <= 60) return '@' + attr + '=' + v;
+        }
+        var cls = Array.from(el.classList).filter(function(c){
+            return c.length >= 2 && !/^[a-z]+-[a-z0-9]{5,}$/.test(c);
+        });
+        if (cls.length) return '.' + cls[0];
+        var t = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
+        if (t && t.length <= 30) return 'text:' + t;
+        return 'css:' + getCssPath(el);
+    }
+
+    var results = [];
+    var idx = 0;
+    var seen = new Set();
+
+    // 查找所有可交互元素
+    var candidates = document.querySelectorAll(
+        'input:not([type=hidden]), button, select, textarea, a[href], ' +
+        '[role="button"],[role="link"],[role="textbox"],[role="searchbox"],' +
+        '[role="combobox"],[role="checkbox"],[role="radio"],[role="tab"],' +
+        '[tabindex]:not([tabindex="-1"])'
+    );
+
+    candidates.forEach(function(el) {
+        if (!isVisible(el)) return;
+        var key = el.tagName + '|' + (el.id||'') + '|' + (el.className||'') + '|' + (el.getAttribute('name')||'');
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        var tag = el.tagName.toLowerCase();
+        var role = el.getAttribute('role') || tag;
+        var text = (el.innerText || el.value || el.getAttribute('aria-label') ||
+                    el.getAttribute('title') || el.getAttribute('placeholder') || '').trim().substring(0, 100);
+        var inNoise = inNoiseContainer(el);
+
+        var item = {
+            idx: idx++,
+            tag: tag,
+            role: role,
+            text: text,
+            loc: getLoc(el),
+            in_nav: inNoise
+        };
+
+        // 额外有用属性
+        if (el.type) item.type = el.type;
+        if (el.placeholder) item.placeholder = el.placeholder;
+        if (tag === 'a' && el.href) item.href = el.href;
+        if (el.getAttribute('aria-label')) item.aria_label = el.getAttribute('aria-label');
+
+        results.push(item);
+    });
+
+    return results;
+})()
+"""
+
+# ── CDP JS：识别主体内容区块并提取完整 innerText ──────────────────────────────
+
+_JS_CONTENT_BLOCKS = r"""
+return (function() {
+    var SKIP_TAGS = new Set(['script','style','noscript','head','meta','link',
+                              'svg','path','defs','symbol','use','g','br','hr',
+                              'iframe','template','canvas','video','audio']);
+    var NOISE_CONTAINERS = new Set(['header','footer','nav','aside']);
+    var NOISE_ROLES = new Set(['navigation','banner','contentinfo','complementary','toolbar','menubar']);
+
+    function isVisible(el) {
+        var s = window.getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden') return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 50 && r.height > 50;
+    }
+
+    function isNoiseContainer(el) {
+        var tag = el.tagName.toLowerCase();
+        if (NOISE_CONTAINERS.has(tag)) return true;
+        var role = el.getAttribute('role') || '';
+        if (NOISE_ROLES.has(role)) return true;
+        return false;
+    }
+
+    function hasNoiseAncestor(el) {
+        var p = el.parentElement;
+        var d = 0;
+        while (p && d < 6) {
+            if (isNoiseContainer(p)) return true;
+            p = p.parentElement; d++;
+        }
+        return false;
+    }
+
+    function getInnerText(el) {
+        // 克隆节点，移除 style/script 后取 innerText
+        var clone = el.cloneNode(true);
+        clone.querySelectorAll('style,script,noscript').forEach(function(n){ n.remove(); });
+        // 临时挂载到 DOM 外以获取 innerText
+        var tmp = document.createElement('div');
+        tmp.style.cssText = 'position:absolute;left:-9999px;visibility:hidden;';
+        document.body.appendChild(tmp);
+        tmp.appendChild(clone);
+        var text = clone.innerText || clone.textContent || '';
+        document.body.removeChild(tmp);
+        return text.trim();
+    }
+
+    function getCssPath(el) {
+        var parts = [];
+        var cur = el;
+        while (cur && cur !== document.body && cur.nodeType === 1) {
+            if (cur.id && /^[a-zA-Z][\w-]*$/.test(cur.id)) {
+                parts.unshift('#' + cur.id);
+                break;
+            }
+            var cls = Array.from(cur.classList).filter(function(c){ return c.length >= 2; });
+            var seg;
+            if (cls.length > 0) {
+                seg = '.' + cls[0];
+                var sibs = cur.parentElement
+                    ? Array.from(cur.parentElement.querySelectorAll(':scope > ' + seg)) : [];
+                if (sibs.length > 1) seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
+            } else {
+                seg = cur.tagName.toLowerCase();
+                var tagSibs = cur.parentElement
+                    ? Array.from(cur.parentElement.children).filter(function(c){ return c.tagName === cur.tagName; }) : [];
+                if (tagSibs.length > 1) seg += ':nth-child(' + (Array.from(cur.parentElement.children).indexOf(cur)+1) + ')';
+            }
+            parts.unshift(seg);
+            cur = cur.parentElement;
+        }
+        return 'css:' + parts.join(' > ');
+    }
+
+    // 语义权重
+    function semanticWeight(el) {
+        var tag = el.tagName.toLowerCase();
+        var role = el.getAttribute('role') || '';
+        if (tag === 'main' || role === 'main') return 3.0;
+        if (tag === 'article' || role === 'article') return 2.5;
+        if (tag === 'section') return 1.5;
+        if (el.id && /main|content|article|post|body|detail/i.test(el.id)) return 2.0;
+        if (el.className && /main|content|article|post|body|detail/i.test(el.className.toString())) return 1.8;
+        return 1.0;
+    }
+
+    // 视口面积
+    var vpArea = window.innerWidth * window.innerHeight;
+
+    // 采集所有候选区块
+    var candidates = [];
+    var allEls = document.querySelectorAll(
+        'main, article, [role="main"], [role="article"], ' +
+        'section, div, ul, ol, table'
+    );
+
+    allEls.forEach(function(el) {
+        if (SKIP_TAGS.has(el.tagName.toLowerCase())) return;
+        if (isNoiseContainer(el)) return;
+        if (hasNoiseAncestor(el)) return;
+        if (!isVisible(el)) return;
+
+        var r = el.getBoundingClientRect();
+        var area = r.width * r.height;
+        if (area < 8000) return; // 太小跳过
+
+        var nodeCount = Math.max(el.querySelectorAll('*').length, 1);
+        var rawText = el.textContent || '';
+        var textLen = rawText.replace(/\s+/g, ' ').trim().length;
+        if (textLen < 80) return;
+
+        var density = textLen / nodeCount;
+        var weight = semanticWeight(el);
+
+        // 面积比：占视口比例。最优区间 0.05~0.7，太大（接近全页）惩罚
+        var areaRatio = area / Math.max(vpArea, 1);
+        var areaPenalty = areaRatio > 0.85 ? 0.1 :   // 几乎等于全页，强烈惩罚
+                          areaRatio > 0.70 ? 0.4 :
+                          areaRatio > 0.50 ? 0.7 : 1.0;
+
+        var score = density * weight * areaPenalty * Math.log(textLen + 1);
+
+        candidates.push({el: el, score: score, area: area, areaRatio: areaRatio,
+                         textLen: textLen, density: Math.round(density)});
+    });
+
+    // 按分数降序排
+    candidates.sort(function(a, b){ return b.score - a.score; });
+
+    // 选取区块：优先子区块，父区块只在没有更好子区块时才选
+    var selected = [];
+    var selectedEls = [];
+    for (var i = 0; i < candidates.length && selected.length < 4; i++) {
+        var c = candidates[i];
+        // 跳过已选区块的父节点（子区块更精准）
+        var isParentOfSelected = selectedEls.some(function(child){ return c.el.contains(child); });
+        if (isParentOfSelected) continue;
+        // 跳过已选区块的子节点（避免重复）
+        var isChildOfSelected = selectedEls.some(function(parent){ return parent.contains(c.el); });
+        if (isChildOfSelected) continue;
+
+        var text = getInnerText(c.el);
+        if (text.length < 80) continue;
+
+        var tag = c.el.tagName.toLowerCase();
+        var cls = c.el.className ? c.el.className.toString().trim().split(/\s+/)[0] : '';
+        var eid = c.el.id || '';
+
+        selected.push({
+            _el: c.el,
+            tag: tag,
+            id: eid,
+            cls: cls,
+            loc: getCssPath(c.el),
+            text: text,
+            text_len: text.length,
+            score: Math.round(c.score),
+            area: Math.round(c.area)
+        });
+        selectedEls.push(c.el);
+    }
+
+    // 移除内部 _el（不可序列化）
+    return selected.map(function(s){
+        return {tag: s.tag, id: s.id, cls: s.cls, loc: s.loc,
+                text: s.text, text_len: s.text_len, score: s.score};
+    });
+})()
+"""
 
 
-_RE_CSS_BLOCK = re.compile(r'\.[a-zA-Z][\w-]*\{[^}]{0,300}\}', re.DOTALL)
-_RE_LEADING_CSS = re.compile(r'^(\.[a-zA-Z][\w,\s>~+*\[\]:.-]{0,100}\{[^}]{0,500}\}\s*)+',
-                              re.DOTALL)
+# ── 主函数 ────────────────────────────────────────────────────────────────────
 
-
-def _clean_ele_text(ele) -> str:
-    """
-    获取静态 lxml 元素的纯文本：合并所有子节点文本，同时剔除 style/script 子节点。
-    解决反爬机制把文字拆分到多个 span 里、同时混入 <style> 标签的问题。
-    不依赖 lxml.etree（Python 3.13 下 lxml 的 .so 可能是 3.12 编译的无法加载）。
-    """
-    # 优先尝试 lxml etree（速度快、精确）
-    if _LXML_OK:
-        try:
-            inner = ele._inner_ele
-            clone = deepcopy(inner)
-            _lxml_etree.strip_elements(clone, 'style', 'script', with_tail=False)
-            return (_lxml_etree.tostring(clone, method='text',
-                                         encoding='unicode') or '').strip()
-        except Exception:
-            pass
-
-    # fallback：用 raw_text + 正则剔除 CSS 代码块
-    try:
-        text = (ele.raw_text or ele.text or '').strip()
-    except Exception:
-        text = (ele.text or '').strip() if ele else ''
-
-    if text:
-        # 去除开头的 CSS 规则块（.className{...}）
-        text = _RE_LEADING_CSS.sub('', text).strip()
-        # 去除残余的内联 CSS 块
-        text = _RE_CSS_BLOCK.sub('', text).strip()
-
-    return text
-
-# 可交互 tag 集合
-_INTERACTIVE_TAGS = {
-    'a', 'button', 'input', 'select', 'textarea', 'label',
-    'form', 'details', 'summary', 'option',
-}
-
-# 无意义噪音 tag（快照时跳过）
-_NOISE_TAGS = {
-    'script', 'style', 'noscript', 'head', 'meta', 'link',
-    'svg', 'path', 'defs', 'symbol', 'use', 'g', 'br', 'hr',
-    'iframe', 'template',
-}
-
-# 语义内容 tag（content 模式重点保留）
-_CONTENT_TAGS = {
-    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'p', 'li', 'td', 'th', 'dt', 'dd',
-    'span', 'em', 'strong', 'time', 'cite',
-    'a', 'button', 'input', 'select', 'textarea',
-    'label', 'article', 'section', 'header', 'footer',
-    'nav', 'aside', 'main',
-}
-
-# full 模式跳过递归的大容器 tag（只保留自身不展开子树）
-_CONTAINER_TAGS = set()
-
-
-def take_snapshot(page, mode: str = 'interactive',
-                  selector: str = None, max_depth: int = 12,
-                  min_text: int = 2, max_text: int = 2000) -> dict:
+def take_snapshot(page, mode: str = 'default',
+                  selector: str = None,
+                  max_depth: int = 12,
+                  min_text: int = 2,
+                  max_text: int = 2000) -> dict:
     """
     生成页面快照。
 
-    :param page: ChromiumPage 或 ChromiumTab
-    :param mode: 快照模式
-        - 'auto':        自动检测页面类型并输出最有用的信息（推荐，无需手动选模式）
-        - 'interactive': 只列出可交互元素（表单页、登录页首选）
-        - 'content':     语义区块聚合，识别重复卡片结构并给出 extract 工作流提示
-        - 'full':        完整 DOM 树（结构化文本）
-        - 'text':        纯文本内容
-    :param selector: 限定范围的定位器，None 表示整页
-    :param max_depth: full/content 模式最大深度
-    :return: 快照数据字典
+    默认模式（推荐）一次性输出：
+      - 可交互元素：来自 CDP a11y tree 映射，role/loc/text 完整
+      - 主体内容：JS 按视觉面积×语义权重识别 top 区块，innerText 完整
+
+    :param mode:
+        'default'     一次性输出可交互元素 + 主体内容（推荐）
+        'interactive' 只输出可交互元素
+        'content'     只输出主体内容区块
+        'text'        页面全量纯文本
+        'legacy'      旧版 auto 模式（卡片检测，向后兼容）
+    :param selector: 限定范围（仅 text/legacy 模式有效）
     """
     page.wait.doc_loaded()
+    page_info = {'url': page.url, 'title': page.title}
 
-    page_info = {
-        'url': page.url,
-        'title': page.title,
+    if mode == 'text':
+        root = page.s_ele(selector) if selector else page.s_ele()
+        text = root.text if root else ''
+        return {'page': page_info, 'mode': 'text', 'text': text}
+
+    if mode == 'legacy':
+        root = page.s_ele(selector) if selector else page.s_ele()
+        if root and root.__class__.__name__ == 'NoneElement':
+            return {'page': page_info, 'error': f'Selector not found: {selector}'}
+        return _auto_snapshot(page, root, page_info, max_depth, min_text, max_text)
+
+    # ── default / interactive / content：全部走 CDP ──────────────────────────
+    interactive = []
+    content_blocks = []
+
+    if mode in ('default', 'interactive'):
+        try:
+            raw = page.run_js(_JS_INTERACTIVE)
+            interactive = raw if isinstance(raw, list) else []
+        except Exception as e:
+            interactive = [{'error': str(e)}]
+
+    if mode in ('default', 'content'):
+        scope_js = _JS_CONTENT_BLOCKS
+        if selector:
+            # 限定 selector 范围
+            scope_js = f"""
+(function(){{
+    var root = document.querySelector({repr(selector.replace('css:','').replace('xpath:',''))});
+    if (!root) return [];
+    {_JS_CONTENT_BLOCKS.strip()[12:-3]}  // 不能直接嵌套，退化到全页
+}})()
+"""
+        try:
+            raw = page.run_js(_JS_CONTENT_BLOCKS)
+            content_blocks = raw if isinstance(raw, list) else []
+        except Exception as e:
+            content_blocks = [{'error': str(e)}]
+
+    return {
+        'page': page_info,
+        'mode': mode,
+        'interactive': interactive,
+        'content_blocks': content_blocks,
     }
 
-    if selector:
-        root = page.s_ele(selector)
-        if not root or root.__class__.__name__ == 'NoneElement':
-            return {'page': page_info, 'error': f'Selector not found: {selector}'}
-    else:
-        root = page.s_ele()
 
-    if mode == 'auto':
-        return _auto_snapshot(page, root, page_info, max_depth, min_text, max_text)
-    elif mode == 'interactive':
-        elements = _extract_interactive(page, selector)
-        return {
-            'page': page_info,
-            'mode': 'interactive',
-            'count': len(elements),
-            'elements': elements,
-        }
-    elif mode == 'content':
-        result = _extract_content_blocks(root, max_depth=max_depth,
-                                         min_text=min_text, max_text=max_text)
-        return {
-            'page': page_info,
-            'mode': 'content',
-            **result,
-        }
-    elif mode == 'full':
-        tree = _build_tree(root, depth=0, max_depth=max_depth)
-        return {
-            'page': page_info,
-            'mode': 'full',
-            'tree': tree,
-        }
-    elif mode == 'text':
-        text = root.text if root else ''
-        return {
-            'page': page_info,
-            'mode': 'text',
-            'text': text,
-        }
-    else:
-        return {'error': f'Unknown mode: {mode}'}
-
-
-def _extract_controls(page) -> list:
-    """
-    提取表单控件（input/select/textarea/button），不包括链接。
-    专用于 auto 模式的表单页输出。
-    """
-    elements = []
-    idx = 0
-    s_eles = page.s_eles(
-        'xpath://*[self::button or self::input or self::select '
-        'or self::textarea or self::label]'
-    )
-    for ele in s_eles:
-        try:
-            tag = ele.tag.lower()
-            attrs = ele.attrs
-            text = (ele.text or '').strip()[:200]
-            is_hidden = attrs.get('type', '').lower() == 'hidden'
-            info = {
-                'idx': idx,
-                'tag': tag,
-                'text': text,
-                'attrs': _filter_attrs(attrs),
-                'loc': _suggest_locator_static(tag, attrs, text),
-                'hidden': is_hidden,
-            }
-            if tag == 'input':
-                info['input_type'] = attrs.get('type', 'text').lower()
-            elements.append(info)
-            idx += 1
-        except Exception:
-            continue
-    return elements
-
-
-def _extract_interactive(page, selector: str = None) -> list:
-    """
-    提取所有可交互/有意义的元素，使用 DrissionPage 的 s_ele 批量解析（高效）。
-    同时尝试获取可见性状态（通过 ChromiumElement）。
-    """
-    elements = []
-    idx = 0
-
-    # 利用 s_eles 批量获取静态元素（lxml，不走 CDP）
-    scope = selector or 'xpath://*'
-    s_eles = page.s_eles(scope) if selector else page.s_eles(
-        'xpath://*[self::a or self::button or self::input or self::select '
-        'or self::textarea or self::label or self::form or self::details '
-        'or self::summary]'
-    )
-
-    for ele in s_eles:
-        try:
-            tag = ele.tag.lower()
-            attrs = ele.attrs
-            text = (ele.text or '').strip()[:200]
-
-            # 过滤 hidden input（有用但标记出来）
-            is_hidden = attrs.get('type', '').lower() == 'hidden'
-
-            info = {
-                'idx': idx,
-                'tag': tag,
-                'text': text,
-                'attrs': _filter_attrs(attrs),
-                'loc': _suggest_locator_static(tag, attrs, text),
-                'hidden': is_hidden,
-            }
-
-            # input 额外信息
-            if tag == 'input':
-                info['input_type'] = attrs.get('type', 'text').lower()
-
-            # a 标签附带 href
-            if tag == 'a' and attrs.get('href'):
-                info['href'] = attrs.get('href')
-
-            elements.append(info)
-            idx += 1
-        except Exception:
-            continue
-
-    return elements
-
-
-# ── Auto 模式 ─────────────────────────────────────────────────────────────
+# ── 兼容旧接口：保留旧模式函数（legacy 调用链） ───────────────────────────────
 
 def _auto_snapshot(page, root, page_info: dict, max_depth: int,
                    min_text: int, max_text: int) -> dict:
@@ -1094,107 +1249,84 @@ def _suggest_locator_static(tag: str, attrs: dict, text: str) -> str:
     return f't:{tag}'
 
 
+
 def render_snapshot_text(snapshot: dict) -> str:
     """
-    将快照数据渲染为人类/AI 可读的文本格式。
+    将快照数据渲染为人类/AI 可读文本。
+    新格式：可交互元素 + 主体内容块，一目了然。
     """
     lines = []
     page_info = snapshot.get('page', {})
-    lines.append(f"### Page")
+    lines.append("### Page")
     lines.append(f"- URL: {page_info.get('url', '')}")
     lines.append(f"- Title: {page_info.get('title', '')}")
     lines.append('')
 
-    mode = snapshot.get('mode', 'interactive')
-    detected_type = snapshot.get('detected_type', '')
+    mode = snapshot.get('mode', 'default')
 
-    # hint 优先显示
-    hint = snapshot.get('hint', '')
-    if hint:
-        lines.append(f"### Hint")
-        for h_line in hint.split('\n'):
-            lines.append(h_line)
-        lines.append('')
+    # ── 新格式：default / interactive / content ──────────────────────────────
+    if mode in ('default', 'interactive', 'content'):
 
-    if mode in ('interactive', 'auto') and 'elements' in snapshot:
-        label = 'Interactive Elements'
-        if detected_type == 'form_page':
-            label = 'Form Elements'
-        lines.append(f"### {label} ({snapshot.get('count', 0)} found)")
-        lines.append('')
-        for ele in snapshot.get('elements', []):
-            idx = ele['idx']
-            tag = ele['tag']
-            text = ele.get('text', '')
-            loc = ele.get('loc', '')
-            attrs = ele.get('attrs', {})
-            hidden = ele.get('hidden', False)
+        interactive = snapshot.get('interactive', [])
+        content_blocks = snapshot.get('content_blocks', [])
 
-            attr_parts = []
-            for k in ('type', 'name', 'placeholder', 'href', 'value', 'aria-label', 'id', 'class'):
-                if k in attrs:
-                    v = attrs[k]
-                    if len(str(v)) <= 50:
-                        attr_parts.append(f'{k}="{v}"')
+        if interactive:
+            # 分组：主体交互 vs 导航交互
+            main_els = [e for e in interactive if not e.get('in_nav')]
+            nav_els  = [e for e in interactive if e.get('in_nav')]
 
-            attr_str = ' '.join(attr_parts)
-            text_str = f' "{text}"' if text else ''
-            hidden_str = ' [hidden]' if hidden else ''
-
-            lines.append(f"[{idx}] <{tag}{(' ' + attr_str) if attr_str else ''}>{text_str}{hidden_str}")
-            lines.append(f"     loc: {loc}")
-
-    elif mode in ('auto',) and 'sample_cards' in snapshot:
-        # 列表页输出
-        lines.append(f"### Detected: List Page")
-        lines.append(f"- Container: {snapshot.get('container_selector', '')}")
-        lines.append(f"- Total cards: {snapshot.get('count', 0)}")
-        lines.append('')
-        lines.append("#### Sample Cards (first 5)")
-        lines.append('')
-        for i, card in enumerate(snapshot.get('sample_cards', [])):
-            lines.append(f"--- Card {i+1} ---")
-            for k, v in card.items():
-                if not k.startswith('_'):
-                    lines.append(f"  {k}: {str(v)[:80]}")
-                else:
-                    lines.append(f"  (link) {k[6:]}: {str(v)[:80]}")
-        lines.append('')
-        lines.append("#### Suggested Fields for extract")
-        for fname, fsel in snapshot.get('suggested_fields', {}).items():
-            first_card = snapshot.get('sample_cards', [{}])[0]
-            sample_val = first_card.get(fname, '')
-            lines.append(f"  {fname:20s} → {fsel}   # e.g. {str(sample_val)[:40]}")
-
-    elif mode in ('content', 'auto') and 'nodes' in snapshot:
-        nodes = snapshot.get('nodes', [])
-        lines.append(f"### Content Nodes ({len(nodes)} found)")
-        lines.append('')
-        for node in nodes:
-            tag = node.get('tag', '')
-            text = node.get('text', '')
-            loc = node.get('loc', '')
-            cls = node.get('class', '')
-            if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
-                prefix = '#' * int(tag[1])
-                lines.append(f"{prefix} {text}")
-            elif text.startswith('[') and text.endswith(']'):
-                lines.append(f"\n──── {text} ────")
+            lines.append(f"### 可交互元素 ({len(interactive)} 个)")
+            lines.append('')
+            lines.append("#### 主体操作区")
+            if main_els:
+                for e in main_els:
+                    _render_interactive_item(e, lines)
             else:
-                cls_hint = f"  .{cls}" if cls else ''
-                lines.append(f"- {text}{cls_hint}")
-            if loc and loc not in (f't:{tag}', ''):
+                lines.append("  （无）")
+            lines.append('')
+
+            if nav_els:
+                lines.append(f"#### 导航/工具栏 ({len(nav_els)} 个，折叠）")
+                for e in nav_els[:10]:
+                    _render_interactive_item(e, lines)
+                if len(nav_els) > 10:
+                    lines.append(f"  ... 还有 {len(nav_els)-10} 个")
+                lines.append('')
+
+        if content_blocks:
+            lines.append(f"### 主体内容 ({len(content_blocks)} 个区块)")
+            lines.append('')
+            for i, blk in enumerate(content_blocks):
+                tag  = blk.get('tag', 'div')
+                cls  = blk.get('cls', '')
+                eid  = blk.get('id', '')
+                loc  = blk.get('loc', '')
+                text = blk.get('text', '')
+                tlen = blk.get('text_len', len(text))
+                label = eid or cls or tag
+                lines.append(f"#### 区块{i+1}：{label}  ({tlen} 字)")
                 lines.append(f"  → loc: {loc}")
+                lines.append('')
+                # 输出完整文本，但超长时截断并提示
+                if len(text) > 3000:
+                    lines.append(text[:3000])
+                    lines.append(f"  ... （共 {tlen} 字，使用 dp query \"{loc}\" --fields text 获取全文）")
+                else:
+                    lines.append(text)
+                lines.append('')
 
-    elif mode == 'full':
-        lines.append("### DOM Tree")
-        lines.append('')
-        _render_tree_lines(snapshot.get('tree', {}), lines, indent=0)
+        if not interactive and not content_blocks:
+            lines.append("（快照为空，页面可能未加载完成，请先 dp wait --loaded）")
 
+    # ── text 模式 ────────────────────────────────────────────────────────────
     elif mode == 'text':
         lines.append("### Page Text")
         lines.append('')
         lines.append(snapshot.get('text', ''))
+
+    # ── legacy / auto 模式（向后兼容旧渲染逻辑） ─────────────────────────────
+    else:
+        _render_legacy(snapshot, lines)
 
     if 'error' in snapshot:
         lines.append(f"\n### Error")
@@ -1203,23 +1335,370 @@ def render_snapshot_text(snapshot: dict) -> str:
     return '\n'.join(lines)
 
 
+def _render_interactive_item(e: dict, lines: list) -> None:
+    tag  = e.get('tag', '')
+    role = e.get('role', tag)
+    text = e.get('text', '')
+    loc  = e.get('loc', '')
+    tp   = e.get('type', '')
+    ph   = e.get('placeholder', '')
+    href = e.get('href', '')
+    aria = e.get('aria_label', '')
+
+    parts = [f"[{e.get('idx','')}]", f"<{tag}>"]
+    if role and role != tag:
+        parts.append(f"role={role}")
+    if tp and tp not in ('submit','button','text'):
+        parts.append(f"type={tp}")
+    if text:
+        parts.append(f'"{text[:60]}"')
+    if ph:
+        parts.append(f'placeholder="{ph[:40]}"')
+    if aria and aria != text:
+        parts.append(f'aria="{aria[:40]}"')
+    if href:
+        parts.append(f'href="{href[:60]}"')
+
+    lines.append('  ' + ' '.join(parts))
+    lines.append(f'     → loc: {loc}')
+
+
+def _render_legacy(snapshot: dict, lines: list) -> None:
+    """向后兼容：渲染旧版 auto/interactive/content/full 格式"""
+    mode = snapshot.get('mode', '')
+    detected_type = snapshot.get('detected_type', '')
+
+    hint = snapshot.get('hint', '')
+    if hint:
+        lines.append("### Hint")
+        lines.extend(hint.split('\n'))
+        lines.append('')
+
+    if 'sample_cards' in snapshot:
+        lines.append("### Detected: List Page")
+        lines.append(f"- Container: {snapshot.get('container_selector', '')}")
+        lines.append(f"- Total cards: {snapshot.get('count', 0)}")
+        lines.append('')
+        lines.append("#### Sample Cards (first 5)")
+        for i, card in enumerate(snapshot.get('sample_cards', [])):
+            lines.append(f"--- Card {i+1} ---")
+            for k, v in card.items():
+                if not k.startswith('_'):
+                    lines.append(f"  {k}: {str(v)[:80]}")
+        lines.append('')
+        lines.append("#### Suggested Fields for extract")
+        for fname, fsel in snapshot.get('suggested_fields', {}).items():
+            sample_val = snapshot.get('sample_cards', [{}])[0].get(fname, '')
+            lines.append(f"  {fname:20s} → {fsel}   # e.g. {str(sample_val)[:40]}")
+
+    elif 'elements' in snapshot:
+        label = 'Form Elements' if detected_type == 'form_page' else 'Interactive Elements'
+        lines.append(f"### {label} ({snapshot.get('count', 0)} found)")
+        lines.append('')
+        for ele in snapshot.get('elements', []):
+            idx  = ele['idx']
+            tag  = ele['tag']
+            text = ele.get('text', '')
+            loc  = ele.get('loc', '')
+            attrs = ele.get('attrs', {})
+            hidden = ele.get('hidden', False)
+            attr_parts = []
+            for k in ('type','name','placeholder','href','value','aria-label','id','class'):
+                if k in attrs and len(str(attrs[k])) <= 50:
+                    attr_parts.append(f'{k}="{attrs[k]}"')
+            attr_str = ' '.join(attr_parts)
+            text_str = f' "{text}"' if text else ''
+            hidden_str = ' [hidden]' if hidden else ''
+            lines.append(f"[{idx}] <{tag}{(' '+attr_str) if attr_str else ''}>{text_str}{hidden_str}")
+            lines.append(f"     loc: {loc}")
+
+    elif 'nodes' in snapshot:
+        nodes = snapshot.get('nodes', [])
+        lines.append(f"### Content Nodes ({len(nodes)} found)")
+        lines.append('')
+        for node in nodes:
+            tag  = node.get('tag', '')
+            text = node.get('text', '')
+            loc  = node.get('loc', '')
+            cls  = node.get('class', '')
+            if tag in ('h1','h2','h3','h4','h5','h6'):
+                lines.append('#' * int(tag[1]) + ' ' + text)
+            elif text.startswith('[') and text.endswith(']'):
+                lines.append(f"\n──── {text} ────")
+            else:
+                lines.append(f"- {text}{'  .' + cls if cls else ''}")
+            if loc and loc not in (f't:{tag}', ''):
+                lines.append(f"  → loc: {loc}")
+
+    elif mode == 'full':
+        lines.append("### DOM Tree")
+        lines.append('')
+        _render_tree_lines(snapshot.get('tree', {}), lines, 0)
+
+
 def _render_tree_lines(node: dict, lines: list, indent: int) -> None:
     if not node:
         return
-    tag = node.get('tag', '')
-    attrs = node.get('attrs', {})
-    text = node.get('text', '').strip()
+    tag    = node.get('tag', '')
+    attrs  = node.get('attrs', {})
+    text   = node.get('text', '').strip()
     children = node.get('children', [])
-
     attr_parts = []
-    for k in ('id', 'class', 'type', 'name', 'href', 'placeholder'):
+    for k in ('id','class','type','name','href','placeholder'):
         if k in attrs:
             attr_parts.append(f'{k}="{attrs[k]}"')
-
     attr_str = (' ' + ' '.join(attr_parts)) if attr_parts else ''
     text_str = f' "{text[:50]}"' if text else ''
-    prefix = '  ' * indent
-
-    lines.append(f"{prefix}<{tag}{attr_str}>{text_str}")
+    lines.append('  ' * indent + f"<{tag}{attr_str}>{text_str}")
     for child in children:
         _render_tree_lines(child, lines, indent + 1)
+def extract_structured(page, container: str, fields: dict,
+                       limit: int = 100) -> list:
+    """
+    结构化批量提取——核心数据提取原语。
+
+    在页面上找到所有 container 匹配的元素（每个视为一条记录），
+    然后在每个容器内按 fields 字典提取各字段值。
+
+    :param page: ChromiumPage
+    :param container: 容器定位器，如 'css:.job-card' 或 'xpath://li[@class="item"]'
+    :param fields: 字段映射字典，如
+        {
+          "title":  "css:.job-name",
+          "salary": "css:.salary",
+          "company": "css:.company-name",
+          "tags":   {"selector": "css:.tag", "multi": True},
+          "url":    {"selector": "css:a", "attr": "href"},
+        }
+        值可以是：
+        - 字符串：子元素定位器，取 text
+        - dict with 'selector': 子元素定位器
+          - 'multi': True → 返回文本列表
+          - 'attr': 'href' → 取属性值而非 text
+          - 'default': 缺失时的默认值
+    :param limit: 最多提取多少条记录
+    :return: list of dict
+    """
+    containers = page.s_eles(container)
+    if not containers:
+        return []
+
+    results = []
+    for item in list(containers)[:limit]:
+        record = {}
+        for field_name, spec in fields.items():
+            # 规范化 spec
+            if isinstance(spec, str):
+                spec = {'selector': spec}
+
+            sel = spec.get('selector', '')
+            multi = spec.get('multi', False)
+            attr = spec.get('attr', None)
+            default = spec.get('default', '')
+
+            try:
+                if multi:
+                    eles = item.s_eles(sel)
+                    record[field_name] = [
+                        (e.attr(attr) if attr else (e.text or '').strip())
+                        for e in eles
+                    ]
+                else:
+                    ele = item.s_ele(sel)
+                    if ele and ele.__class__.__name__ != 'NoneElement':
+                        if attr:
+                            record[field_name] = ele.attr(attr) or default
+                        else:
+                            record[field_name] = (ele.text or '').strip() or default
+                    else:
+                        record[field_name] = default
+            except Exception:
+                record[field_name] = default
+
+        results.append(record)
+
+    return results
+
+
+_JS_CSS_PATH = """
+var el = this;
+var parts = [];
+while (el && el !== document.body && el.nodeType === 1) {
+    var seg = el.tagName.toLowerCase();
+    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
+        parts.unshift('#' + el.id);
+        break;
+    }
+    var classes = Array.from(el.classList)
+        .filter(function(c) { return c.length >= 3; });
+    if (classes.length > 0) {
+        seg = '.' + classes[0];
+        var siblings = el.parentElement
+            ? Array.from(el.parentElement.querySelectorAll(':scope > ' + seg))
+            : [];
+        if (siblings.length > 1) {
+            var idx = siblings.indexOf(el) + 1;
+            seg = seg + ':nth-child(' + idx + ')';
+        }
+    } else {
+        var allSiblings = el.parentElement
+            ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
+            : [];
+        if (allSiblings.length > 1) {
+            var idx2 = Array.from(el.parentElement.children).indexOf(el) + 1;
+            seg = seg + ':nth-child(' + idx2 + ')';
+        }
+    }
+    parts.unshift(seg);
+    el = el.parentElement;
+}
+return parts.join(' > ');
+"""
+
+_JS_XPATH = """
+var el = this;
+var parts = [];
+while (el && el.nodeType === 1) {
+    var seg = el.tagName.toLowerCase();
+    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
+        parts.unshift('//' + seg + '[@id="' + el.id + '"]');
+        return parts.join('/');
+    }
+    var siblings = el.parentElement
+        ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
+        : [];
+    if (siblings.length > 1) {
+        var idx = siblings.indexOf(el) + 1;
+        seg = seg + '[' + idx + ']';
+    }
+    parts.unshift(seg);
+    el = el.parentElement;
+}
+return '/' + parts.join('/');
+"""
+
+
+def query_elements(page, selector: str, fields: list,
+                   limit: int = 200) -> list:
+    """
+    query 模式：找到所有匹配 selector 的元素，批量提取指定属性/文本。
+
+    :param page: ChromiumPage
+    :param selector: 元素定位器
+    :param fields: 要提取的字段列表，支持：
+                   text      → 文本内容
+                   tag       → 标签名
+                   loc       → 推荐 DrissionPage 定位器（简短，可能不唯一）
+                   css_path  → 精确 CSS 路径（JS生成，从祖先到当前元素，唯一）
+                   xpath     → 精确 XPath（JS生成）
+                   其他      → HTML 属性值（href/id/class/src 等）
+    :param limit: 最多返回多少条
+    :return: list of dict
+    """
+    need_cdp = any(f in fields for f in ('css_path', 'xpath'))
+
+    # 优先用 CDP eles（支持动态渲染内容）；静态回退用 s_eles
+    try:
+        eles = page.eles(selector, timeout=5)
+    except Exception:
+        eles = page.s_eles(selector)
+
+    results = []
+    for ele in list(eles)[:limit]:
+        record = {}
+        for f in fields:
+            try:
+                if f == 'text':
+                    record['text'] = (ele.text or '').strip()
+                elif f == 'tag':
+                    record['tag'] = ele.tag
+                elif f == 'loc':
+                    record['loc'] = _suggest_locator_static(
+                        ele.tag, ele.attrs, (ele.text or '').strip()[:50]
+                    )
+                elif f == 'css_path':
+                    # JS 生成精确 CSS 路径，输出带 css: 前缀可直接用于 dp query/click
+                    try:
+                        path = ele.run_js(_JS_CSS_PATH)
+                        record['css_path'] = f'css:{path}' if path else ''
+                    except Exception:
+                        record['css_path'] = ''
+                elif f == 'xpath':
+                    try:
+                        path = ele.run_js(_JS_XPATH)
+                        record['xpath'] = f'xpath:{path}' if path else ''
+                    except Exception:
+                        record['xpath'] = ''
+                else:
+                    val = ele.attrs.get(f, '') if hasattr(ele, 'attrs') else ''
+                    record[f] = val or ''
+            except Exception:
+                record[f] = ''
+        results.append(record)
+    return results
+
+
+def _build_tree(ele, depth: int, max_depth: int) -> dict:
+    """递归构建 DOM 树（s_ele 静态解析，高效）"""
+    if ele is None:
+        return {}
+    try:
+        tag = ele.tag.lower()
+    except Exception:
+        return {}
+
+    node = {
+        'tag': tag,
+        'attrs': _filter_attrs(ele.attrs),
+        'text': (ele.raw_text or '').strip()[:100],
+    }
+
+    if depth < max_depth and tag not in _CONTAINER_TAGS:
+        children = []
+        try:
+            for child in ele.children():
+                child_node = _build_tree(child, depth + 1, max_depth)
+                if child_node:
+                    children.append(child_node)
+        except Exception:
+            pass
+        if children:
+            node['children'] = children
+
+    return node
+
+
+def _filter_attrs(attrs: dict) -> dict:
+    """过滤掉过长或无意义的属性"""
+    result = {}
+    skip = {'style', 'srcset', 'sizes', 'integrity', 'crossorigin'}
+    for k, v in attrs.items():
+        if k in skip:
+            continue
+        if isinstance(v, str) and len(v) > 200:
+            v = v[:200] + '...'
+        result[k] = v
+    return result
+
+
+def _suggest_locator_static(tag: str, attrs: dict, text: str) -> str:
+    """为静态元素生成最优 DrissionPage 定位字符串"""
+    if attrs.get('id'):
+        return f'#{attrs["id"]}'
+
+    for semantic in ('data-testid', 'data-qa', 'data-cy', 'aria-label', 'name', 'placeholder'):
+        if attrs.get(semantic):
+            val = attrs[semantic]
+            return f'@{semantic}={val}'
+
+    cls = attrs.get('class', '')
+    if cls:
+        classes = [c for c in cls.strip().split() if not re.match(r'^[a-z]+-\w{4,}$', c)]
+        if classes:
+            return f'.{classes[0]}'
+
+    if text and len(text) <= 30:
+        return f'text:{text}'
+
+    return f't:{tag}'
+

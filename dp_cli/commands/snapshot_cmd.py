@@ -15,36 +15,33 @@ def register(cli):
 
     @cli.command()
     @session_option
-    @click.option('--mode', type=click.Choice(['auto', 'interactive', 'content', 'full', 'text']),
-                  default='auto', show_default=True, help='快照模式')
+    @click.option('--mode',
+                  type=click.Choice(['default', 'interactive', 'content', 'text', 'legacy']),
+                  default='default', show_default=True, help='快照模式')
     @click.option('--selector', default=None, help='限定快照范围的定位器')
-    @click.option('--max-depth', default=12, help='full/content 模式最大深度', show_default=True)
-    @click.option('--min-text', default=2, help='content 模式：文本最短长度过滤', show_default=True)
-    @click.option('--max-text', default=2000, help='content 模式：文本最长长度过滤', show_default=True)
+    @click.option('--max-depth', default=12, help='legacy 模式最大深度', show_default=True)
+    @click.option('--min-text', default=2, help='legacy 模式文本最短长度', show_default=True)
+    @click.option('--max-text', default=2000, help='legacy 模式文本最长长度', show_default=True)
     @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')
     def snapshot(session, mode, selector, max_depth, min_text, max_text, fmt, filename):
-        """获取页面快照。DrissionPage 特有的高效多维快照。
+        """获取页面快照：可交互元素 + 主体内容，一次完整呈现。
 
         \b
-        模式说明（默认 auto，无需手动选）:
-          auto         自动检测页面类型并输出最有用信息（推荐）
-                       · 列表页 → 输出前5张卡片 + extract 一键提取命令
-                       · 表单页 → 输出所有可交互元素及定位器
-                       · 内容页 → 输出去噪语义内容树
-          interactive  强制只列出可交互元素（登录/操控场景）
-          content      强制输出语义内容树（含区块分隔标记）
-          full         完整 DOM 树（调试用）
-          text         页面纯文本
+        模式说明（默认 default）:
+          default      【推荐】CDP 一次采集：可交互元素（a11y tree）+ 主体内容（视觉面积优先）
+          interactive  只输出可交互元素（按钮/输入框/链接）
+          content      只输出主体内容区块（文章/列表/详情）
+          text         页面全量纯文本
+          legacy       旧版 auto 模式（卡片检测+表单检测，向后兼容）
 
         \b
         示例:
-          dp snapshot                          # 自动模式（推荐）
-          dp snapshot --mode interactive       # 找按钮/输入框
-          dp snapshot --mode content           # 看页面文字内容
-          dp snapshot --selector "css:.main"   # 限定区域
-          dp snapshot --format json            # JSON 输出给程序处理
+          dp snapshot                          # 默认模式（推荐，大模型调用首选）
+          dp snapshot --mode interactive       # 只看可操作元素
+          dp snapshot --mode content           # 只看页面文字内容
+          dp snapshot --format json            # JSON 格式输出
         """
         page = _get_page(session)
         try:

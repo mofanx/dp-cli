@@ -18,9 +18,9 @@ def register(cli):
     @click.option('--mode', type=click.Choice(['auto', 'interactive', 'content', 'full', 'text']),
                   default='auto', show_default=True, help='快照模式')
     @click.option('--selector', default=None, help='限定快照范围的定位器')
-    @click.option('--max-depth', default=8, help='full/content 模式最大深度', show_default=True)
+    @click.option('--max-depth', default=12, help='full/content 模式最大深度', show_default=True)
     @click.option('--min-text', default=2, help='content 模式：文本最短长度过滤', show_default=True)
-    @click.option('--max-text', default=500, help='content 模式：文本最长长度过滤', show_default=True)
+    @click.option('--max-text', default=2000, help='content 模式：文本最长长度过滤', show_default=True)
     @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')

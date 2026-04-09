@@ -4,6 +4,51 @@ dp-cli snapshot 模块
 基于 lxml s_ele() 生成页面结构快照，比 a11y tree 信息更丰富、更高效。
 """
 import re
+from copy import deepcopy
+
+try:
+    from lxml import etree as _lxml_etree
+    _LXML_OK = True
+except ImportError:
+    _lxml_etree = None
+    _LXML_OK = False
+
+
+_RE_CSS_BLOCK = re.compile(r'\.[a-zA-Z][\w-]*\{[^}]{0,300}\}', re.DOTALL)
+_RE_LEADING_CSS = re.compile(r'^(\.[a-zA-Z][\w,\s>~+*\[\]:.-]{0,100}\{[^}]{0,500}\}\s*)+',
+                              re.DOTALL)
+
+
+def _clean_ele_text(ele) -> str:
+    """
+    获取静态 lxml 元素的纯文本：合并所有子节点文本，同时剔除 style/script 子节点。
+    解决反爬机制把文字拆分到多个 span 里、同时混入 <style> 标签的问题。
+    不依赖 lxml.etree（Python 3.13 下 lxml 的 .so 可能是 3.12 编译的无法加载）。
+    """
+    # 优先尝试 lxml etree（速度快、精确）
+    if _LXML_OK:
+        try:
+            inner = ele._inner_ele
+            clone = deepcopy(inner)
+            _lxml_etree.strip_elements(clone, 'style', 'script', with_tail=False)
+            return (_lxml_etree.tostring(clone, method='text',
+                                         encoding='unicode') or '').strip()
+        except Exception:
+            pass
+
+    # fallback：用 raw_text + 正则剔除 CSS 代码块
+    try:
+        text = (ele.raw_text or ele.text or '').strip()
+    except Exception:
+        text = (ele.text or '').strip() if ele else ''
+
+    if text:
+        # 去除开头的 CSS 规则块（.className{...}）
+        text = _RE_LEADING_CSS.sub('', text).strip()
+        # 去除残余的内联 CSS 块
+        text = _RE_CSS_BLOCK.sub('', text).strip()
+
+    return text
 
 # 可交互 tag 集合
 _INTERACTIVE_TAGS = {
@@ -33,8 +78,8 @@ _CONTAINER_TAGS = set()
 
 
 def take_snapshot(page, mode: str = 'interactive',
-                  selector: str = None, max_depth: int = 8,
-                  min_text: int = 2, max_text: int = 500) -> dict:
+                  selector: str = None, max_depth: int = 12,
+                  min_text: int = 2, max_text: int = 2000) -> dict:
     """
     生成页面快照。
 
@@ -663,8 +708,8 @@ def _format_fields_json(fields: dict) -> str:
 
 # ── Content 模式（重新设计）─────────────────────────────────────────────────
 
-def _extract_content_blocks(root, max_depth: int = 8,
-                            min_text: int = 2, max_text: int = 500) -> dict:
+def _extract_content_blocks(root, max_depth: int = 12,
+                            min_text: int = 2, max_text: int = 2000) -> dict:
     """
     content 模式（重新设计版）：
     - 不再在第一个有文本节点处截止，而是完整遍历 DOM
@@ -703,11 +748,8 @@ def _extract_content_blocks(root, max_depth: int = 8,
         except Exception:
             children = []
 
-        # 当前节点的直接文本
-        try:
-            raw_text = (ele.text or '').strip()
-        except Exception:
-            raw_text = ''
+        # 当前节点文本：合并子节点文本（处理反爬 span 拆分），剔除 style/script
+        raw_text = _clean_ele_text(ele)
 
         is_leaf = (not children
                    or tag in ('span', 'a', 'em', 'strong', 'b', 'i', 'time',
@@ -724,7 +766,7 @@ def _extract_content_blocks(root, max_depth: int = 8,
                 first_cls = (attrs.get('class') or '').split()[0] if attrs.get('class') else ''
                 node = {
                     'tag': tag,
-                    'text': text[:300],
+                    'text': text[:1500],
                     'loc': _suggest_locator_static(tag, attrs, text),
                 }
                 if first_cls:
@@ -784,8 +826,8 @@ def _extract_content_blocks(root, max_depth: int = 8,
     }
 
 
-def _extract_content_nodes(root, max_depth: int = 6,
-                           min_text: int = 2, max_text: int = 500) -> list:
+def _extract_content_nodes(root, max_depth: int = 12,
+                           min_text: int = 2, max_text: int = 2000) -> list:
     """兼容旧调用，内部调用新版 _extract_content_blocks"""
     return _extract_content_blocks(root, max_depth, min_text, max_text)['nodes']
 
@@ -966,14 +1008,16 @@ def query_elements(page, selector: str, fields: list,
                         ele.tag, ele.attrs, (ele.text or '').strip()[:50]
                     )
                 elif f == 'css_path':
-                    # JS 生成精确 CSS 路径（CDP 元素专用）
+                    # JS 生成精确 CSS 路径，输出带 css: 前缀可直接用于 dp query/click
                     try:
-                        record['css_path'] = ele.run_js(_JS_CSS_PATH)
+                        path = ele.run_js(_JS_CSS_PATH)
+                        record['css_path'] = f'css:{path}' if path else ''
                     except Exception:
                         record['css_path'] = ''
                 elif f == 'xpath':
                     try:
-                        record['xpath'] = ele.run_js(_JS_XPATH)
+                        path = ele.run_js(_JS_XPATH)
+                        record['xpath'] = f'xpath:{path}' if path else ''
                     except Exception:
                         record['xpath'] = ''
                 else:

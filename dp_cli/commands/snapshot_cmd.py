@@ -15,8 +15,8 @@ def register(cli):
 
     @cli.command()
     @session_option
-    @click.option('--mode', type=click.Choice(['interactive', 'content', 'full', 'text']),
-                  default='interactive', show_default=True, help='快照模式')
+    @click.option('--mode', type=click.Choice(['auto', 'interactive', 'content', 'full', 'text']),
+                  default='auto', show_default=True, help='快照模式')
     @click.option('--selector', default=None, help='限定快照范围的定位器')
     @click.option('--max-depth', default=8, help='full/content 模式最大深度', show_default=True)
     @click.option('--min-text', default=2, help='content 模式：文本最短长度过滤', show_default=True)
@@ -28,20 +28,23 @@ def register(cli):
         """获取页面快照。DrissionPage 特有的高效多维快照。
 
         \b
-        模式说明:
-          interactive  只列出可交互元素及最优定位器（默认，AI 操控最佳）
-          content      去噪内容树：自动过滤 script/style，只保留有文本的语义节点
-                       适合快速了解页面有哪些内容，找到数据所在的 CSS 类名
-          full         完整 DOM 树（lxml 高效解析，无需多次 CDP）
-          text         页面纯文本内容
+        模式说明（默认 auto，无需手动选）:
+          auto         自动检测页面类型并输出最有用信息（推荐）
+                       · 列表页 → 输出前5张卡片 + extract 一键提取命令
+                       · 表单页 → 输出所有可交互元素及定位器
+                       · 内容页 → 输出去噪语义内容树
+          interactive  强制只列出可交互元素（登录/操控场景）
+          content      强制输出语义内容树（含区块分隔标记）
+          full         完整 DOM 树（调试用）
+          text         页面纯文本
 
         \b
         示例:
-          dp snapshot
-          dp snapshot --mode content
-          dp snapshot --mode content --selector "css:.main"
-          dp snapshot --mode full
-          dp snapshot --format json
+          dp snapshot                          # 自动模式（推荐）
+          dp snapshot --mode interactive       # 找按钮/输入框
+          dp snapshot --mode content           # 看页面文字内容
+          dp snapshot --selector "css:.main"   # 限定区域
+          dp snapshot --format json            # JSON 输出给程序处理
         """
         page = _get_page(session)
         try:

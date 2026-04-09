@@ -126,29 +126,33 @@ def register(cli):
     @cli.command('query')
     @session_option
     @click.argument('selector')
-    @click.option('--fields', default='text', show_default=True,
-                  help='提取字段，逗号分隔，如 text,href,id,class,loc')
+    @click.option('--fields', default='text,loc', show_default=True,
+                  help='提取字段，逗号分隔')
     @click.option('--limit', default=200, help='最多返回多少条', show_default=True)
     @click.option('--filename', default=None, help='保存结果到 JSON 文件')
     def cmd_query(session, selector, fields, limit, filename):
-        """按选择器批量查询元素，提取指定属性。
+        """按选择器查询元素，提取内容和定位器。支持动态渲染内容。
 
         \b
-        --fields 支持的字段:
-          text   元素文本内容
-          tag    标签名
-          loc    推荐定位器（方便后续操作）
-          href   链接地址
-          src    图片/资源地址
-          id     id 属性
-          class  class 属性
-          其他   任意 HTML 属性名
+        --fields 支持的字段（默认 text,loc）:
+          text      元素文本内容
+          tag       标签名
+          loc       推荐 DrissionPage 定位器（简短，可直接用于 click/fill 等）
+          css_path  精确 CSS 路径（JS 生成，可唯一定位，适合复杂场景）
+          xpath     精确 XPath（JS 生成）
+          href      链接地址
+          src       图片/资源地址
+          id        id 属性
+          class     class 属性
+          其他      任意 HTML 属性名
 
         \b
-        示例:
-          dp query "css:.title" --fields "text,loc"
+        用法示例:
+          dp query "css:.job-name"                           # 默认返回文本+定位器
+          dp query "text:部署和支持" --fields "text,loc,css_path,tag,class"
           dp query "css:a[href]" --fields "text,href"
           dp query "xpath://h2" --fields "text,id,class"
+          dp query "css:.desc" --fields "text,css_path"     # 获取精确 CSS 路径反查
         """
         page = _get_page(session)
         field_list = [f.strip() for f in fields.split(',') if f.strip()]

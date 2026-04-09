@@ -869,6 +869,64 @@ def extract_structured(page, container: str, fields: dict,
     return results
 
 
+_JS_CSS_PATH = """
+var el = this;
+var parts = [];
+while (el && el !== document.body && el.nodeType === 1) {
+    var seg = el.tagName.toLowerCase();
+    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
+        parts.unshift('#' + el.id);
+        break;
+    }
+    var classes = Array.from(el.classList)
+        .filter(function(c) { return c.length >= 3; });
+    if (classes.length > 0) {
+        seg = '.' + classes[0];
+        var siblings = el.parentElement
+            ? Array.from(el.parentElement.querySelectorAll(':scope > ' + seg))
+            : [];
+        if (siblings.length > 1) {
+            var idx = siblings.indexOf(el) + 1;
+            seg = seg + ':nth-child(' + idx + ')';
+        }
+    } else {
+        var allSiblings = el.parentElement
+            ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
+            : [];
+        if (allSiblings.length > 1) {
+            var idx2 = Array.from(el.parentElement.children).indexOf(el) + 1;
+            seg = seg + ':nth-child(' + idx2 + ')';
+        }
+    }
+    parts.unshift(seg);
+    el = el.parentElement;
+}
+return parts.join(' > ');
+"""
+
+_JS_XPATH = """
+var el = this;
+var parts = [];
+while (el && el.nodeType === 1) {
+    var seg = el.tagName.toLowerCase();
+    if (el.id && /^[a-zA-Z][\\w-]*$/.test(el.id)) {
+        parts.unshift('//' + seg + '[@id="' + el.id + '"]');
+        return parts.join('/');
+    }
+    var siblings = el.parentElement
+        ? Array.from(el.parentElement.children).filter(function(c) { return c.tagName === el.tagName; })
+        : [];
+    if (siblings.length > 1) {
+        var idx = siblings.indexOf(el) + 1;
+        seg = seg + '[' + idx + ']';
+    }
+    parts.unshift(seg);
+    el = el.parentElement;
+}
+return '/' + parts.join('/');
+"""
+
+
 def query_elements(page, selector: str, fields: list,
                    limit: int = 200) -> list:
     """
@@ -876,13 +934,24 @@ def query_elements(page, selector: str, fields: list,
 
     :param page: ChromiumPage
     :param selector: 元素定位器
-    :param fields: 要提取的字段列表，如 ['text', 'href', 'id', 'class']
-                   'text' → 文本内容
-                   其他 → HTML 属性值
+    :param fields: 要提取的字段列表，支持：
+                   text      → 文本内容
+                   tag       → 标签名
+                   loc       → 推荐 DrissionPage 定位器（简短，可能不唯一）
+                   css_path  → 精确 CSS 路径（JS生成，从祖先到当前元素，唯一）
+                   xpath     → 精确 XPath（JS生成）
+                   其他      → HTML 属性值（href/id/class/src 等）
     :param limit: 最多返回多少条
     :return: list of dict
     """
-    eles = page.s_eles(selector)
+    need_cdp = any(f in fields for f in ('css_path', 'xpath'))
+
+    # 优先用 CDP eles（支持动态渲染内容）；静态回退用 s_eles
+    try:
+        eles = page.eles(selector, timeout=5)
+    except Exception:
+        eles = page.s_eles(selector)
+
     results = []
     for ele in list(eles)[:limit]:
         record = {}
@@ -894,10 +963,22 @@ def query_elements(page, selector: str, fields: list,
                     record['tag'] = ele.tag
                 elif f == 'loc':
                     record['loc'] = _suggest_locator_static(
-                        ele.tag, ele.attrs, (ele.text or '').strip()
+                        ele.tag, ele.attrs, (ele.text or '').strip()[:50]
                     )
+                elif f == 'css_path':
+                    # JS 生成精确 CSS 路径（CDP 元素专用）
+                    try:
+                        record['css_path'] = ele.run_js(_JS_CSS_PATH)
+                    except Exception:
+                        record['css_path'] = ''
+                elif f == 'xpath':
+                    try:
+                        record['xpath'] = ele.run_js(_JS_XPATH)
+                    except Exception:
+                        record['xpath'] = ''
                 else:
-                    record[f] = ele.attr(f) or ''
+                    val = ele.attrs.get(f, '') if hasattr(ele, 'attrs') else ''
+                    record[f] = val or ''
             except Exception:
                 record[f] = ''
         results.append(record)

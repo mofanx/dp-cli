@@ -55,6 +55,27 @@ dp extract "css:.item-card" \
   --limit 100 --output csv --filename result.csv
 ```
 
+## Project Structure
+
+```
+dp_cli/
+├── main.py              # CLI entry point (~47 lines)
+├── session.py           # Browser session management
+├── snapshot.py          # Page snapshot & data extraction engine
+├── output.py            # JSON output helpers
+└── commands/
+    ├── _utils.py        # Shared decorators & helpers
+    ├── browser.py       # open / goto / reload / close / list
+    ├── snapshot_cmd.py  # snapshot / extract / query / find / inspect
+    ├── element.py       # click / fill / select / hover / drag / check / upload
+    ├── keyboard.py      # press / type / scroll / scroll-to
+    ├── page.py          # screenshot / pdf / eval / wait / dialog
+    ├── tab.py           # tab-list / tab-new / tab-select / tab-close
+    ├── storage.py       # cookie-* / localstorage-* / sessionstorage-*
+    ├── network.py       # listen / listen-stop / http-get / http-post
+    └── misc.py          # resize / maximize / state-save / state-load / config-set
+```
+
 ## Documentation
 
 See [`skills/SKILL.md`](skills/SKILL.md) for full workflow guide and [`skills/references/commands.md`](skills/references/commands.md) for complete command reference.

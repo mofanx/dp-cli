@@ -2,6 +2,17 @@
 
 > 完整参数：`dp extract --help` / `dp query --help`
 
+## 提取流程（最佳实践）
+
+```
+1. dp snapshot                         → 识别列表结构，找到一个列表项的 ref 编号
+2. dp dom "ref:21" -d parent --depth 3 → 追溯父节点链，找到最佳容器类名
+3. dp query "css:.card" --fields "text,loc" --limit 2  → 小量验证选择器
+4. dp extract "css:.card" '{"title":"css:.name",...}'   → 批量提取
+```
+
+**关键：用 dom 命令向上追溯找容器，比猜 CSS 更准确。**
+
 ## 字段映射格式
 
 ```json
@@ -20,17 +31,20 @@
 | `multi` | `true` 返回匹配列表 |
 | `default` | 元素缺失时的回退值 |
 
-## 提取流程
-
-1. `dp snapshot` 查看页面结构，从 a11y tree 中识别列表容器
-2. `dp query` 验证选择器和字段
-3. `dp extract` 批量提取
+## 完整示例
 
 ```bash
-# 1. 验证（小量）
-dp query "css:.card-area .job-name" --fields "text,loc" --limit 3
+# 1. 快照 → 找到职位名的 ref 编号（如 ref:21）
+dp snapshot --mode brief
 
-# 2. 提取
+# 2. 追溯容器
+dp dom "ref:21" -d parent --depth 5
+# 输出: a.job-name → div.job-title → div.job-info → li.job-card-box → div.card-area
+
+# 3. 小量验证
+dp query "css:.card-area .job-name" --fields "text,loc" --limit 2
+
+# 4. 批量提取
 dp extract "css:.card-area" \
   '{"title":"css:.job-name",
     "salary":"css:.job-salary",
@@ -42,8 +56,17 @@ dp extract "css:.card-area" \
 ## 分页提取
 
 ```bash
-dp extract "css:.card" '{"title":"css:.title"}' --limit 100 --filename p1.csv
-dp click "css:.next-page"
-dp wait --loaded
-dp extract "css:.card" '{"title":"css:.title"}' --limit 100 --filename p2.csv
+for page in 1 2 3:
+  dp extract "css:.card" '{"title":"css:.title"}' --filename p${page}.csv
+  dp click "css:.next-page"    # 或 dp click "ref:N"
+  dp wait --loaded
+```
+
+## 无限滚动提取
+
+```bash
+for i in range(max_rounds):
+  dp extract "css:.item" '{"title":"css:.title"}' --filename batch_${i}.csv
+  dp scroll --y 3000
+  dp wait --loaded
 ```

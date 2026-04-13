@@ -57,6 +57,31 @@ dp open <url>
 
 **快照是你理解页面的唯一入口，拿到快照后直接用 `ref:N` 操作元素。**
 
+**重要：每次 `dp snapshot` 后编号会重新分配。操作导致页面变化后，需要重新 snapshot 获取新编号。**
+
+---
+
+## 定位语法
+
+| 语法 | 说明 | 示例 |
+|------|------|------|
+| **`ref:N`** | **快照编号（推荐）** | **`ref:5`** |
+| `text:xxx` | 文本包含 | `text:登录` |
+| `text=xxx` | 文本精确 | `text=提交` |
+| `#id` | ID | `#submit` |
+| `@attr=val` | 属性 | `@name=username` |
+| `.class` | 类名 | `.submit-btn` |
+| `css:xxx` | CSS 选择器 | `css:form > button` |
+| `xpath:xxx` | XPath | `xpath://button` |
+| `t:tag` | 标签名 | `t:button` |
+| `@@A@@B` | 多条件与 | `@@tag()=button@@text():提交` |
+
+**定位器优先级**：`ref:N` > `#id` > `@data-testid` / `@aria-label` > `text:` > `.class` > `css:` > `xpath:`
+
+属性匹配：`@class:active`(包含) `@class=active`(精确) `@class^=btn`(前缀) `@class$=large`(后缀)
+
+**快照输出的每个元素都自带推荐定位器（`→` 后面的部分），直接复制使用即可。**
+
 ---
 
 ## 通用调用逻辑
@@ -72,80 +97,148 @@ dp wait --text "xxx"    → 等待预期结果出现
 dp snapshot             → 确认操作结果（编号会刷新）
 ```
 
-**关键：用 `ref:N` 引用元素最高效，每次 snapshot 后编号会重新分配。**
+**如果点击后出现弹窗（alert/confirm/prompt），用 `dp dialog-accept` 或 `dp dialog-dismiss` 处理。**
 
 ### 场景二：批量数据提取（列表页）
 
 **优先使用批量提取，避免逐个点击的低效方式。**
 
 ```
-dp open <url> --port 9222
-dp snapshot             → 看页面结构，识别列表容器和字段
-dp query <selector>     → 验证字段选择器（先 --limit 1 小量验证）
-dp extract <container> <fields_json>  → 批量提取，保存 CSV/JSON
+dp snapshot                → 识别列表容器和字段结构
+dp dom "ref:21" -d parent --depth 3  → 追溯父节点，找到最佳容器选择器
+dp query "css:.card" --fields "text,loc" --limit 2  → 小量验证选择器
+dp extract "css:.card" '{"title":"css:.name","url":{"selector":"css:a","attr":"href"}}' --output csv --filename data.csv
 ```
 
-**从快照中找到列表容器的 CSS 选择器，用 `dp query` 验证后再 `dp extract`。**
-
-**只有在以下情况才需要逐个点击：**
-- 需要点击进入详情页获取完整信息
-- 数据是动态加载的，滚动才能触发加载
+**定位流程：snapshot 找元素 → dom 查上下文 → query 验证 → extract 批量提取。**
 
 ### 场景三：读取页面内容（文章/详情）
 
 ```
-dp open <url> --port 9222
-dp snapshot             → full 模式包含完整页面内容
-dp snapshot --mode brief → 只看结构和交互，省 token
+dp snapshot                → full 模式包含完整页面内容
+dp snapshot --mode brief   → 只看结构和交互，省 token
 dp snapshot --selector "css:.article-body"  → 只看指定区域
+dp query "ref:57" --fields "text,html"      → 提取特定内容块的文本或 HTML
 ```
 
 ### 场景四：监听网络请求（抓接口数据）
 
+**当页面数据通过 API 异步加载时，监听比 DOM 提取更高效。**
+
 ```
-dp open <url> --port 9222
-dp listen --filter "api/xxx"   → 开始监听
+dp listen --filter "api/xxx"   → 开始监听（必须在触发操作之前）
 dp click "text:加载更多"        → 触发请求
-dp listen-stop                  → 获取捕获的请求+响应体
+dp listen-stop                  → 获取捕获的请求+响应体（JSON 格式）
 ```
 
 ### 场景五：列表+详情页面
 
-**特点：页面分为列表区和详情区，点击列表项时详情内容动态更新（常见于电商、招聘、内容管理等网站）。**
+**特点：页面分为列表区和详情区，点击列表项时详情内容动态更新。**
 
 ```
-dp open <url> --port 9222
-dp snapshot             → 分析页面结构，确认列表选择器和详情容器
+dp snapshot             → 分析页面结构
 
-# 方案A：如果列表卡片已包含所需信息，优先批量提取
-dp extract "css:.list-item" '{字段1, 字段2, 字段3}'  → 一次性获取所有基本信息
+# 方案A：列表卡片已含所需信息 → 优先批量提取
+dp extract "css:.list-item" '{"title":"css:.title","desc":"css:.desc"}'
 
-# 方案B：如果需要完整详情信息，才逐个点击
-# 先通过 dp query 确认列表项索引和定位方式
+# 方案B：需要完整详情 → 逐个点击
 for i in range(n):
-  dp click <locator>  → 点击第i个列表项
+  dp click "css:.list-item" --index {i+1}
   dp wait --loaded
-  dp query "css:.detail-container"  → 提取详情
+  dp snapshot --mode brief   → 获取详情（用 brief 省 token）
+  dp query "css:.detail" --fields "text"
 ```
 
-**关键判断：先检查列表项是否已包含足够信息，避免不必要的点击。**
+### 场景六：无限滚动/分页加载
+
+```
+# 无限滚动
+for page in range(max_pages):
+  dp extract "css:.item" '{...}' --filename page_{page}.csv
+  dp scroll --y 3000
+  dp wait --loaded               → 等待新内容加载
+  dp wait --locator "css:.item:nth-child({count})"  → 或等待新元素出现
+
+# 翻页
+for page in range(max_pages):
+  dp extract "css:.item" '{...}'
+  dp click "css:.next-page"      → 或 dp click "ref:N"
+  dp wait --loaded
+```
+
+### 场景七：纯 API 数据获取（不需浏览器）
+
+**当目标是公开 API 且不需要浏览器渲染时，用 HTTP 模式最高效。**
+
+```
+dp http-get "https://api.example.com/data?page=1" --output data.json
+dp http-post "https://api.example.com/search" --data '{"keyword":"test"}' --output result.json
+```
+
+### 场景八：状态保存与恢复
+
+**登录态跨会话复用，避免重复登录。**
+
+```
+# 登录后保存
+dp state-save --filename my-site.json    → 保存 Cookie + localStorage
+
+# 下次直接恢复
+dp open --port 9222
+dp state-load --filename my-site.json
+dp goto "https://my-site.com/dashboard"  → 已登录状态
+```
+
+### 场景九：多标签页操作
+
+```
+dp tab-list                  → 查看所有标签页
+dp tab-new "https://..."     → 新建标签页
+dp tab-select 1              → 切换到第 2 个标签页（从 0 开始）
+dp snapshot                  → 操作当前标签
+dp tab-close                 → 关闭当前标签页
+```
 
 ---
 
-## 定位语法
+## 元素定位进阶
 
-| 语法 | 说明 | 示例 |
-|------|------|------|
-| `text:xxx` | 文本包含 | `text:登录` |
-| `text=xxx` | 文本精确 | `text=提交` |
-| `#id` | ID | `#submit` |
-| `@attr=val` | 属性 | `@name=username` |
-| `css:xxx` | CSS 选择器 | `css:form > button` |
-| `xpath:xxx` | XPath | `xpath://button` |
+### 用 `dp dom` 查看 DOM 上下文
 
-**定位器优先级**：`#id` > `@data-testid` / `@aria-label` > `text:` > `css:.class` > xpath
+当需要精确定位容器或了解元素结构时：
 
-**快照输出的每个元素都自带推荐定位器，直接复制使用。**
+```
+dp dom "ref:21"                     → 查看父/子/兄弟全部
+dp dom "ref:21" -d parent --depth 5 → 向上追溯 5 层，找到最佳容器
+dp dom "ref:21" -d children         → 查看子节点结构
+dp dom "ref:21" -d siblings         → 查看兄弟节点
+```
+
+### 用 `dp query --fields` 获取精确路径
+
+```
+dp query "ref:21" --fields "text,css,tag"       → 获取精确 CSS 路径
+dp query "css:.item" --fields "text,loc,xpath"   → 获取 XPath
+dp query "ref:57" --fields "text,html"           → 获取 innerHTML
+dp query "ref:57" --fields "outer_html"          → 获取完整 outerHTML
+```
+
+可用字段：`text` `tag` `loc` `css` `xpath` `html` `outer_html` `href` `src` `id` `class` 及任意 HTML 属性名。
+
+### 用 `dp inspect` 获取元素状态
+
+```
+dp inspect "ref:5" --include-rect    → 位置、尺寸
+dp inspect "ref:5" --include-style   → 计算样式（display/visibility/color等）
+```
+
+### 用 `dp eval` 执行自定义 JS（最后手段）
+
+```
+dp eval "document.title"
+dp eval "return document.querySelectorAll('.item').length"
+dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
+```
 
 ---
 
@@ -153,31 +246,40 @@ for i in range(n):
 
 ```json
 {
-  "字段名": "css:.子元素",
+  "标题": "css:.title",
   "链接": {"selector": "css:a", "attr": "href"},
   "标签列表": {"selector": "css:.tag", "multi": true},
   "可选字段": {"selector": "css:.x", "default": ""}
 }
 ```
 
+| 参数 | 说明 |
+|------|------|
+| `selector` | 子元素定位器（相对于容器） |
+| `attr` | 取属性值（href/src/data-id 等） |
+| `multi` | `true` 返回匹配列表 |
+| `default` | 元素缺失时的回退值 |
+
 ---
 
 ## 关键原则
 
-1. **先尝试连接用户浏览器** — `dp open --port 9222`，连接失败再提示用户启动调试端口
+1. **先连接用户浏览器** — `dp open --port 9222`，连接失败再提示启动
 2. **先 snapshot，后操作** — 不要猜页面结构
-3. **用 ref:N 引用元素** — 快照中每个元素都有编号，`dp click "ref:5"` 比手动拼定位器更高效
-4. **善用 brief 模式省 token** — 循环操作中用 `--mode brief`，需要完整信息时再用 full
+3. **用 ref:N 引用元素** — `dp click "ref:5"` 最高效，每次 snapshot 后编号刷新
+4. **善用 brief 模式省 token** — 循环操作中用 `--mode brief`
 5. **操作后再 snapshot 确认** — 验证结果而非假设成功
-6. **小量验证再批量** — extract 先 `--limit 1`，确认字段对了再放大
-7. **动态页面先等待** — `dp wait --loaded` 或 `dp wait --selector "css:.target"`
-8. **严禁编造数据** — 所有数据必须从页面实际提取，不得凭空编造或猜测任何信息
-9. **优先批量提取** — 列表页优先用 `dp extract`，避免逐个点击的低效方式
-10. **注意反爬机制** — 遇到加密数据（如薪资用特殊字符）、字体加密等，如实说明无法解密，不得猜测
+6. **小量验证再批量** — `dp query ... --limit 2` 确认后再 `dp extract`
+7. **动态页面先等待** — `dp wait --loaded` / `--locator` / `--text` / `--locator-gone`
+8. **严禁编造数据** — 所有数据必须从页面实际提取
+9. **优先批量提取** — 列表页优先 `dp extract`，避免逐个点击
+10. **注意反爬机制** — 加密数据如实说明 `[无法解密]`，不得猜测
+11. **善用 dom 辅助定位** — `dp dom "ref:N" -d parent` 找容器比猜 CSS 更准
+12. **截图验证** — 操作结果不确定时用 `dp screenshot` 确认视觉效果
 
 ---
 
-## 数据完整性强制验证（防止编造数据）
+## 数据完整性（防止编造数据）
 
 - 所有数据必须来自 `dp snapshot` / `dp query` / `dp extract` 的实际输出
 - 遇到字体加密、乱码等特殊字符，标记为 `[无法解密]`，不得猜测
@@ -187,7 +289,11 @@ for i in range(n):
 
 ## 故障排查
 
-- **元素找不到** → `dp snapshot` 确认元素存在 → `dp wait --selector` 等动态加载
+- **元素找不到** → `dp snapshot` 确认元素存在 → `dp wait --locator` 等动态加载
 - **浏览器连不上** → 确认 `--remote-debugging-port=9222` 启动
-- **提取为空** → `dp query <selector>` 验证选择器 → 确认内容已加载
+- **提取为空** → `dp query <selector> --limit 1` 验证选择器 → 确认内容已加载
+- **弹窗阻塞** → `dp dialog-accept` 或 `dp dialog-dismiss`
+- **iframe 内容** → DrissionPage 天然穿透 iframe，用 `dp snapshot` 直接可见
+- **定位不准** → `dp dom "ref:N" -d parent --depth 3` 查看上下文 → 用 `css` 字段获取精确路径
+- **需要 JS 兜底** → `dp eval "..."` 执行自定义 JavaScript
 - **具体命令用法** → `dp <command> --help`

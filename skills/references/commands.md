@@ -11,7 +11,7 @@
 | 浏览器 | `open`, `close`, `close-all`, `list` | 启动/关闭/列出会话 |
 | 导航 | `goto`, `reload`, `go-back`, `go-forward` | 页面跳转 |
 | 快照 | `snapshot` | 页面结构分析（核心命令） |
-| 提取 | `extract`, `query`, `find`, `inspect` | 数据提取和元素查询 |
+| 提取 | `extract`, `query`, `find`, `inspect`, `dom` | 数据提取和元素查询 |
 | 交互 | `click`, `fill`, `select`, `hover`, `scroll`, `drag` | 元素操控 |
 | 键盘 | `press`, `type` | 键盘输入 |
 | 等待 | `wait` | 等待加载/元素/文本 |

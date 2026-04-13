@@ -22,16 +22,9 @@
 
 ## 提取流程
 
-快照已自动完成第一步（检测重复模式 + 给出 extract 命令提示）：
-
-```
-#### 📋 列表区 [.job-list-container] (30个交互元素)
-  📊 检测到 15 条重复项 (容器: css:.card-area)
-  字段: job-name, job-salary, boss-name, company-location
-  💡 批量提取: dp extract "css:.card-area" '{...}'
-```
-
-基于快照提示：
+1. `dp snapshot` 查看页面结构，从 a11y tree 中识别列表容器
+2. `dp query` 验证选择器和字段
+3. `dp extract` 批量提取
 
 ```bash
 # 1. 验证（小量）

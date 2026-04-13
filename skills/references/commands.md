@@ -24,32 +24,29 @@
 
 ## snapshot 输出示例
 
-列表页（BOSS直聘）：
+基于 a11y tree，三种模式：
 
 ```
-### 页面快照
+### Page Snapshot (full)
 - URL: https://www.zhipin.com/web/geek/jobs
-- Title: 深圳招聘 - BOSS直聘
+- Title: 「深圳招聘」- BOSS直聘
+- Nodes: 957 total, 80 interactive
 
-### 页面结构 (6 个区域, 43 个可交互元素) — 列表页 | 含搜索
-
-#### 🧭 导航栏 [#header] (13个元素)
-  [0] <a> "首页" → text:首页
-  [1] <a> "职位" → text:职位
+- RootWebArea "「深圳招聘」- BOSS直聘"
+  - link "BOSS直聘" → text:BOSS直聘
+  - list
+    - listitem "首页" [level=1]
+      - link "首页" → text:首页
+    - listitem "职位" [level=1]
+      - link "职位" → text:职位
+  - textbox "搜索职位、公司" → @placeholder=搜索职位、公司
+  - link "测试开发(深圳)" → text:测试开发(深圳)
   ...
-
-#### 🔍 搜索区 [.expect-and-search] (4个元素)
-  [0] <input> role=text "搜索职位、公司" ph="搜索职位、公司" → @placeholder=搜索职位、公司
-
-#### 🏷 筛选区 [.filter-condition] (146个交互元素)
-  📊 检测到 5 条重复项 (容器: css:.condition-filter-select)
-  💡 批量提取: dp extract "css:.condition-filter-select" '{...}'
-
-#### 📋 列表区 [.job-list-container] (30个交互元素)
-  📊 检测到 15 条重复项 (容器: css:.card-area)
-  字段: job-name, job-salary, boss-name, company-location
-  💡 批量提取: dp extract "css:.card-area" '{...}'
 ```
+
+- **full（默认）**：完整内容，零截断
+- **brief**：截断长文本，跳过正文细节，保留结构+交互
+- **text**：纯文本按阅读顺序输出
 
 ## 定位语法
 

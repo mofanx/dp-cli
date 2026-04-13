@@ -7,7 +7,8 @@ import click
 
 from dp_cli.output import ok, error
 from dp_cli.snapshot import (take_snapshot, render_snapshot_text,
-                              extract_structured, query_elements)
+                              extract_structured, query_elements,
+                              take_a11y_snapshot, render_a11y_text)
 from dp_cli.commands._utils import session_option, _get_page, records_to_csv
 
 
@@ -16,16 +17,14 @@ def register(cli):
     @cli.command()
     @session_option
     @click.option('--mode',
-                  type=click.Choice(['default', 'interactive', 'content', 'text', 'legacy']),
+                  type=click.Choice(['default', 'interactive', 'content', 'text', 'a11y']),
                   default='default', show_default=True, help='快照模式')
     @click.option('--selector', default=None, help='限定快照范围的定位器')
-    @click.option('--max-depth', default=12, help='legacy 模式最大深度', show_default=True)
-    @click.option('--min-text', default=2, help='legacy 模式文本最短长度', show_default=True)
-    @click.option('--max-text', default=2000, help='legacy 模式文本最长长度', show_default=True)
     @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')
-    def snapshot(session, mode, selector, max_depth, min_text, max_text, fmt, filename):
+    @click.option('--tree', is_flag=True, help='以树状结构显示交互元素')
+    def snapshot(session, mode, selector, fmt, filename, tree):
         """获取页面快照：可交互元素 + 主体内容，一次完整呈现。
 
         \b
@@ -34,27 +33,38 @@ def register(cli):
           interactive  只输出可交互元素（按钮/输入框/链接）
           content      只输出主体内容区块（文章/列表/详情）
           text         页面全量纯文本
-          legacy       旧版 auto 模式（卡片检测+表单检测，向后兼容）
 
         \b
         示例:
           dp snapshot                          # 默认模式（推荐，大模型调用首选）
           dp snapshot --mode interactive       # 只看可操作元素
           dp snapshot --mode content           # 只看页面文字内容
+          dp snapshot --mode a11y              # 浏览器原生 a11y tree
           dp snapshot --format json            # JSON 格式输出
         """
         page = _get_page(session)
-        try:
-            data = take_snapshot(page, mode=mode, selector=selector,
-                                 max_depth=max_depth, min_text=min_text, max_text=max_text)
-        except Exception as e:
-            error(f'获取快照失败', code='SNAPSHOT_FAILED', detail=str(e))
-            return
 
-        if fmt == 'json':
-            output = json.dumps({'status': 'ok', 'data': data}, ensure_ascii=False, indent=2)
+        if mode == 'a11y':
+            try:
+                data = take_a11y_snapshot(page, selector=selector)
+            except Exception as e:
+                error(f'获取 a11y tree 失败', code='A11Y_FAILED', detail=str(e))
+                return
+            if fmt == 'json':
+                output = json.dumps({'status': 'ok', 'data': data}, ensure_ascii=False, indent=2)
+            else:
+                output = render_a11y_text(data)
         else:
-            output = render_snapshot_text(data)
+            try:
+                data = take_snapshot(page, mode=mode, selector=selector,
+                                     show_tree=tree)
+            except Exception as e:
+                error(f'获取快照失败', code='SNAPSHOT_FAILED', detail=str(e))
+                return
+            if fmt == 'json':
+                output = json.dumps({'status': 'ok', 'data': data}, ensure_ascii=False, indent=2)
+            else:
+                output = render_snapshot_text(data)
 
         if filename:
             Path(filename).write_text(output, encoding='utf-8')

@@ -6,10 +6,11 @@ from pathlib import Path
 import click
 
 from dp_cli.output import ok, error
+from dp_cli.session import save_refs
 from dp_cli.snapshot import (extract_structured, query_elements,
                               take_a11y_snapshot, render_a11y_text,
                               render_a11y_plain_text)
-from dp_cli.commands._utils import session_option, _get_page, records_to_csv
+from dp_cli.commands._utils import session_option, _get_page, records_to_csv, resolve_locator
 
 
 def register(cli):
@@ -48,15 +49,24 @@ def register(cli):
             error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
             return
 
+        # 收集 ref 映射（所有模式都收集，便于后续 ref:N 引用）
+        refs = {}
         if fmt == 'json':
+            render_a11y_text(data, refs=refs)  # 触发编号分配
             output = json.dumps({'status': 'ok', 'data': data},
                                 ensure_ascii=False, indent=2)
         elif mode == 'text':
+            render_a11y_text(data, refs=refs)  # 触发编号分配
             output = render_a11y_plain_text(data)
         elif mode == 'brief':
-            output = render_a11y_text(data, brief=True)
+            output = render_a11y_text(data, brief=True, refs=refs)
         else:
-            output = render_a11y_text(data)
+            output = render_a11y_text(data, refs=refs)
+
+        # 保存 refs 映射到 session（供 ref:N 解析使用）
+        if refs:
+            url = data.get('page', {}).get('url', '')
+            save_refs(session, url, refs)
 
         if filename:
             Path(filename).write_text(output, encoding='utf-8')
@@ -94,8 +104,9 @@ def register(cli):
           dp extract "css:.card" '{"title":"css:.title","url":{"selector":"css:a","attr":"href"}}'
 
         \b
-        先用 snapshot --mode content 了解页面结构，再用 extract 定位容器和字段。
+        先用 snapshot 了解页面结构，再用 extract 定位容器和字段。
         """
+        container = resolve_locator(container, session)
         page = _get_page(session)
         try:
             fields = json.loads(fields_json)
@@ -153,6 +164,7 @@ def register(cli):
           dp query "xpath://h2" --fields "text,id,class"
           dp query "css:.desc" --fields "text,css_path"     # 获取精确 CSS 路径反查
         """
+        selector = resolve_locator(selector, session)
         page = _get_page(session)
         field_list = [f.strip() for f in fields.split(',') if f.strip()]
         try:
@@ -179,8 +191,9 @@ def register(cli):
         示例:
           dp find "css:a"
           dp find "css:a" --all
-          dp find "text:登录"
+          dp find "ref:5"
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             if find_all:
@@ -220,9 +233,10 @@ def register(cli):
         \b
         示例:
           dp inspect "#submit-btn"
-          dp inspect "text:登录" --include-rect
+          dp inspect "ref:5" --include-rect
           dp inspect "css:input" --include-style
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)

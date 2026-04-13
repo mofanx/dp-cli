@@ -3,7 +3,7 @@
 import click
 
 from dp_cli.output import ok, error
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import session_option, _get_page, resolve_locator
 
 
 def register(cli):
@@ -21,9 +21,11 @@ def register(cli):
         示例:
           dp click "text:登录"
           dp click "#submit-btn"
+          dp click "ref:5"              # 使用快照编号
           dp click "css:.btn-primary" --by-js
           dp click "css:li" --index 3
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -50,6 +52,7 @@ def register(cli):
         示例:
           dp dblclick "#editable-cell"
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -75,9 +78,10 @@ def register(cli):
         \b
         示例:
           dp fill "@name=username" admin
-          dp fill "#password" "my password"
+          dp fill "ref:15" "Python"     # 使用快照编号
           dp fill "css:textarea" "多行\\n文本"
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -96,6 +100,7 @@ def register(cli):
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
     def cmd_clear(locator, session, index, timeout):
         """清空输入框内容。"""
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -124,6 +129,7 @@ def register(cli):
           dp select "css:select#role" admin --by-text
           dp select "#size" "" --by-index 2
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -155,6 +161,7 @@ def register(cli):
           dp hover "css:.menu-item"
           dp hover "#tooltip-trigger" --offset-x 10 --offset-y 5
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, index=index, timeout=timeout)
@@ -180,6 +187,8 @@ def register(cli):
           dp drag "#draggable" "#droptarget"
           dp drag "css:.drag-item" "css:.drop-zone" --duration 1.0
         """
+        from_locator = resolve_locator(from_locator, session)
+        to_locator = resolve_locator(to_locator, session)
         page = _get_page(session)
         try:
             src = page.ele(from_locator, timeout=timeout)
@@ -208,6 +217,7 @@ def register(cli):
           dp check "#agree-terms"
           dp check "@name=remember" --uncheck
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, timeout=timeout)
@@ -234,6 +244,7 @@ def register(cli):
           dp upload "@name=avatar" /path/to/image.png
           dp upload "css:input[type=file]" ./document.pdf
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator, timeout=timeout)

@@ -46,15 +46,16 @@ dp open <url>
 
 快照基于浏览器原生 a11y tree，输出：
 - 页面完整结构（标题层级、区域划分、列表）
-- 所有可交互元素及其定位器（link/button/input 等，可直接用于 `dp click`/`dp fill`）
+- 所有可交互元素及其定位器（link/button/input 等）
 - 内容文本（段落、代码块、列表项）
+- **每个元素都有 `[N]` 编号**，可直接用 `ref:N` 引用操作
 
 三种模式：
 - `dp snapshot` — **full**（默认），完整内容，首次调用用这个
 - `dp snapshot --mode brief` — 精简模式，截断长文本保留结构+交互，省 token
 - `dp snapshot --mode text` — 纯文本，按阅读顺序输出
 
-**快照是你理解页面的唯一入口，拿到快照后再决定下一步操作。**
+**快照是你理解页面的唯一入口，拿到快照后直接用 `ref:N` 操作元素。**
 
 ---
 
@@ -64,14 +65,14 @@ dp open <url>
 
 ```
 dp open <url> --port 9222  → 连接用户浏览器并打开页面
-dp snapshot             → 看页面结构，找到目标元素的定位器
-dp fill <locator> <val> → 填写输入框
-dp click <locator>      → 点击按钮/链接
+dp snapshot             → 看页面结构，每个元素有 [N] 编号
+dp fill "ref:15" <val>  → 用编号填写输入框
+dp click "ref:19"      → 用编号点击按钮/链接
 dp wait --text "xxx"    → 等待预期结果出现
-dp snapshot             → 确认操作结果
+dp snapshot             → 确认操作结果（编号会刷新）
 ```
 
-**关键：每次操作后用 snapshot 确认结果，不要假设操作一定成功。**
+**关键：用 `ref:N` 引用元素最高效，每次 snapshot 后编号会重新分配。**
 
 ### 场景二：批量数据提取（列表页）
 
@@ -165,7 +166,7 @@ for i in range(n):
 
 1. **先尝试连接用户浏览器** — `dp open --port 9222`，连接失败再提示用户启动调试端口
 2. **先 snapshot，后操作** — 不要猜页面结构
-3. **信任快照的定位器** — 它已经选了最稳定的（id > aria > text > css）
+3. **用 ref:N 引用元素** — 快照中每个元素都有编号，`dp click "ref:5"` 比手动拼定位器更高效
 4. **善用 brief 模式省 token** — 循环操作中用 `--mode brief`，需要完整信息时再用 full
 5. **操作后再 snapshot 确认** — 验证结果而非假设成功
 6. **小量验证再批量** — extract 先 `--limit 1`，确认字段对了再放大

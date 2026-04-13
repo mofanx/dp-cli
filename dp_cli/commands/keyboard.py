@@ -3,7 +3,7 @@
 import click
 
 from dp_cli.output import ok, error
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import session_option, _get_page, resolve_locator
 
 
 def register(cli):
@@ -111,8 +111,9 @@ def register(cli):
         \b
         示例:
           dp scroll-to "#footer"
-          dp scroll-to "text:更多内容"
+          dp scroll-to "ref:20"
         """
+        locator = resolve_locator(locator, session)
         page = _get_page(session)
         try:
             ele = page.ele(locator)

@@ -149,6 +149,33 @@ def get_browser(session_name: str = 'default', headless: bool = False,
     return page
 
 
+# ── Ref 映射管理 ─────────────────────────────────────────────────────────────
+
+
+def save_refs(session_name: str, url: str, refs: dict) -> None:
+    """保存快照编号映射到 refs.json"""
+    from datetime import datetime
+    data = {
+        'url': url,
+        'timestamp': datetime.now().isoformat(),
+        'refs': refs,
+    }
+    f = get_session_dir() / f'{session_name}_refs.json'
+    f.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+
+
+def load_refs(session_name: str) -> dict:
+    """加载快照编号映射，返回 {ref_id: {locator, role, name, backendNodeId}}"""
+    f = get_session_dir() / f'{session_name}_refs.json'
+    if not f.exists():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding='utf-8'))
+        return data.get('refs', {})
+    except Exception:
+        return {}
+
+
 def close_browser(session_name: str = 'default', del_data: bool = False) -> bool:
     """关闭指定会话的浏览器"""
     from DrissionPage import ChromiumPage

@@ -44,6 +44,11 @@ _CONTENT_ROLES = frozenset({
     'legend', 'LineBreak',
 })
 
+# 获得 ref 编号的内容角色（有意义的内容块，AI 可通过编号引用提取）
+_REF_CONTENT_ROLES = frozenset({
+    'heading', 'paragraph', 'code', 'blockquote', 'article', 'figure',
+})
+
 
 def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
     """
@@ -69,10 +74,12 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
 
         stats = _compute_stats(normalized)
 
-        # 为交互节点批量生成定位器
-        interactive = [n for n in normalized
-                       if n['role'] in _INTERACTIVE_ROLES and n.get('backendNodeId')]
-        _generate_locators_batch(page, interactive)
+        # 为交互节点 + 可引用内容节点批量生成定位器
+        need_locator = [n for n in normalized
+                        if n.get('backendNodeId') and (
+                            n['role'] in _INTERACTIVE_ROLES or
+                            n['role'] in _REF_CONTENT_ROLES)]
+        _generate_locators_batch(page, need_locator)
 
         return {
             'page': page_info,
@@ -113,39 +120,61 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
 
 
 def render_a11y_text(snapshot: dict, verbose: bool = False,
-                     brief: bool = False) -> str:
+                     brief: bool = False, refs: dict = None) -> str:
     """
     将 a11y tree 数据渲染为人类/AI 可读文本。
 
     :param snapshot: take_a11y_snapshot 返回的数据
     :param verbose: True 时显示 ignored 节点和完整属性
     :param brief: True 时截断内容文本，保留结构+交互，省 token
+    :param refs: 可选，传入空 dict 时会被填充为 {ref_id: {locator, role, name, backendNodeId}}
     :return: 格式化的文本
     """
     lines = []
     page_info = snapshot.get('page', {})
     stats = snapshot.get('stats', {})
-    method = snapshot.get('method', 'unknown')
+
+    # 渲染上下文：编号计数器 + ref 映射收集
+    ctx = {'counter': 0, 'refs': {} if refs is None else refs}
 
     mode_label = 'brief' if brief else 'full'
-    lines.append(f'### Page Snapshot ({mode_label})')
+    # 头部信息先占位，渲染完成后回填 ref 统计
+    header_idx = len(lines)
+    lines.append('')  # placeholder
     lines.append(f"- URL: {page_info.get('url', '')}")
     lines.append(f"- Title: {page_info.get('title', '')}")
-    lines.append(f"- Nodes: {stats.get('total', 0)} total, "
-                 f"{stats.get('interactive', 0)} interactive")
+    stats_idx = len(lines)
+    lines.append('')  # placeholder for stats line
     if brief:
         lines.append('- Note: 内容已精简，如需完整文本请用 --mode full 或 --selector')
     lines.append('')
 
     if snapshot.get('error'):
         lines.append(f"⚠ {snapshot['error']}")
+        lines[header_idx] = f'### Page Snapshot ({mode_label})'
+        lines[stats_idx] = (f"- Nodes: {stats.get('total', 0)} total, "
+                            f"{stats.get('interactive', 0)} interactive")
         return '\n'.join(lines)
 
     tree = snapshot.get('tree', {})
     if tree:
-        _render_node(tree, lines, depth=0, verbose=verbose, brief=brief)
+        _render_node(tree, lines, depth=0, verbose=verbose, brief=brief,
+                     ctx=ctx)
     else:
         lines.append('（a11y tree 为空）')
+
+    # 回填头部：包含 ref 统计
+    ref_count = ctx['counter']
+    lines[header_idx] = f'### Page Snapshot ({mode_label})'
+    lines[stats_idx] = (f"- Nodes: {stats.get('total', 0)} total, "
+                        f"{stats.get('interactive', 0)} interactive, "
+                        f"{ref_count} refs")
+    if ref_count > 0:
+        lines[stats_idx] += f" — 使用 ref:N 引用元素，如 dp click \"ref:1\""
+
+    # 如果调用方传了 refs dict，确保数据已填充
+    if refs is not None:
+        refs.update(ctx['refs'])
 
     return '\n'.join(lines)
 
@@ -322,11 +351,12 @@ def _get_dom_attrs(page, backend_node_id: int) -> dict:
 
 def _render_node(node: dict, lines: list, depth: int = 0,
                  verbose: bool = False, parent_text: str = '',
-                 brief: bool = False) -> None:
+                 brief: bool = False, ctx: dict = None) -> None:
     """递归渲染单个 a11y 节点为文本行
 
     :param parent_text: 父节点已显示的文本，用于消除子节点冗余
     :param brief: True 时截断内容文本（paragraph/code 等）
+    :param ctx: 渲染上下文 {'counter': int, 'refs': dict}，用于分配 [N] 编号
     """
     role = node.get('role', '')
     name = node.get('name', '')
@@ -337,7 +367,7 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if ignored and not verbose:
         for child in children:
             _render_node(child, lines, depth, verbose=verbose,
-                         parent_text=parent_text, brief=brief)
+                         parent_text=parent_text, brief=brief, ctx=ctx)
         return
 
     # 跳过 InlineTextBox（永远是 StaticText 的子节点，完全冗余）
@@ -366,7 +396,7 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if role in ('generic', 'none', '') and not name:
         for child in children:
             _render_node(child, lines, depth, verbose=verbose,
-                         parent_text=parent_text, brief=brief)
+                         parent_text=parent_text, brief=brief, ctx=ctx)
         return
 
     # 文本与父节点重复时，跳过纯文本包装节点（无结构子节点的小包装）
@@ -376,6 +406,26 @@ def _render_node(node: dict, lines: list, depth: int = 0,
             c.get('role', '') not in _TEXT_ROLES for c in children)
         if not has_structural_child:
             return
+
+    # ── 判断是否分配 ref 编号 ──
+    ref_label = ''
+    loc = node.get('locator')
+    if ctx is not None:
+        should_ref = False
+        if role in _INTERACTIVE_ROLES and loc:
+            should_ref = True
+        elif role in _REF_CONTENT_ROLES and display_name:
+            should_ref = True
+        if should_ref:
+            ctx['counter'] += 1
+            ref_id = ctx['counter']
+            ref_label = f'[{ref_id}] '
+            ctx['refs'][str(ref_id)] = {
+                'locator': loc,
+                'role': role,
+                'name': (display_name or name or '')[:100],
+                'backendNodeId': node.get('backendNodeId'),
+            }
 
     # 构建行内容
     indent = '  ' * depth
@@ -413,7 +463,6 @@ def _render_node(node: dict, lines: list, depth: int = 0,
         parts.append(f'value="{value}"')
 
     # 定位器
-    loc = node.get('locator')
     if loc:
         parts.append(f'→ {loc}')
 
@@ -427,13 +476,13 @@ def _render_node(node: dict, lines: list, depth: int = 0,
         parts.append(f'desc="{desc}"')
 
     if parts:
-        lines.append(f"{indent}- {' '.join(parts)}")
+        lines.append(f"{indent}- {ref_label}{' '.join(parts)}")
 
     # 递归渲染子节点，传递当前节点的文本上下文
-    ctx = display_name or parent_text
+    text_ctx = display_name or parent_text
     for child in children:
         _render_node(child, lines, depth + 1, verbose=verbose,
-                     parent_text=ctx, brief=brief)
+                     parent_text=text_ctx, brief=brief, ctx=ctx)
 
 
 def _collect_text(node: dict, _depth: int = 0) -> str:

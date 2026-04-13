@@ -24,25 +24,29 @@
 
 ## snapshot 输出示例
 
-基于 a11y tree，三种模式：
+基于 a11y tree，每个元素有 `[N]` 编号，可用 `ref:N` 引用：
 
 ```
 ### Page Snapshot (full)
 - URL: https://www.zhipin.com/web/geek/jobs
 - Title: 「深圳招聘」- BOSS直聘
-- Nodes: 957 total, 80 interactive
+- Nodes: 961 total, 80 interactive, 83 refs
 
 - RootWebArea "「深圳招聘」- BOSS直聘"
-  - link "BOSS直聘" → text:BOSS直聘
+  - [1] link "BOSS直聘" → text:BOSS直聘
   - list
     - listitem "首页" [level=1]
-      - link "首页" → text:首页
+      - [2] link "首页" → text:首页
     - listitem "职位" [level=1]
-      - link "职位" → text:职位
-  - textbox "搜索职位、公司" → @placeholder=搜索职位、公司
-  - link "测试开发(深圳)" → text:测试开发(深圳)
+      - [3] link "职位" → text:职位
+  - [17] textbox "搜索职位、公司" → @placeholder=搜索职位、公司
+  - [21] link "Python开发" → text:Python开发
+  - [56] heading "职位描述" [level=3] → .title
+  - [57] paragraph "岗位职责：1. 负责..."
   ...
 ```
+
+操作时直接用编号：`dp click "ref:21"` / `dp fill "ref:17" "Python"` / `dp query "ref:57"`
 
 - **full（默认）**：完整内容，零截断
 - **brief**：截断长文本，跳过正文细节，保留结构+交互
@@ -52,6 +56,7 @@
 
 | 语法 | 说明 | 示例 |
 |------|------|------|
+| **`ref:N`** | **快照编号（推荐）** | **`ref:5`** |
 | `text:xxx` | 文本包含 | `text:登录` |
 | `text=xxx` | 文本精确 | `text=提交` |
 | `#id` | ID | `#submit` |

@@ -89,7 +89,7 @@ def extract_structured(page, container: str, fields: dict,
                 if multi:
                     eles = item.s_eles(sel)
                     record[field_name] = [
-                        (e.attr(attr) if attr else (e.text or '').strip())
+                        (e.attr(attr) if attr else (e.raw_text or '').strip())
                         for e in eles
                     ]
                 else:
@@ -98,7 +98,7 @@ def extract_structured(page, container: str, fields: dict,
                         if attr:
                             record[field_name] = ele.attr(attr) or default
                         else:
-                            record[field_name] = (ele.text or '').strip() or default
+                            record[field_name] = (ele.raw_text or '').strip() or default
                     else:
                         record[field_name] = default
             except Exception:
@@ -123,12 +123,12 @@ def query_elements(page, selector: str, fields: list,
         for f in fields:
             try:
                 if f == 'text':
-                    record['text'] = (ele.text or '').strip()
+                    record['text'] = (ele.raw_text or '').strip()
                 elif f == 'tag':
                     record['tag'] = ele.tag
                 elif f == 'loc':
                     record['loc'] = suggest_locator(
-                        ele.tag, ele.attrs, (ele.text or '').strip()[:50]
+                        ele.tag, ele.attrs, (ele.raw_text or '').strip()[:50]
                     )
                 elif f == 'css_path':
                     try:

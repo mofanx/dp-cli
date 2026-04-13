@@ -205,7 +205,7 @@ def register(cli):
                     results.append({
                         'index': i,
                         'tag': ele.tag,
-                        'text': (ele.raw_text or '').strip()[:100],
+                        'text': (ele.raw_text or '').strip(),
                         'attrs': {k: v for k, v in ele.attrs.items()
                                   if k in ('id', 'class', 'href', 'name', 'type', 'value')},
                     })
@@ -217,7 +217,7 @@ def register(cli):
                     return
                 ok({'found': True,
                     'tag': ele.tag,
-                    'text': (ele.raw_text or '').strip()[:100],
+                    'text': (ele.raw_text or '').strip(),
                     'attrs': ele.attrs})
         except Exception as e:
             error(f'查找失败: {locator}', code='FIND_FAILED', detail=str(e))

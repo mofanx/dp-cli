@@ -1,31 +1,23 @@
 # -*- coding:utf-8 -*-
 """
-dp-cli snapshot 模块（v2 重构版）
+dp-cli snapshot 模块
 
-核心设计：
-  1. 页面结构分析：基于 DOM JS 识别模块（导航/搜索/列表/内容/页脚）
-  2. 交互元素按区域分组：不再是扁平列表，而是归属到页面模块
-  3. 重复模式检测：自动识别列表，生成自动化提示
-  4. 主体内容提取：评分公式找最佳内容区块，输出 markdown
+基于浏览器原生 a11y tree（无障碍树）的页面快照系统。
+通过 CDP Accessibility API 获取，通用性极强，适用于 95%+ 的网站。
 
 模块组成：
-  - core.py       take_snapshot() 主函数
-  - js_scripts.py JS 脚本常量
-  - render.py     文本渲染
+  - a11y.py       核心：a11y tree 获取 + 多模式渲染（full/brief/text）
   - extract.py    数据提取（extract_structured / query_elements）
-  - utils.py      共享工具
-  - a11y.py       a11y tree（CDP 原生无障碍树）
+  - utils.py      共享工具（定位器生成等）
+  - js_scripts.py JS 降级脚本（CDP 不可用时的 fallback）
 """
-from .core import take_snapshot
-from .render import render_snapshot_text
+from .a11y import take_a11y_snapshot, render_a11y_text, render_a11y_plain_text
 from .extract import extract_structured, query_elements
-from .a11y import take_a11y_snapshot, render_a11y_text
 
 __all__ = [
-    'take_snapshot',
-    'render_snapshot_text',
-    'extract_structured',
-    'query_elements',
     'take_a11y_snapshot',
     'render_a11y_text',
+    'render_a11y_plain_text',
+    'extract_structured',
+    'query_elements',
 ]

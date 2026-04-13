@@ -112,12 +112,14 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
     }
 
 
-def render_a11y_text(snapshot: dict, verbose: bool = False) -> str:
+def render_a11y_text(snapshot: dict, verbose: bool = False,
+                     brief: bool = False) -> str:
     """
     将 a11y tree 数据渲染为人类/AI 可读文本。
 
     :param snapshot: take_a11y_snapshot 返回的数据
     :param verbose: True 时显示 ignored 节点和完整属性
+    :param brief: True 时截断内容文本，保留结构+交互，省 token
     :return: 格式化的文本
     """
     lines = []
@@ -125,13 +127,14 @@ def render_a11y_text(snapshot: dict, verbose: bool = False) -> str:
     stats = snapshot.get('stats', {})
     method = snapshot.get('method', 'unknown')
 
-    lines.append('### A11y Tree Snapshot')
+    mode_label = 'brief' if brief else 'full'
+    lines.append(f'### Page Snapshot ({mode_label})')
     lines.append(f"- URL: {page_info.get('url', '')}")
     lines.append(f"- Title: {page_info.get('title', '')}")
-    lines.append(f"- Method: {method}")
     lines.append(f"- Nodes: {stats.get('total', 0)} total, "
-                 f"{stats.get('interactive', 0)} interactive, "
-                 f"{stats.get('ignored', 0)} ignored")
+                 f"{stats.get('interactive', 0)} interactive")
+    if brief:
+        lines.append('- Note: 内容已精简，如需完整文本请用 --mode full 或 --selector')
     lines.append('')
 
     if snapshot.get('error'):
@@ -140,11 +143,26 @@ def render_a11y_text(snapshot: dict, verbose: bool = False) -> str:
 
     tree = snapshot.get('tree', {})
     if tree:
-        _render_node(tree, lines, depth=0, verbose=verbose)
+        _render_node(tree, lines, depth=0, verbose=verbose, brief=brief)
     else:
         lines.append('（a11y tree 为空）')
 
     return '\n'.join(lines)
+
+
+def render_a11y_plain_text(snapshot: dict) -> str:
+    """
+    将 a11y tree 扁平化为纯文本（按阅读顺序）。
+
+    :param snapshot: take_a11y_snapshot 返回的数据
+    :return: 纯文本字符串
+    """
+    tree = snapshot.get('tree', {})
+    if not tree:
+        return ''
+    parts = []
+    _collect_plain_text(tree, parts)
+    return '\n'.join(parts)
 
 
 # ── CDP 获取函数 ──────────────────────────────────────────────────────────────
@@ -303,10 +321,12 @@ def _get_dom_attrs(page, backend_node_id: int) -> dict:
 
 
 def _render_node(node: dict, lines: list, depth: int = 0,
-                 verbose: bool = False, parent_text: str = '') -> None:
+                 verbose: bool = False, parent_text: str = '',
+                 brief: bool = False) -> None:
     """递归渲染单个 a11y 节点为文本行
 
     :param parent_text: 父节点已显示的文本，用于消除子节点冗余
+    :param brief: True 时截断内容文本（paragraph/code 等）
     """
     role = node.get('role', '')
     name = node.get('name', '')
@@ -317,7 +337,7 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if ignored and not verbose:
         for child in children:
             _render_node(child, lines, depth, verbose=verbose,
-                         parent_text=parent_text)
+                         parent_text=parent_text, brief=brief)
         return
 
     # 跳过 InlineTextBox（永远是 StaticText 的子节点，完全冗余）
@@ -328,6 +348,9 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if role == 'StaticText':
         text = name.strip()
         if not text or (parent_text and text in parent_text):
+            return
+        # brief 模式：跳过独立文本节点（正文细节，概览不需要）
+        if brief:
             return
         # 独立文本节点：直接输出文本内容（不显示 StaticText 角色名）
         indent = '  ' * depth
@@ -343,15 +366,15 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if role in ('generic', 'none', '') and not name:
         for child in children:
             _render_node(child, lines, depth, verbose=verbose,
-                         parent_text=parent_text)
+                         parent_text=parent_text, brief=brief)
         return
 
-    # 文本与父节点重复时，跳过（仅限非交互的纯文本容器）
+    # 文本与父节点重复时，跳过纯文本包装节点（无结构子节点的小包装）
     if (display_name and parent_text and display_name in parent_text
             and role not in _INTERACTIVE_ROLES):
-        has_interactive_child = any(
-            c.get('role', '') in _INTERACTIVE_ROLES for c in children)
-        if not has_interactive_child:
+        has_structural_child = any(
+            c.get('role', '') not in _TEXT_ROLES for c in children)
+        if not has_structural_child:
             return
 
     # 构建行内容
@@ -362,9 +385,12 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if role:
         parts.append(role)
 
-    # 名字/文本
-    if display_name:
-        parts.append(f'"{display_name}"')
+    # 名字/文本（brief 模式下截断内容角色的文本）
+    shown_name = display_name
+    if brief and shown_name and role in _CONTENT_ROLES and len(shown_name) > 80:
+        shown_name = shown_name[:80] + '...'
+    if shown_name:
+        parts.append(f'"{shown_name}"')
 
     # 关键属性
     props = node.get('properties', {})
@@ -407,7 +433,7 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     ctx = display_name or parent_text
     for child in children:
         _render_node(child, lines, depth + 1, verbose=verbose,
-                     parent_text=ctx)
+                     parent_text=ctx, brief=brief)
 
 
 def _collect_text(node: dict, _depth: int = 0) -> str:
@@ -436,3 +462,44 @@ def _collect_text(node: dict, _depth: int = 0) -> str:
     if parts:
         return ''.join(parts).strip()
     return ''
+
+
+# ── 纯文本渲染 ──────────────────────────────────────────────────────────────────────
+
+
+# 块级角色：渲染纯文本时在前后插入换行
+_BLOCK_ROLES = frozenset({
+    'paragraph', 'heading', 'listitem', 'code', 'blockquote',
+    'figure', 'separator', 'article', 'main', 'banner', 'contentinfo',
+    'navigation', 'complementary', 'search', 'region', 'form',
+})
+
+
+def _collect_plain_text(node: dict, parts: list) -> None:
+    """递归收集节点的可见文本（按阅读顺序）"""
+    role = node.get('role', '')
+    name = node.get('name', '')
+    children = node.get('children', [])
+
+    if node.get('ignored', False):
+        for child in children:
+            _collect_plain_text(child, parts)
+        return
+
+    if role in _TEXT_ROLES:
+        text = name.strip()
+        if text:
+            parts.append(text)
+        return
+
+    if role == 'InlineTextBox':
+        return
+
+    # 块级元素：收集完子节点后加换行
+    is_block = role in _BLOCK_ROLES
+
+    for child in children:
+        _collect_plain_text(child, parts)
+
+    if is_block and parts and parts[-1] != '':
+        parts.append('')  # 空行分隔块级元素

@@ -6,9 +6,9 @@ from pathlib import Path
 import click
 
 from dp_cli.output import ok, error
-from dp_cli.snapshot import (take_snapshot, render_snapshot_text,
-                              extract_structured, query_elements,
-                              take_a11y_snapshot, render_a11y_text)
+from dp_cli.snapshot import (extract_structured, query_elements,
+                              take_a11y_snapshot, render_a11y_text,
+                              render_a11y_plain_text)
 from dp_cli.commands._utils import session_option, _get_page, records_to_csv
 
 
@@ -17,54 +17,46 @@ def register(cli):
     @cli.command()
     @session_option
     @click.option('--mode',
-                  type=click.Choice(['default', 'interactive', 'content', 'text', 'a11y']),
-                  default='default', show_default=True, help='快照模式')
-    @click.option('--selector', default=None, help='限定快照范围的定位器')
+                  type=click.Choice(['full', 'brief', 'text']),
+                  default='full', show_default=True, help='快照模式')
+    @click.option('--selector', default=None, help='限定快照范围的 CSS 选择器')
     @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')
-    @click.option('--tree', is_flag=True, help='以树状结构显示交互元素')
-    def snapshot(session, mode, selector, fmt, filename, tree):
-        """获取页面快照：可交互元素 + 主体内容，一次完整呈现。
+    def snapshot(session, mode, selector, fmt, filename):
+        """获取页面快照（基于浏览器原生 a11y tree，通用性极强）。
 
         \b
-        模式说明（默认 default）:
-          default      【推荐】CDP 一次采集：可交互元素（a11y tree）+ 主体内容（视觉面积优先）
-          interactive  只输出可交互元素（按钮/输入框/链接）
-          content      只输出主体内容区块（文章/列表/详情）
-          text         页面全量纯文本
+        模式说明（默认 full）:
+          full   【默认】完整页面快照，包含所有内容和交互元素
+          brief  精简模式，保留结构+交互，截断长文本（省 token）
+          text   纯文本模式，按阅读顺序输出可见文本
 
         \b
         示例:
-          dp snapshot                          # 默认模式（推荐，大模型调用首选）
-          dp snapshot --mode interactive       # 只看可操作元素
-          dp snapshot --mode content           # 只看页面文字内容
-          dp snapshot --mode a11y              # 浏览器原生 a11y tree
+          dp snapshot                          # 完整快照（推荐首次调用）
+          dp snapshot --mode brief             # 精简模式（省 token，适合循环调用）
+          dp snapshot --mode text              # 纯文本（全量文字内容）
+          dp snapshot --selector ".main"        # 只获取指定区域
           dp snapshot --format json            # JSON 格式输出
         """
         page = _get_page(session)
 
-        if mode == 'a11y':
-            try:
-                data = take_a11y_snapshot(page, selector=selector)
-            except Exception as e:
-                error(f'获取 a11y tree 失败', code='A11Y_FAILED', detail=str(e))
-                return
-            if fmt == 'json':
-                output = json.dumps({'status': 'ok', 'data': data}, ensure_ascii=False, indent=2)
-            else:
-                output = render_a11y_text(data)
+        try:
+            data = take_a11y_snapshot(page, selector=selector)
+        except Exception as e:
+            error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
+            return
+
+        if fmt == 'json':
+            output = json.dumps({'status': 'ok', 'data': data},
+                                ensure_ascii=False, indent=2)
+        elif mode == 'text':
+            output = render_a11y_plain_text(data)
+        elif mode == 'brief':
+            output = render_a11y_text(data, brief=True)
         else:
-            try:
-                data = take_snapshot(page, mode=mode, selector=selector,
-                                     show_tree=tree)
-            except Exception as e:
-                error(f'获取快照失败', code='SNAPSHOT_FAILED', detail=str(e))
-                return
-            if fmt == 'json':
-                output = json.dumps({'status': 'ok', 'data': data}, ensure_ascii=False, indent=2)
-            else:
-                output = render_snapshot_text(data)
+            output = render_a11y_text(data)
 
         if filename:
             Path(filename).write_text(output, encoding='utf-8')

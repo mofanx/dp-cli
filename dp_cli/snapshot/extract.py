@@ -130,18 +130,22 @@ def query_elements(page, selector: str, fields: list,
                     record['loc'] = suggest_locator(
                         ele.tag, ele.attrs, (ele.raw_text or '').strip()[:50]
                     )
-                elif f == 'css_path':
+                elif f in ('css', 'css_path'):
                     try:
                         path = ele.run_js(_JS_CSS_PATH)
-                        record['css_path'] = f'css:{path}' if path else ''
+                        record['css'] = f'css:{path}' if path else ''
                     except Exception:
-                        record['css_path'] = ''
+                        record['css'] = ''
                 elif f == 'xpath':
                     try:
                         path = ele.run_js(_JS_XPATH)
                         record['xpath'] = f'xpath:{path}' if path else ''
                     except Exception:
                         record['xpath'] = ''
+                elif f == 'html':
+                    record['html'] = ele.inner_html or ''
+                elif f == 'outer_html':
+                    record['outer_html'] = ele.html or ''
                 else:
                     val = ele.attrs.get(f, '') if hasattr(ele, 'attrs') else ''
                     record[f] = val or ''

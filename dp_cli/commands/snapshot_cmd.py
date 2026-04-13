@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""快照与数据提取命令: snapshot / extract / query / find / inspect"""
+"""快照与数据提取命令: snapshot / extract / query / find / inspect / dom"""
 import json
 from pathlib import Path
 
@@ -10,6 +10,7 @@ from dp_cli.session import save_refs
 from dp_cli.snapshot import (extract_structured, query_elements,
                               take_a11y_snapshot, render_a11y_text,
                               render_a11y_plain_text)
+from dp_cli.snapshot.utils import suggest_locator
 from dp_cli.commands._utils import session_option, _get_page, records_to_csv, resolve_locator
 
 
@@ -146,25 +147,23 @@ def register(cli):
 
         \b
         --fields 支持的字段（默认 text,loc）:
-          text      元素文本内容
-          tag       标签名
-          loc       推荐 DrissionPage 定位器（简短，可直接用于 click/fill 等）
-          css_path  精确 CSS 路径（JS 生成，可唯一定位，适合复杂场景）
-          xpath     精确 XPath（JS 生成）
-          href      链接地址
-          src       图片/资源地址
-          id        id 属性
-          class     class 属性
-          其他      任意 HTML 属性名
+          text        元素可见文本（raw_text，过滤隐藏反爬文本）
+          tag         标签名
+          loc         推荐定位器（简短，可直接用于 click/fill 等）
+          css         精确 CSS 路径（JS 生成，可唯一定位）
+          xpath       精确 XPath（JS 生成）
+          html        innerHTML
+          outer_html  完整 outerHTML
+          href/src/id/class  常用属性
+          其他        任意 HTML 属性名
 
         \b
         用法示例:
           dp query "css:.job-name"                           # 默认返回文本+定位器
           dp query "ref:57"                                  # 用快照编号查询
-          dp query "text:部署和支持" --fields "text,loc,css_path,tag,class"
+          dp query "ref:57" --fields "text,css,tag,class"   # 获取精确 CSS 路径
           dp query "css:a[href]" --fields "text,href"
-          dp query "xpath://h2" --fields "text,id,class"
-          dp query "css:.desc" --fields "text,css_path"     # 获取精确 CSS 路径反查
+          dp query "css:.desc" --fields "text,html"         # 获取 innerHTML
         """
         selector = resolve_locator(selector, session)
         page = _get_page(session)
@@ -247,7 +246,7 @@ def register(cli):
                 return
             info = {
                 'tag': ele.tag,
-                'text': (ele.raw_text or '').strip()[:200],
+                'text': (ele.raw_text or '').strip(),
                 'attrs': ele.attrs,
                 'states': {
                     'is_displayed': ele.states.is_displayed,
@@ -259,9 +258,9 @@ def register(cli):
             if include_rect:
                 rect = ele.rect
                 info['rect'] = {
-                    'x': rect.x, 'y': rect.y,
-                    'width': rect.width, 'height': rect.height,
-                    'midpoint': rect.midpoint,
+                    'location': list(rect.location),
+                    'size': list(rect.size),
+                    'midpoint': list(rect.midpoint),
                 }
             if include_style:
                 styles = {}
@@ -275,3 +274,119 @@ def register(cli):
             ok(info)
         except Exception as e:
             error(f'查询元素失败: {locator}', code='INSPECT_FAILED', detail=str(e))
+
+    # ---- DOM 遍历命令 ----
+
+    def _ele_summary(ele, max_text=60):
+        """生成元素的简洁摘要"""
+        if not ele or ele.__class__.__name__ == 'NoneElement':
+            return None
+        tag = ele.tag
+        attrs = ele.attrs or {}
+        cls = attrs.get('class', '')
+        eid = attrs.get('id', '')
+        text = (ele.raw_text or '').strip()
+        label = tag
+        if eid:
+            label += f'#{eid}'
+        elif cls:
+            first_cls = cls.strip().split()[0] if cls.strip() else ''
+            if first_cls:
+                label += f'.{first_cls}'
+        loc = suggest_locator(tag, attrs, text[:50])
+        summary = {'tag': label, 'loc': loc}
+        if text:
+            summary['text'] = text[:max_text] + ('…' if len(text) > max_text else '')
+        return summary
+
+    @cli.command('dom')
+    @click.argument('locator')
+    @session_option
+    @click.option('--direction', '-d',
+                  type=click.Choice(['parent', 'children', 'siblings', 'all']),
+                  default='all', show_default=True,
+                  help='查询方向')
+    @click.option('--depth', default=1, show_default=True,
+                  help='向上查几层父节点（仅 parent/all 生效）')
+    @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
+    @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
+    def cmd_dom(locator, session, direction, depth, index, timeout):
+        """查询元素的 DOM 上下文（父/子/兄弟节点）。
+
+        \b
+        精确定位元素时，先用 snapshot 找到目标，再用 dom 查看周围结构。
+
+        \b
+        示例:
+          dp dom "ref:21"                         # 查看父/子/兄弟全部
+          dp dom "ref:21" -d parent               # 只看父节点链
+          dp dom "ref:21" -d parent --depth 3     # 向上追溯 3 层
+          dp dom "ref:21" -d children             # 只看子节点
+          dp dom "ref:21" -d siblings             # 只看兄弟节点
+          dp dom "css:.job-name" -d all           # 用 CSS 选择器
+        """
+        locator = resolve_locator(locator, session)
+        page = _get_page(session)
+        try:
+            ele = page.ele(locator, index=index, timeout=timeout)
+            if not ele or ele.__class__.__name__ == 'NoneElement':
+                error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
+                return
+
+            result = {'self': _ele_summary(ele)}
+
+            # ---- parent chain ----
+            if direction in ('parent', 'all'):
+                parents = []
+                cur = ele
+                for _ in range(depth):
+                    try:
+                        par = cur.parent()
+                        if not par or par.__class__.__name__ == 'NoneElement':
+                            break
+                        if par.tag in ('html', 'body'):
+                            parents.append({'tag': par.tag})
+                            break
+                        parents.append(_ele_summary(par))
+                        cur = par
+                    except Exception:
+                        break
+                result['parents'] = parents
+
+            # ---- children ----
+            if direction in ('children', 'all'):
+                children = []
+                try:
+                    for child in ele.children():
+                        s = _ele_summary(child)
+                        if s:
+                            children.append(s)
+                except Exception:
+                    pass
+                result['children'] = children
+
+            # ---- siblings (prev + next) ----
+            if direction in ('siblings', 'all'):
+                prev_sibs = []
+                next_sibs = []
+                try:
+                    for sib in ele.prevs():
+                        s = _ele_summary(sib)
+                        if s:
+                            prev_sibs.append(s)
+                    prev_sibs.reverse()
+                except Exception:
+                    pass
+                try:
+                    for sib in ele.nexts():
+                        s = _ele_summary(sib)
+                        if s:
+                            next_sibs.append(s)
+                except Exception:
+                    pass
+                result['prev_siblings'] = prev_sibs
+                result['next_siblings'] = next_sibs
+
+            ok(result)
+        except Exception as e:
+            error(f'DOM 查询失败: {locator}', code='DOM_FAILED', detail=str(e))

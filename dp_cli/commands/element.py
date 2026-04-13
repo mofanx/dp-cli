@@ -51,6 +51,7 @@ def register(cli):
         \b
         示例:
           dp dblclick "#editable-cell"
+          dp dblclick "ref:5"
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -126,7 +127,7 @@ def register(cli):
         \b
         示例:
           dp select "@name=city" beijing
-          dp select "css:select#role" admin --by-text
+          dp select "ref:12" admin          # 用快照编号
           dp select "#size" "" --by-index 2
         """
         locator = resolve_locator(locator, session)
@@ -159,7 +160,7 @@ def register(cli):
         \b
         示例:
           dp hover "css:.menu-item"
-          dp hover "#tooltip-trigger" --offset-x 10 --offset-y 5
+          dp hover "ref:8"                   # 用快照编号
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -185,7 +186,7 @@ def register(cli):
         \b
         示例:
           dp drag "#draggable" "#droptarget"
-          dp drag "css:.drag-item" "css:.drop-zone" --duration 1.0
+          dp drag "ref:3" "ref:7"          # 用快照编号
         """
         from_locator = resolve_locator(from_locator, session)
         to_locator = resolve_locator(to_locator, session)
@@ -215,6 +216,7 @@ def register(cli):
         \b
         示例:
           dp check "#agree-terms"
+          dp check "ref:10"                  # 用快照编号
           dp check "@name=remember" --uncheck
         """
         locator = resolve_locator(locator, session)
@@ -242,7 +244,7 @@ def register(cli):
         \b
         示例:
           dp upload "@name=avatar" /path/to/image.png
-          dp upload "css:input[type=file]" ./document.pdf
+          dp upload "ref:15" ./document.pdf   # 用快照编号
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)

@@ -102,6 +102,7 @@ def register(cli):
         \b
         示例:
           dp extract "css:.card" '{"title":"css:.title","url":{"selector":"css:a","attr":"href"}}'
+          dp extract "ref:30" '{"title":"css:h3"}'  # 用快照编号定位容器
 
         \b
         先用 snapshot 了解页面结构，再用 extract 定位容器和字段。
@@ -159,6 +160,7 @@ def register(cli):
         \b
         用法示例:
           dp query "css:.job-name"                           # 默认返回文本+定位器
+          dp query "ref:57"                                  # 用快照编号查询
           dp query "text:部署和支持" --fields "text,loc,css_path,tag,class"
           dp query "css:a[href]" --fields "text,href"
           dp query "xpath://h2" --fields "text,id,class"

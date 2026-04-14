@@ -21,7 +21,7 @@ while (el && el !== document.body && el.nodeType === 1) {
             ? Array.from(el.parentElement.querySelectorAll(':scope > ' + seg))
             : [];
         if (siblings.length > 1) {
-            var idx = siblings.indexOf(el) + 1;
+            var idx = Array.from(el.parentElement.children).indexOf(el) + 1;
             seg = seg + ':nth-child(' + idx + ')';
         }
     } else {

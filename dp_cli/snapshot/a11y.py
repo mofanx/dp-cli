@@ -69,8 +69,9 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
         tree = _build_tree(normalized)
 
         # 如果指定 selector，找到对应子树
+        selector_warning = None
         if selector:
-            tree = _find_subtree_by_selector(page, tree, normalized, selector)
+            tree, selector_warning = _find_subtree_by_selector(page, tree, normalized, selector)
 
         stats = _compute_stats(normalized)
 
@@ -81,32 +82,36 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
                             n['role'] in _REF_CONTENT_ROLES)]
         _generate_locators_batch(page, need_locator)
 
-        return {
+        result = {
             'page': page_info,
             'mode': 'a11y',
             'method': 'cdp',
             'tree': tree,
             'stats': stats,
         }
+        if selector_warning:
+            result['warning'] = selector_warning
+        return result
     except Exception as cdp_err:
-        pass
+        cdp_error_msg = str(cdp_err)
 
-    # ── CDP 失败，降级到 JS fallback ──
-    try:
-        from .js_scripts import _JS_A11Y_FALLBACK
-        raw = page.run_js(_JS_A11Y_FALLBACK)
-        if isinstance(raw, dict):
-            tree = raw.get('tree', {})
-            stats = raw.get('stats', {})
-            return {
-                'page': page_info,
-                'mode': 'a11y',
-                'method': 'js_fallback',
-                'tree': tree,
-                'stats': stats,
-            }
-    except Exception:
-        pass
+        # ── CDP 失败，降级到 JS fallback ──
+        try:
+            from .js_scripts import _JS_A11Y_FALLBACK
+            raw = page.run_js(_JS_A11Y_FALLBACK)
+            if isinstance(raw, dict):
+                tree = raw.get('tree', {})
+                stats = raw.get('stats', {})
+                return {
+                    'page': page_info,
+                    'mode': 'a11y',
+                    'method': 'js_fallback',
+                    'tree': tree,
+                    'stats': stats,
+                    'warning': f'CDP 不可用，已降级到 JS fallback (CDP: {cdp_error_msg})',
+                }
+        except Exception:
+            pass
 
     # ── 全部失败 ──
     return {
@@ -149,6 +154,8 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
         lines.append('- Note: 内容已精简，如需完整文本请用 --mode full 或 --selector')
     lines.append('')
 
+    if snapshot.get('warning'):
+        lines.append(f"⚠ {snapshot['warning']}")
     if snapshot.get('error'):
         lines.append(f"⚠ {snapshot['error']}")
         lines[header_idx] = f'### Page Snapshot ({mode_label})'
@@ -179,16 +186,24 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     return '\n'.join(lines)
 
 
-def render_a11y_plain_text(snapshot: dict) -> str:
+def render_a11y_plain_text(snapshot: dict, refs: dict = None) -> str:
     """
     将 a11y tree 扁平化为纯文本（按阅读顺序）。
 
     :param snapshot: take_a11y_snapshot 返回的数据
+    :param refs: 可选，传入空 dict 时会被填充为 ref 映射（避免需要额外调用 render_a11y_text）
     :return: 纯文本字符串
     """
     tree = snapshot.get('tree', {})
     if not tree:
         return ''
+
+    # 如果需要收集 refs，在纯文本渲染过程中顺便收集
+    if refs is not None:
+        ctx = {'counter': 0, 'refs': refs}
+        _collect_refs_only(tree, ctx)
+        refs.update(ctx['refs'])
+
     parts = []
     _collect_plain_text(tree, parts)
     return '\n'.join(parts)
@@ -207,8 +222,11 @@ def _get_full_tree_cdp(page, max_depth=None) -> list:
 
 
 def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
-                               selector: str) -> dict:
-    """在已构建的 a11y tree 中，找到 selector 对应的子树"""
+                               selector: str) -> tuple:
+    """在已构建的 a11y tree 中，找到 selector 对应的子树。
+
+    :return: (subtree, warning) — subtree 为匹配的子树或完整树，warning 为失败提示或 None
+    """
     # 1. 获取 selector 对应的 backendNodeId
     try:
         doc = page.run_cdp('DOM.getDocument')
@@ -216,12 +234,12 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
         result = page.run_cdp('DOM.querySelector', nodeId=root_id, selector=selector)
         node_id = result.get('nodeId')
         if not node_id:
-            return tree  # 未找到，返回完整树
+            return tree, f'--selector "{selector}" 未匹配到元素，已返回完整页面快照'
 
         desc = page.run_cdp('DOM.describeNode', nodeId=node_id)
         target_bid = desc['node']['backendNodeId']
     except Exception:
-        return tree
+        return tree, f'--selector "{selector}" 查询失败，已返回完整页面快照'
 
     # 2. 在 a11y tree 中查找匹配的节点
     def find_node(node, target_bid):
@@ -234,7 +252,9 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
         return None
 
     subtree = find_node(tree, target_bid)
-    return subtree if subtree else tree
+    if subtree:
+        return subtree, None
+    return tree, f'--selector "{selector}" 在 a11y tree 中未找到对应节点，已返回完整页面快照'
 
 
 # ── 数据标准化 ────────────────────────────────────────────────────────────────
@@ -316,26 +336,82 @@ def _compute_stats(nodes: list) -> dict:
 
 
 def _generate_locators_batch(page, interactive_nodes: list) -> None:
-    """批量为交互节点生成 DrissionPage 定位器"""
+    """批量为交互节点生成 DrissionPage 定位器。
+
+    优化：一次 DOM.getDocument(depth=-1) 获取完整 DOM 树，
+    再从内存中按 backendNodeId 查找，避免 N 次 CDP 往返。
+    """
+    if not interactive_nodes:
+        return
+
+    # 收集需要的 backendNodeId
+    bid_to_nodes = {}
     for node in interactive_nodes:
         bid = node.get('backendNodeId')
-        if not bid:
-            continue
-        dom_info = _get_dom_attrs(page, bid)
-        if dom_info:
-            tag = dom_info.get('tag', '')
-            attrs = dom_info.get('attrs', {})
-            text = (node.get('name') or '')[:50]
-            loc = suggest_locator(tag, attrs, text)
-            node['locator'] = loc
+        if bid:
+            bid_to_nodes.setdefault(bid, []).append(node)
+
+    if not bid_to_nodes:
+        return
+
+    # 方案 1：一次性获取完整 DOM 树并建索引
+    bid_map = _build_dom_bid_map(page)
+
+    if bid_map:
+        for bid, nodes in bid_to_nodes.items():
+            dom_info = bid_map.get(bid)
+            if dom_info:
+                text = (nodes[0].get('name') or '')[:50]
+                loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text)
+                for n in nodes:
+                    n['locator'] = loc
+    else:
+        # fallback：逐个查询（兼容 DOM.getDocument 不可用的情况）
+        for bid, nodes in bid_to_nodes.items():
+            dom_info = _get_dom_attrs(page, bid)
+            if dom_info:
+                text = (nodes[0].get('name') or '')[:50]
+                loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text)
+                for n in nodes:
+                    n['locator'] = loc
+
+
+def _build_dom_bid_map(page) -> dict:
+    """一次性获取完整 DOM 树，返回 {backendNodeId: {tag, attrs}} 映射"""
+    try:
+        doc = page.run_cdp('DOM.getDocument', depth=-1)
+        bid_map = {}
+        _walk_dom_node(doc.get('root', {}), bid_map)
+        return bid_map
+    except Exception:
+        return {}
+
+
+def _walk_dom_node(node: dict, bid_map: dict) -> None:
+    """递归遍历 DOM 节点，建立 backendNodeId → {tag, attrs} 索引"""
+    bid = node.get('backendNodeId')
+    if bid:
+        attrs_list = node.get('attributes', [])
+        attrs = dict(zip(attrs_list[::2], attrs_list[1::2]))
+        bid_map[bid] = {
+            'tag': node.get('nodeName', '').lower(),
+            'attrs': attrs,
+        }
+    for child in node.get('children', []):
+        _walk_dom_node(child, bid_map)
+    # shadow DOM / content document
+    for sub in node.get('shadowRoots', []):
+        _walk_dom_node(sub, bid_map)
+    cd = node.get('contentDocument')
+    if cd:
+        _walk_dom_node(cd, bid_map)
 
 
 def _get_dom_attrs(page, backend_node_id: int) -> dict:
-    """通过 CDP DOM.describeNode 获取 DOM 节点的属性"""
+    """通过 CDP DOM.describeNode 获取 DOM 节点的属性（fallback 逐个查询）"""
     try:
         result = page.run_cdp('DOM.describeNode', backendNodeId=backend_node_id)
         node = result.get('node', {})
-        # attributes 是 ["key1", "val1", "key2", "val2", ...] 交替列表
         attrs_list = node.get('attributes', [])
         attrs = dict(zip(attrs_list[::2], attrs_list[1::2]))
         return {
@@ -489,9 +565,9 @@ def _collect_text(node: dict, _depth: int = 0) -> str:
     """从节点子树中收集可见文本。
 
     递归穿透无名 generic/none 容器，收集 StaticText 和有 name 的子节点文本。
-    限制最大深度和长度，防止容器获得巨大文本 blob。
+    深度限制宽松（10 层），确保文章内容完整收集；截断由渲染层（brief 模式）控制。
     """
-    if _depth > 3:
+    if _depth > 10:
         return ''
     parts = []
     for child in node.get('children', []):
@@ -552,3 +628,44 @@ def _collect_plain_text(node: dict, parts: list) -> None:
 
     if is_block and parts and parts[-1] != '':
         parts.append('')  # 空行分隔块级元素
+
+
+def _collect_refs_only(node: dict, ctx: dict) -> None:
+    """轻量遍历树，只分配 ref 编号（不渲染任何输出）"""
+    role = node.get('role', '')
+    name = node.get('name', '')
+    ignored = node.get('ignored', False)
+    children = node.get('children', [])
+    loc = node.get('locator')
+
+    if ignored:
+        for child in children:
+            _collect_refs_only(child, ctx)
+        return
+
+    if role in ('InlineTextBox', 'StaticText'):
+        return
+
+    # 与 _render_node 同逻辑判断是否分配编号
+    display_name = name
+    if not display_name and role in _CONTENT_ROLES:
+        display_name = _collect_text(node)
+
+    should_ref = False
+    if role in _INTERACTIVE_ROLES and loc:
+        should_ref = True
+    elif role in _REF_CONTENT_ROLES and display_name:
+        should_ref = True
+
+    if should_ref:
+        ctx['counter'] += 1
+        ref_id = ctx['counter']
+        ctx['refs'][str(ref_id)] = {
+            'locator': loc,
+            'role': role,
+            'name': (display_name or name or '')[:100],
+            'backendNodeId': node.get('backendNodeId'),
+        }
+
+    for child in children:
+        _collect_refs_only(child, ctx)

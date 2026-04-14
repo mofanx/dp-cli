@@ -57,8 +57,7 @@ def register(cli):
             output = json.dumps({'status': 'ok', 'data': data},
                                 ensure_ascii=False, indent=2)
         elif mode == 'text':
-            render_a11y_text(data, refs=refs)  # 触发编号分配
-            output = render_a11y_plain_text(data)
+            output = render_a11y_plain_text(data, refs=refs)
         elif mode == 'brief':
             output = render_a11y_text(data, brief=True, refs=refs)
         else:

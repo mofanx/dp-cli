@@ -71,7 +71,10 @@ def extract_structured(page, container: str, fields: dict,
     :param fields: 字段映射字典
     :param limit: 最多提取多少条
     """
-    containers = page.s_eles(container)
+    try:
+        containers = page.eles(container, timeout=5)
+    except Exception:
+        containers = page.s_eles(container)
     if not containers:
         return []
 
@@ -87,13 +90,13 @@ def extract_structured(page, container: str, fields: dict,
             default = spec.get('default', '')
             try:
                 if multi:
-                    eles = item.s_eles(sel)
+                    eles = item.eles(sel)
                     record[field_name] = [
                         (e.attr(attr) if attr else (e.raw_text or '').strip())
                         for e in eles
                     ]
                 else:
-                    ele = item.s_ele(sel)
+                    ele = item.ele(sel)
                     if ele and ele.__class__.__name__ != 'NoneElement':
                         if attr:
                             record[field_name] = ele.attr(attr) or default

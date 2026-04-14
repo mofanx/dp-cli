@@ -33,25 +33,25 @@
 
 ```
 ### Page Snapshot (full)
-- URL: https://www.zhipin.com/web/geek/jobs
-- Title: 「深圳招聘」- BOSS直聘
-- Nodes: 961 total, 80 interactive, 83 refs — 使用 ref:N 引用元素
+- URL: https://example.com/products
+- Title: 产品列表
+- Nodes: 842 total, 65 interactive, 72 refs — 使用 ref:N 引用元素
 
-- RootWebArea "「深圳招聘」- BOSS直聘"
-  - [1] link "BOSS直聘" → text:BOSS直聘
+- RootWebArea "产品列表"
+  - [1] link "首页" → text:首页
   - list
-    - listitem "首页" [level=1]
-      - [2] link "首页" → text:首页
-    - listitem "职位" [level=1]
-      - [3] link "职位" → text:职位
-  - [17] textbox "搜索职位、公司" → @placeholder=搜索职位、公司
-  - [21] link "Python开发" → text:Python开发
-  - [56] heading "职位描述" [level=3] → .title
-  - [57] paragraph "岗位职责：1. 负责..."
+    - listitem "产品" [level=1]
+      - [2] link "产品" → text:产品
+    - listitem "分类" [level=1]
+      - [3] link "分类" → text:分类
+  - [17] textbox "搜索产品" → @placeholder=搜索产品
+  - [21] link "电子设备" → text:电子设备
+  - [56] heading "产品详情" [level=3] → .product-title
+  - [57] paragraph "产品描述：这是一款高性能..."
   ...
 ```
 
-操作时直接用编号：`dp click "ref:21"` / `dp fill "ref:17" "Python"` / `dp query "ref:57"`
+操作时直接用编号：`dp click "ref:21"` / `dp fill "ref:17" "电子设备"` / `dp query "ref:57"`
 
 - **full（默认）**：完整内容，零截断
 - **brief**：截断长文本，跳过正文细节，保留结构+交互，省 token

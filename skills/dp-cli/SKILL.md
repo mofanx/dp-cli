@@ -31,6 +31,12 @@ dp open --port 9222
 dp open <url>
 ```
 
+**URL 可省略 `https://`：**
+- `dp open example.com` → 自动补全为 `https://example.com`
+- `dp goto baidu.com` → 自动补全为 `https://baidu.com`
+- `dp tab-new zhipin.com --new-window` → 自动补全为 `https://zhipin.com`
+```
+
 **什么时候使用临时实例（不加 --port）？**
 - 用户明确说不需要登录态
 - 纯公开页面抓取，不涉及任何账户数据
@@ -189,14 +195,31 @@ dp state-load --filename my-site.json
 dp goto "https://my-site.com/dashboard"  → 已登录状态
 ```
 
-### 场景九：多标签页操作
+### 场景九：多标签页操作（标签页绑定）
+
+**标签页绑定（Tab Pinning）：自动化任务与手动浏览分离**
 
 ```
-dp tab-list                  → 查看所有标签页
-dp tab-new "https://..."     → 新建标签页
-dp tab-select 1              → 切换到第 2 个标签页（从 0 开始）
-dp snapshot                  → 操作当前标签
-dp tab-close                 → 关闭当前标签页
+dp tab-list                           → 查看所有标签页（显示 [pinned] 标记）
+dp tab-new "example.com" --new-window  → 新窗口创建标签页（自动化专用），自动绑定
+dp tab-select zhipin                   → 按 URL 关键词绑定标签页
+dp tab-select 1                        → 按序号绑定（从 0 开始）
+dp tab-select none                     → 解除绑定，恢复默认行为
+dp snapshot                           → 操作绑定的标签页（无需激活）
+dp tab-close                          → 关闭绑定的标签页
+```
+
+**关键特性：**
+- 绑定后所有 `dp` 命令只在指定标签页执行，无需标签页处于激活/前台状态
+- 支持按序号/tab_id/URL关键词/title关键词/none 解绑
+- URL 可省略 `https://`（如 `dp tab-new baidu.com`）
+
+**典型场景：**
+```bash
+dp open --port 9222
+dp tab-new https://www.zhipin.com --new-window   # 新窗口 + 自动绑定
+dp snapshot                                        # 只操作绑定的标签页
+dp click "ref:5"                                   # 同时你可在原窗口自由浏览
 ```
 
 ---

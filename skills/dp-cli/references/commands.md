@@ -16,7 +16,7 @@
 | 键盘 | `press`, `type` | 键盘输入 |
 | 等待 | `wait` | `--loaded` / `--locator` / `--text` / `--locator-gone` / `--url` |
 | 监听 | `listen`, `listen-stop` | 网络请求捕获 |
-| 标签页 | `tab-list`, `tab-new`, `tab-select`, `tab-close` | 多标签页管理 |
+| 标签页 | `tab-list`, `tab-new`, `tab-select`, `tab-close` | 多标签页管理（支持标签页绑定/分离自动化与手动浏览） |
 | 截图 | `screenshot`, `pdf` | 页面截图/PDF（支持全页截图、元素截图） |
 | JS | `eval`, `add-init-js` | 执行 JavaScript |
 | HTTP | `http-get`, `http-post` | 纯 HTTP 请求（无需浏览器） |

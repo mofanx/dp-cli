@@ -4,7 +4,7 @@ import io
 import csv
 import click
 
-from dp_cli.session import get_browser, load_refs
+from dp_cli.session import get_browser, load_refs, load_session, save_session
 from dp_cli.output import error
 
 
@@ -13,13 +13,35 @@ def session_option(f):
                         help='会话名称，默认 default', show_default=True)(f)
 
 
-def _get_page(session: str):
-    """获取页面对象，失败则 error 退出"""
+def _get_page(session: str, raw: bool = False):
+    """获取页面对象，失败则 error 退出。
+
+    :param raw: True 时始终返回 ChromiumPage（用于浏览器级操作如标签页管理）。
+                False 时返回绑定的标签页 ChromiumTab（如有），否则返回 ChromiumPage。
+    """
     try:
-        return get_browser(session)
+        page = get_browser(session)
     except Exception as e:
         error(f'无法连接浏览器会话 [{session}]，请先执行 dp open',
               code='SESSION_NOT_FOUND', detail=str(e))
+        return
+
+    if raw:
+        return page
+
+    # 检查是否有绑定的标签页
+    sess = load_session(session)
+    tab_id = sess.get('active_tab')
+    if tab_id:
+        try:
+            tab = page.get_tab(tab_id)
+            return tab
+        except Exception:
+            # 标签页可能已关闭，清除绑定
+            sess.pop('active_tab', None)
+            save_session(session, sess)
+
+    return page
 
 
 def resolve_locator(locator: str, session: str = 'default') -> str:

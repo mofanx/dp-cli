@@ -8,6 +8,15 @@ from dp_cli.session import get_browser, load_refs, load_session, save_session
 from dp_cli.output import error
 
 
+def normalize_url(url: str) -> str:
+    """补全 URL scheme，支持省略 http:// / https://"""
+    if not url:
+        return url
+    if not url.startswith(('http://', 'https://', 'file://')):
+        return 'https://' + url
+    return url
+
+
 def session_option(f):
     return click.option('-s', '--session', default='default',
                         help='会话名称，默认 default', show_default=True)(f)

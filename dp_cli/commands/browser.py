@@ -5,7 +5,7 @@ import click
 from dp_cli.session import (get_browser, close_browser, list_sessions,
                             delete_session, load_session, save_session)
 from dp_cli.output import ok, error, format_page_info
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import session_option, _get_page, normalize_url
 
 
 def register(cli):
@@ -50,7 +50,7 @@ def register(cli):
             return
         if url:
             try:
-                page.get(url)
+                page.get(normalize_url(url))
             except Exception as e:
                 error(f'导航失败: {e}', code='NAVIGATE_FAILED', detail=str(e))
                 return
@@ -67,11 +67,12 @@ def register(cli):
         \b
         示例:
           dp goto https://example.com
-          dp goto https://example.com --timeout 60
+          dp goto example.com
+          dp goto example.com --timeout 60
         """
         page = _get_page(session)
         try:
-            page.get(url, timeout=timeout, retry=retry)
+            page.get(normalize_url(url), timeout=timeout, retry=retry)
             ok(format_page_info(page))
         except Exception as e:
             error(f'导航到 {url} 失败', code='NAVIGATE_FAILED', detail=str(e))

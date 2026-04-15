@@ -4,7 +4,7 @@ import click
 
 from dp_cli.output import ok, error
 from dp_cli.session import load_session, save_session
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import session_option, _get_page, normalize_url
 
 
 def register(cli):
@@ -63,7 +63,7 @@ def register(cli):
         if not page:
             return
         try:
-            new_tab = page.new_tab(url=url or '',
+            new_tab = page.new_tab(url=normalize_url(url) if url else '',
                                    new_window=new_window,
                                    background=background)
             new_tid = new_tab.tab_id

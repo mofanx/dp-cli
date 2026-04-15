@@ -160,13 +160,15 @@ def save_refs(session_name: str, url: str, refs: dict) -> None:
         'timestamp': datetime.now().isoformat(),
         'refs': refs,
     }
-    f = get_session_dir() / f'{session_name}_refs.json'
+    refs_dir = get_session_dir() / 'refs'
+    refs_dir.mkdir(exist_ok=True)
+    f = refs_dir / f'{session_name}.json'
     f.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
 
 
 def load_refs(session_name: str) -> dict:
     """加载快照编号映射，返回 {ref_id: {locator, role, name, backendNodeId}}"""
-    f = get_session_dir() / f'{session_name}_refs.json'
+    f = get_session_dir() / 'refs' / f'{session_name}.json'
     if not f.exists():
         return {}
     try:

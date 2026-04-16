@@ -63,6 +63,16 @@ def list_sessions() -> list:
     return sessions
 
 
+def _detect_headless(port: int) -> bool:
+    """通过 /json/version 探测浏览器是否 headless 模式"""
+    try:
+        import requests
+        resp = requests.get(f'http://127.0.0.1:{port}/json/version', timeout=3)
+        return 'headless' in resp.json().get('User-Agent', '').lower()
+    except Exception:
+        return False
+
+
 def get_browser(session_name: str = 'default', headless: bool = False,
                 browser_path: str = None, user_data_dir: str = None,
                 proxy: str = None, port: int = None):
@@ -82,6 +92,10 @@ def get_browser(session_name: str = 'default', headless: bool = False,
         co = ChromiumOptions(read_file=False)
         co.set_local_port(port)
         co.existing_only(True)
+        # 探测浏览器 headless 状态，同步到 options，避免 DrissionPage
+        # 因 headless 不匹配执行 quit→restart 导致无头浏览器被关闭
+        if _detect_headless(port):
+            co.headless(True)
         try:
             page = ChromiumPage(co)
         except Exception as e:
@@ -110,6 +124,9 @@ def get_browser(session_name: str = 'default', headless: bool = False,
             co = ChromiumOptions(read_file=False)
             co.set_local_port(saved_port)
             co.existing_only(True)
+            # 同步 headless 状态（同情况1）
+            if _detect_headless(saved_port):
+                co.headless(True)
             page = ChromiumPage(co)
             return page
         except Exception:

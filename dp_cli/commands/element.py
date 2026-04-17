@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""元素交互命令: click / dblclick / fill / clear / select / hover / drag / check / upload"""
+"""元素交互命令: click / dblclick / fill / clear / select / hover / drag / check / upload / count"""
 import click
 
 from dp_cli.output import ok, error
@@ -257,3 +257,37 @@ def register(cli):
             ok({'locator': locator, 'file': file_path}, msg='文件上传成功')
         except Exception as e:
             error(f'文件上传失败', code='UPLOAD_FAILED', detail=str(e))
+
+    @cli.command('count')
+    @click.argument('locator')
+    @session_option
+    @click.option('--timeout', default=0, type=float, help='等待元素出现的超时秒数（默认 0 即时返回）', show_default=True)
+    def cmd_count(locator, session, timeout):
+        """统计匹配选择器的元素数量。
+
+        \b
+        懒加载检测工作流:
+          dp count ".item"              → 20
+          dp scroll --bottom && dp wait --idle
+          dp count ".item"              → 40
+          dp scroll --bottom && dp wait --idle
+          dp count ".item"              → 40  (不变，加载完毕)
+
+        \b
+        支持的选择器（可省略 css:/xpath: 前缀）:
+          dp count ".card"              → css（自动识别 . 开头）
+          dp count "#list li"           → css（自动识别 # 开头）
+          dp count "div.item"           → css（自动识别 tag.class）
+          dp count "a[href]"            → css（自动识别 [attr]）
+          dp count "//ul/li"            → xpath（自动识别 // 开头）
+          dp count "tag:img"            → DrissionPage 原生语法
+          dp count "css:tr"             → 显式 css 前缀
+        """
+        locator = resolve_locator(locator, session)
+        page = _get_page(session)
+        try:
+            eles = page.eles(locator, timeout=timeout)
+            count = len(eles)
+            ok({'locator': locator, 'count': count}, msg=f'找到 {count} 个元素')
+        except Exception as e:
+            error(f'统计失败', code='COUNT_FAILED', detail=str(e))

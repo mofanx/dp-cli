@@ -2,6 +2,9 @@
 """所有命令模块共享的工具函数和装饰器"""
 import io
 import csv
+import re
+from time import perf_counter, sleep as _sleep
+
 import click
 
 from dp_cli.session import get_browser, load_refs, load_session, save_session
@@ -53,14 +56,46 @@ def _get_page(session: str, raw: bool = False):
     return page
 
 
+_KNOWN_PREFIX = re.compile(
+    r'^(css[:=]|xpath[:=]|text[:=^$]|tag[:=^$]|@@?[\w]|ref:)', re.IGNORECASE)
+_CSS_ID_CLASS = re.compile(r'^[#.][\w-]')           # #id  .class
+_CSS_TAG_SEL = re.compile(r'^[\w-]+[.#\[][\w-]')   # div.class  a[href]  h1#title
+_CSS_COMBINATOR = re.compile(r'[\[>+~]|::|:(?:nth|first|last|not|has)')  # [attr] > + ~ ::pseudo :nth-child
+_XPATH_START = re.compile(r'^\(?/')                 # //div  /html  (//a)
+
+
+def normalize_locator(loc: str) -> str:
+    """智能补全定位器前缀，允许省略 css:/xpath:。
+
+    规则（按优先级）：
+    1. 已有已知前缀 → 原样返回
+    2. 以 / 或 (/ 开头 → xpath
+    3. 以 # . 开头 → css
+    4. tag.class / tag#id / tag[attr] → css
+    5. 含 CSS 组合符 ([ > + ~ :: :nth 等) → css
+    6. 其它 → 原样返回（DrissionPage 默认当文本模糊搜索）
+    """
+    if _KNOWN_PREFIX.match(loc):
+        return loc
+    if _XPATH_START.match(loc):
+        return f'xpath:{loc}'
+    if _CSS_ID_CLASS.match(loc):
+        return f'css:{loc}'
+    if _CSS_TAG_SEL.match(loc):
+        return f'css:{loc}'
+    if _CSS_COMBINATOR.search(loc):
+        return f'css:{loc}'
+    return loc
+
+
 def resolve_locator(locator: str, session: str = 'default') -> str:
-    """解析定位器，支持 ref:N 语法。
+    """解析定位器：ref:N 展开 + 智能前缀补全。
 
     如果 locator 以 'ref:' 开头，从 session 的 refs 映射中查找真实定位器。
-    否则原样返回。
+    否则尝试智能补全 css:/xpath: 前缀。
     """
     if not locator.startswith('ref:'):
-        return locator
+        return normalize_locator(locator)
 
     ref_id = locator[4:]
     refs = load_refs(session)
@@ -89,6 +124,43 @@ def resolve_locator(locator: str, session: str = 'default') -> str:
     error(f'ref:{ref_id} 无法解析为有效定位器 (role={ref_data.get("role")})',
           code='REF_UNRESOLVABLE')
     raise SystemExit(1)
+
+
+def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30) -> bool:
+    """等待网络空闲：通过 CDP 监听，直到无活跃请求持续 idle_time 秒。
+
+    :raises TimeoutError: 若 timeout 秒内未达成空闲条件
+    """
+    pending = set()
+    last_activity = perf_counter()
+
+    def _on_request(**kwargs):
+        nonlocal last_activity
+        pending.add(kwargs.get('requestId', ''))
+        last_activity = perf_counter()
+
+    def _on_response(**kwargs):
+        nonlocal last_activity
+        pending.discard(kwargs.get('requestId', ''))
+        last_activity = perf_counter()
+
+    page.run_cdp('Network.enable')
+    driver = page.driver
+    driver.set_callback('Network.requestWillBeSent', _on_request)
+    driver.set_callback('Network.loadingFinished', _on_response)
+    driver.set_callback('Network.loadingFailed', _on_response)
+
+    try:
+        end = perf_counter() + timeout
+        while perf_counter() < end:
+            if not pending and (perf_counter() - last_activity) >= idle_time:
+                return True
+            _sleep(0.1)
+        raise TimeoutError(f'网络未在 {timeout}s 内空闲 {idle_time}s')
+    finally:
+        driver.set_callback('Network.requestWillBeSent', None)
+        driver.set_callback('Network.loadingFinished', None)
+        driver.set_callback('Network.loadingFailed', None)
 
 
 def records_to_csv(records: list) -> str:

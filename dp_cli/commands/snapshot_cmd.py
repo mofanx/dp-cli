@@ -78,7 +78,7 @@ def register(cli):
     @session_option
     @click.argument('container')
     @click.argument('fields_json')
-    @click.option('--limit', default=100, help='最多提取多少条记录', show_default=True)
+    @click.option('--limit', default=None, help='最多提取多少条记录', show_default=True)
     @click.option('--output', 'output_fmt', type=click.Choice(['json', 'csv']),
                   default='json', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存结果到文件')
@@ -139,7 +139,7 @@ def register(cli):
     @click.argument('selector')
     @click.option('--fields', default='text,loc', show_default=True,
                   help='提取字段，逗号分隔')
-    @click.option('--limit', default=200, help='最多返回多少条', show_default=True)
+    @click.option('--limit', default=None, help='最多返回多少条', show_default=True)
     @click.option('--filename', default=None, help='保存结果到 JSON 文件')
     def cmd_query(session, selector, fields, limit, filename):
         """按选择器查询元素，提取内容和定位器。支持动态渲染内容。

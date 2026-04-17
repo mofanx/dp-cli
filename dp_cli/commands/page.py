@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""页面操作命令: screenshot / pdf / eval / add-init-js / dialog-accept / dialog-dismiss / wait"""
+"""页面操作命令: screenshot / pdf / eval / add-init-js / dialog-accept / dialog-dismiss / wait (idle/loaded/url/title/text/downloads)"""
 import json
 from pathlib import Path
 from time import perf_counter, sleep as _sleep
@@ -7,7 +7,7 @@ from time import perf_counter, sleep as _sleep
 import click
 
 from dp_cli.output import ok, error, format_page_info
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import session_option, _get_page, wait_network_idle
 
 
 def register(cli):
@@ -155,31 +155,50 @@ def register(cli):
 
     @cli.command('wait')
     @session_option
-    @click.option('--url', default=None, help='等待 URL 变为此值（支持子串匹配）')
+    @click.option('--url', default=None, help='等待 URL 包含此文本')
+    @click.option('--title', default=None, help='等待标题包含此文本')
     @click.option('--locator', default=None, help='等待元素出现')
     @click.option('--locator-gone', default=None, help='等待元素消失')
     @click.option('--text', default=None, help='等待页面包含指定文本')
-    @click.option('--loaded', is_flag=True, help='等待页面加载完成')
+    @click.option('--loaded', is_flag=True, help='等待页面 DOM 加载完成')
+    @click.option('--idle', type=float, is_flag=False, flag_value=2.0, default=None,
+                  help='等待网络空闲（无请求持续 N 秒，默认 2），适合懒加载')
+    @click.option('--downloads-done', is_flag=True, help='等待所有下载完成')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
-    def wait(session, url, locator, locator_gone, text, loaded, timeout):
+    def wait(session, url, title, locator, locator_gone, text, loaded, idle, downloads_done, timeout):
         """等待条件满足。
 
         \b
         示例:
-          dp wait --loaded
-          dp wait --locator "#result"
-          dp wait --url "success"
-          dp wait --text "操作成功"
-          dp wait --locator-gone "css:.loading"
+          dp wait --loaded                          # DOM 加载完成
+          dp wait --idle                            # 网络空闲 2 秒（默认）
+          dp wait --idle 3                          # 自定义空闲时长
+          dp wait --locator "#result"               # 元素出现
+          dp wait --locator-gone ".loading"          # 加载指示器消失
+          dp wait --url "success"                   # URL 变化
+          dp wait --title "搜索结果"                 # 标题变化
+          dp wait --text "操作成功"                  # 页面含文本
+          dp wait --downloads-done                  # 下载完成
+
+        \b
+        懒加载典型工作流:
+          dp scroll --bottom && dp wait --idle
+          dp count ".item"
         """
         page = _get_page(session)
         try:
-            if loaded:
-                page.wait.doc_loaded()
+            if idle is not None:
+                wait_network_idle(page, idle_time=idle, timeout=timeout)
+                ok(format_page_info(page), msg=f'网络已空闲 {idle}s')
+            elif loaded:
+                page.wait.doc_loaded(timeout=timeout)
                 ok(format_page_info(page), msg='页面已加载')
             elif url:
                 page.wait.url_change(url, timeout=timeout)
                 ok(format_page_info(page), msg='URL 已变化')
+            elif title:
+                page.wait.title_change(title, timeout=timeout)
+                ok(format_page_info(page), msg='标题已变化')
             elif locator:
                 ele = page.wait.ele_displayed(locator, timeout=timeout)
                 ok({'locator': locator, 'found': bool(ele)}, msg='元素已出现')
@@ -198,7 +217,12 @@ def register(cli):
                     ok({'text': text}, msg='文本已出现')
                 else:
                     error(f'等待超时：文本未出现 "{text}"', code='WAIT_TIMEOUT')
+            elif downloads_done:
+                page.wait.downloads_done(timeout=timeout)
+                ok(msg='下载已完成')
             else:
                 error('请至少指定一个等待条件', code='INVALID_ARGS')
         except Exception as e:
             error(f'等待失败', code='WAIT_FAILED', detail=str(e))
+
+

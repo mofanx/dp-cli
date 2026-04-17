@@ -37,6 +37,42 @@ dp open https://example.com --port 9222
 dp snapshot
 ```
 
+## Anti-Detection (stealth)
+
+Bypass `navigator.webdriver`, `HeadlessChrome` UA, empty `plugins`, SwiftShader WebGL,
+`chrome.runtime` missing, and other common automation fingerprints.
+
+```bash
+# One-shot: connect + apply full stealth patches
+dp open --port 9322 --stealth
+dp goto https://bot.sannysoft.com/
+
+# Or apply manually on an existing session (full preset by default)
+dp stealth
+dp stealth --preset mild                       # webdriver + UA only
+dp stealth --ua "Mozilla/5.0 ..."              # custom UA
+dp stealth --feature webdriver --feature webgl # fine-grained
+```
+
+### Recommended VPS Chrome flags (when connecting via SSH tunnel)
+
+```bash
+google-chrome --headless=new --remote-debugging-port=9222 \
+  --no-sandbox --disable-dev-shm-usage \
+  --disable-blink-features=AutomationControlled \
+  --user-data-dir=~/.config/google-chrome
+# Then on local:
+ssh -NL 9322:127.0.0.1:9222 vps
+dp open --port 9322 --stealth
+```
+
+Patched features (full preset): `webdriver`, `UA`, `chrome.runtime`, `permissions`,
+`plugins`, `languages`, `WebGL VENDOR/RENDERER`, `window.outerWidth/Height`.
+
+Patches are injected via `Page.addScriptToEvaluateOnNewDocument` — they persist across
+navigations and frames. Advanced fingerprints (Canvas/Audio/font list) require a real
+GPU or Xvfb environment.
+
 ## Data Extraction (3-step workflow)
 
 ```bash
@@ -65,11 +101,11 @@ dp_cli/
 ├── output.py            # JSON output helpers
 └── commands/
     ├── _utils.py        # Shared decorators & helpers
-    ├── browser.py       # open / goto / reload / close / list
+    ├── browser.py       # open / goto / reload / close / list / stealth
     ├── snapshot_cmd.py  # snapshot / extract / query / find / inspect
-    ├── element.py       # click / fill / select / hover / drag / check / upload
-    ├── keyboard.py      # press / type / scroll / scroll-to
-    ├── page.py          # screenshot / pdf / eval / wait / dialog
+    ├── element.py       # click / fill / select / hover / drag / check / upload / count
+    ├── keyboard.py      # press / type / scroll / scroll-to / autoscroll
+    ├── page.py          # screenshot / pdf / eval / wait (idle/loaded/url/title) / dialog
     ├── tab.py           # tab-list / tab-new / tab-select / tab-close
     ├── storage.py       # cookie-* / localstorage-* / sessionstorage-*
     ├── network.py       # listen / listen-stop / http-get / http-post

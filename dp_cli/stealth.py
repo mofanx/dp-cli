@@ -21,35 +21,59 @@ from __future__ import annotations
 
 # ===== JS 补丁脚本 =====
 
+_JS_MARKER_HEAD = r"""
+// 调试 marker，用 `dp eval "return window.__stealth__"` 验证注入是否生效
+(() => {
+  window.__stealth__ = window.__stealth__ || { applied: [], errors: {}, at: Date.now() };
+})();
+"""
+
+
+def _mark(feature):
+    """生成每个特性执行后的 marker 记录代码。"""
+    return (f"try {{ window.__stealth__.applied.push('{feature}'); }} catch(e) {{}}\n")
+
+
 _JS_WEBDRIVER = r"""
 // 删除 navigator.webdriver
 (() => {
   try {
     Object.defineProperty(Navigator.prototype, 'webdriver', {
-      get: () => undefined,
-      configurable: true,
+      get: () => undefined, configurable: true,
     });
-    delete Navigator.prototype.webdriver;
-  } catch (e) {}
+    delete Object.getPrototypeOf(navigator).webdriver;
+  } catch (e) { window.__stealth__.errors.webdriver = String(e); }
 })();
 """
 
 _JS_CHROME_RUNTIME = r"""
-// 补 window.chrome.runtime（headless 下通常缺失）
+// 补 window.chrome.runtime（headless 下常缺失；直接赋值常被冻结）
 (() => {
-  if (!window.chrome) {
-    Object.defineProperty(window, 'chrome', {
-      value: { runtime: {}, loadTimes: function(){}, csi: function(){}, app: {} },
-      configurable: true, writable: true,
-    });
-  } else if (!window.chrome.runtime) {
-    window.chrome.runtime = {};
-  }
+  try {
+    if (!window.chrome) {
+      Object.defineProperty(window, 'chrome', {
+        value: {}, configurable: true, writable: true, enumerable: true,
+      });
+    }
+    if (!window.chrome.runtime) {
+      Object.defineProperty(window.chrome, 'runtime', {
+        value: {
+          OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
+          OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
+          PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+          PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
+          PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
+          RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' },
+        },
+        configurable: true, writable: true, enumerable: true,
+      });
+    }
+  } catch (e) { window.__stealth__.errors.chrome_runtime = String(e); }
 })();
 """
 
 _JS_PERMISSIONS = r"""
-// 修正 Notification.permission 在 headless 下被查询时的返回
+// 修正 permissions.query({name:'notifications'}) 返回 Notification.permission
 (() => {
   try {
     const orig = window.navigator.permissions && window.navigator.permissions.query;
@@ -59,21 +83,19 @@ _JS_PERMISSIONS = r"""
         ? Promise.resolve({ state: Notification.permission, onchange: null })
         : orig.call(window.navigator.permissions, parameters)
     );
-  } catch (e) {}
+  } catch (e) { window.__stealth__.errors.permissions = String(e); }
 })();
 """
 
 _JS_PLUGINS = r"""
-// 伪造 navigator.plugins / mimeTypes 非空
+// 伪造 navigator.plugins（Chrome 147 原生已有 5 个 PDF 插件，这里保留代码以防以后变化）
 (() => {
   try {
     const fakePlugin = (name, filename, desc) => {
       const p = Object.create(Plugin.prototype);
       Object.defineProperties(p, {
-        name:        { value: name },
-        filename:    { value: filename },
-        description: { value: desc },
-        length:      { value: 1 },
+        name: { value: name }, filename: { value: filename },
+        description: { value: desc }, length: { value: 1 },
       });
       return p;
     };
@@ -90,38 +112,58 @@ _JS_PLUGINS = r"""
     Object.defineProperty(Navigator.prototype, 'plugins', {
       get: () => arr, configurable: true,
     });
-  } catch (e) {}
+  } catch (e) { window.__stealth__.errors.plugins = String(e); }
 })();
 """
 
 _JS_LANGUAGES = r"""
-// 覆盖 navigator.languages
+// 覆盖 navigator.languages（双重保险：实例 + 原型）
 (() => {
   try {
-    Object.defineProperty(Navigator.prototype, 'languages', {
-      get: () => __LANGS__, configurable: true,
-    });
-  } catch (e) {}
+    const val = __LANGS__;
+    const def = { get: () => val, configurable: true };
+    // 实例优先（避免原型被忽略的情况）
+    try { Object.defineProperty(navigator, 'languages', def); } catch (e1) {}
+    // 原型兜底
+    try { Object.defineProperty(Navigator.prototype, 'languages', def); } catch (e2) {}
+    // language 单数也补一下
+    try { Object.defineProperty(navigator, 'language', { get: () => val[0], configurable: true }); } catch (e3) {}
+  } catch (e) { window.__stealth__.errors.languages = String(e); }
 })();
 """
 
 _JS_WEBGL = r"""
-// Hook WebGL getParameter，伪造 VENDOR / RENDERER
+// Hook WebGL getParameter 伪造 VENDOR/RENDERER。用 defineProperty 强制替换
 (() => {
   try {
-    const patch = (proto) => {
-      if (!proto) return;
+    const patch = (Ctor) => {
+      if (!Ctor) return;
+      const proto = Ctor.prototype;
       const orig = proto.getParameter;
-      proto.getParameter = function(p) {
-        // UNMASKED_VENDOR_WEBGL = 37445, UNMASKED_RENDERER_WEBGL = 37446
-        if (p === 37445) return '__VENDOR__';
-        if (p === 37446) return '__RENDERER__';
-        return orig.call(this, p);
+      const fakeGet = function(p) {
+        // UNMASKED_VENDOR_WEBGL=37445, UNMASKED_RENDERER_WEBGL=37446
+        // RENDERER=7937, VENDOR=7936, VERSION=7938, SHADING_LANG=35724
+        if (p === 37445 || p === 7936) return '__VENDOR__';
+        if (p === 37446 || p === 7937) return '__RENDERER__';
+        return orig.apply(this, arguments);
       };
+      Object.defineProperty(proto, 'getParameter', {
+        value: fakeGet, configurable: true, writable: true, enumerable: false,
+      });
+      // 同时 hook getExtension，确保 WEBGL_debug_renderer_info 可用
+      const origGetExt = proto.getExtension;
+      Object.defineProperty(proto, 'getExtension', {
+        value: function(name) {
+          const r = origGetExt.apply(this, arguments);
+          if (r || name !== 'WEBGL_debug_renderer_info') return r;
+          return { UNMASKED_VENDOR_WEBGL: 37445, UNMASKED_RENDERER_WEBGL: 37446 };
+        },
+        configurable: true, writable: true,
+      });
     };
-    patch(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
-    patch(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
-  } catch (e) {}
+    patch(window.WebGLRenderingContext);
+    patch(window.WebGL2RenderingContext);
+  } catch (e) { window.__stealth__.errors.webgl = String(e); }
 })();
 """
 
@@ -129,11 +171,11 @@ _JS_WINDOW_DIMS = r"""
 // headless 下 outerWidth/outerHeight 为 0，伪造为 innerWidth/innerHeight
 (() => {
   try {
-    if (window.outerWidth === 0) {
+    if (window.outerWidth === 0 || window.outerHeight === 0) {
       Object.defineProperty(window, 'outerWidth',  { get: () => window.innerWidth,  configurable: true });
       Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight, configurable: true });
     }
-  } catch (e) {}
+  } catch (e) { window.__stealth__.errors.window_dims = String(e); }
 })();
 """
 
@@ -161,26 +203,36 @@ def build_init_script(
     webgl_vendor: str | None = None,
     webgl_renderer: str | None = None,
 ) -> str:
-    """根据启用的 features 构建初始化脚本（不含 UA，UA 由 CDP 直接覆盖）。"""
-    parts = []
+    """根据启用的 features 构建初始化脚本（不含 UA，UA 由 CDP 直接覆盖）。
+
+    生成脚本在最开头创建 window.__stealth__ marker，每个 feature 执行后
+    push 到 applied 列表；异常时 errors[feature] 记录错误。
+    可用 `dp eval "return window.__stealth__"` 验证是否生效。
+    """
+    parts = [_JS_MARKER_HEAD]
+
+    def add(feature, js):
+        parts.append(js)
+        parts.append(_mark(feature))
+
     if 'webdriver' in features:
-        parts.append(_JS_WEBDRIVER)
+        add('webdriver', _JS_WEBDRIVER)
     if 'chrome_runtime' in features:
-        parts.append(_JS_CHROME_RUNTIME)
+        add('chrome_runtime', _JS_CHROME_RUNTIME)
     if 'permissions' in features:
-        parts.append(_JS_PERMISSIONS)
+        add('permissions', _JS_PERMISSIONS)
     if 'plugins' in features:
-        parts.append(_JS_PLUGINS)
+        add('plugins', _JS_PLUGINS)
     if 'languages' in features:
         langs = langs or DEFAULT_LANGS
-        parts.append(_JS_LANGUAGES.replace('__LANGS__',
-                     '[' + ','.join(f'"{x}"' for x in langs) + ']'))
+        add('languages', _JS_LANGUAGES.replace(
+            '__LANGS__', '[' + ','.join(f'"{x}"' for x in langs) + ']'))
     if 'webgl' in features:
-        parts.append(_JS_WEBGL
-                     .replace('__VENDOR__', (webgl_vendor or DEFAULT_WEBGL_VENDOR))
-                     .replace('__RENDERER__', (webgl_renderer or DEFAULT_WEBGL_RENDERER)))
+        add('webgl', _JS_WEBGL
+            .replace('__VENDOR__', (webgl_vendor or DEFAULT_WEBGL_VENDOR))
+            .replace('__RENDERER__', (webgl_renderer or DEFAULT_WEBGL_RENDERER)))
     if 'window_dims' in features:
-        parts.append(_JS_WINDOW_DIMS)
+        add('window_dims', _JS_WINDOW_DIMS)
     return '\n'.join(parts)
 
 

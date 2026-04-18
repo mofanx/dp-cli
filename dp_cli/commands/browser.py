@@ -64,9 +64,13 @@ def register(cli):
         if stealth:
             try:
                 stealth_info = apply_stealth(page, features=PRESETS['full'])
-                # 记录到 session，便于后续 reopen 时自动恢复
+                # 记录到 session，使 _get_page 在后续每次 dp 命令自动重注册
+                # （CDP init_js 绑定到 CDP session，每个 dp 命令需要重新注册）
                 sess = load_session(session) or {}
-                sess['stealth'] = {'preset': 'full'}
+                sess['stealth'] = {
+                    'preset': 'full',
+                    'features': sorted(PRESETS['full']),
+                }
                 save_session(session, sess)
             except Exception as e:
                 error(f'应用 stealth 失败: {e}', code='STEALTH_FAILED', detail=str(e))
@@ -232,12 +236,22 @@ def register(cli):
                 page, features=features, ua=ua, langs=langs_list,
                 webgl_vendor=webgl_vendor, webgl_renderer=webgl_renderer,
             )
-            # 保存到 session，方便查询
+            # 保存到 session，使 _get_page 在后续每个 dp 命令自动重注册
+            # （CDP init_js 绑定到 CDP session，每个 dp 命令需要重新注册）
             sess = load_session(session) or {}
-            sess['stealth'] = {
+            cfg = {
                 'preset': preset if not feature else 'custom',
                 'features': sorted(features),
             }
+            if ua:
+                cfg['ua'] = ua
+            if langs_list:
+                cfg['langs'] = langs_list
+            if webgl_vendor:
+                cfg['webgl_vendor'] = webgl_vendor
+            if webgl_renderer:
+                cfg['webgl_renderer'] = webgl_renderer
+            sess['stealth'] = cfg
             save_session(session, sess)
             ok(info, msg=f'stealth 已启用（{len(features)} 个特性）')
         except Exception as e:

@@ -38,22 +38,40 @@ def _get_page(session: str, raw: bool = False):
               code='SESSION_NOT_FOUND', detail=str(e))
         return
 
+    sess = load_session(session) or {}
+
     if raw:
-        return page
+        target = page
+    else:
+        # 检查是否有绑定的标签页
+        tab_id = sess.get('active_tab')
+        if tab_id:
+            try:
+                target = page.get_tab(tab_id)
+            except Exception:
+                sess.pop('active_tab', None)
+                save_session(session, sess)
+                target = page
+        else:
+            target = page
 
-    # 检查是否有绑定的标签页
-    sess = load_session(session)
-    tab_id = sess.get('active_tab')
-    if tab_id:
+    # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dp 命令是独立
+    # Python 进程/独立 session，必须重新注册才能让下一次 navigation 生效。
+    stealth_cfg = sess.get('stealth')
+    if stealth_cfg:
         try:
-            tab = page.get_tab(tab_id)
-            return tab
+            from dp_cli.stealth import apply_stealth, PRESETS
+            preset = stealth_cfg.get('preset', 'full')
+            features = set(stealth_cfg.get('features') or PRESETS.get(preset, PRESETS['full']))
+            apply_stealth(target, features=features,
+                          ua=stealth_cfg.get('ua'),
+                          langs=stealth_cfg.get('langs'),
+                          webgl_vendor=stealth_cfg.get('webgl_vendor'),
+                          webgl_renderer=stealth_cfg.get('webgl_renderer'))
         except Exception:
-            # 标签页可能已关闭，清除绑定
-            sess.pop('active_tab', None)
-            save_session(session, sess)
+            pass  # 不能让 stealth 失败阻塞常规命令
 
-    return page
+    return target
 
 
 _KNOWN_PREFIX = re.compile(

@@ -254,7 +254,7 @@ def apply_stealth(
     features = features or PRESETS['full']
     applied = {'features': sorted(features)}
 
-    # 1) UA 覆盖（通过 CDP，作用于所有请求，最彻底）
+    # 1) UA 覆盖（通过 CDP，作用于所有请求头 + navigator.userAgent）
     if 'ua' in features:
         ua = ua or DEFAULT_UA
         try:
@@ -268,20 +268,29 @@ def apply_stealth(
     script = build_init_script(features, langs=langs,
                                webgl_vendor=webgl_vendor,
                                webgl_renderer=webgl_renderer)
-    if script:
-        try:
-            # DrissionPage 提供的封装
-            js_id = page.add_init_js(script)
-            applied['init_js_id'] = js_id
-        except Exception as e:
-            applied['init_js_error'] = str(e)
+    if not script:
+        return applied
 
-    # 3) 立刻对当前文档注入一次（避免当前页未刷新时无效果）
-    if script:
-        try:
-            page.run_js(script)
-            applied['applied_to_current'] = True
-        except Exception:
-            applied['applied_to_current'] = False
+    # 2a) 直接用 CDP 注册，避开 DrissionPage add_init_js 的潜在封装问题
+    try:
+        page.run_cdp('Page.enable')
+    except Exception:
+        pass
+    try:
+        result = page.run_cdp('Page.addScriptToEvaluateOnNewDocument',
+                              source=script)
+        applied['init_js_id'] = result.get('identifier') if isinstance(result, dict) else result
+    except Exception as e:
+        applied['init_js_error'] = str(e)
+
+    # 2b) 立刻对当前文档注入一次
+    # 关键改动：用 as_expr=True 走 Runtime.evaluate 路径，避免被包装为
+    # callFunctionOn(function(){...}) 导致的 objectId 失效 / this 绑定问题
+    try:
+        page.run_js(script, as_expr=True)
+        applied['applied_to_current'] = True
+    except Exception as e:
+        applied['applied_to_current'] = False
+        applied['current_error'] = str(e)
 
     return applied

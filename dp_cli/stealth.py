@@ -73,17 +73,67 @@ _JS_CHROME_RUNTIME = r"""
 """
 
 _JS_PERMISSIONS = r"""
-// 修正 permissions.query({name:'notifications'}) 返回 Notification.permission
+// 修正 Notification.permission 和 permissions.query 返回合理值
+// headless 下 Notification.permission === 'denied' 是强 bot 信号，改成 'default'
 (() => {
   try {
+    // 1) 覆盖 Notification.permission
+    try {
+      Object.defineProperty(Notification, 'permission', {
+        get: () => 'default', configurable: true,
+      });
+    } catch (e1) {}
+    // 2) permissions.query 返回一致的结果
     const orig = window.navigator.permissions && window.navigator.permissions.query;
     if (!orig) return;
     window.navigator.permissions.query = (parameters) => (
       parameters && parameters.name === 'notifications'
-        ? Promise.resolve({ state: Notification.permission, onchange: null })
+        ? Promise.resolve({ state: 'default', onchange: null })
         : orig.call(window.navigator.permissions, parameters)
     );
   } catch (e) { window.__stealth__.errors.permissions = String(e); }
+})();
+"""
+
+_JS_HARDWARE = r"""
+// 伪造硬件信息：核心数 / 内存（VPS 只有 2-4 核，真实桌面 >=8）
+(() => {
+  try {
+    Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', {
+      get: () => __HW_CORES__, configurable: true,
+    });
+    Object.defineProperty(Navigator.prototype, 'deviceMemory', {
+      get: () => __HW_MEMORY__, configurable: true,
+    });
+  } catch (e) { window.__stealth__.errors.hardware = String(e); }
+})();
+"""
+
+_JS_UA_DATA = r"""
+// 补 navigator.userAgentData（Client Hints）
+// 当 UA 声称是 Chrome 147 但 userAgentData 缺失时，是明显的矛盾信号
+(() => {
+  try {
+    const brands = __UA_BRANDS__;
+    const fake = {
+      brands: brands,
+      mobile: false,
+      platform: '__UA_PLATFORM__',
+      getHighEntropyValues: function(hints) {
+        return Promise.resolve({
+          architecture: 'x86', bitness: '64', model: '',
+          platform: '__UA_PLATFORM__', platformVersion: '__UA_PLATFORM_VER__',
+          uaFullVersion: '__UA_FULL_VER__', wow64: false,
+          fullVersionList: brands.map(b => ({brand: b.brand, version: b.version + '.0.0.0'})),
+          brands: brands,
+        });
+      },
+      toJSON: function() { return {brands, mobile: false, platform: '__UA_PLATFORM__'}; },
+    };
+    Object.defineProperty(Navigator.prototype, 'userAgentData', {
+      get: () => fake, configurable: true,
+    });
+  } catch (e) { window.__stealth__.errors.ua_data = String(e); }
 })();
 """
 
@@ -185,9 +235,9 @@ _JS_WINDOW_DIMS = r"""
 PRESETS = {
     # 仅修 webdriver + UA（最小改动，性能最好）
     'mild':   {'webdriver', 'ua', 'window_dims'},
-    # 常用全套（推荐默认）
-    'full':   {'webdriver', 'ua', 'chrome_runtime', 'permissions',
-               'plugins', 'languages', 'webgl', 'window_dims'},
+    # 常用全套 + 硬件/userAgentData（推荐默认，应对一般反爬）
+    'full':   {'webdriver', 'ua', 'ua_data', 'chrome_runtime', 'permissions',
+               'plugins', 'languages', 'webgl', 'window_dims', 'hardware'},
 }
 
 DEFAULT_UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
@@ -195,6 +245,17 @@ DEFAULT_UA = ('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
 DEFAULT_LANGS = ['zh-CN', 'zh', 'en-US', 'en']
 DEFAULT_WEBGL_VENDOR = 'Intel Inc.'
 DEFAULT_WEBGL_RENDERER = 'Intel Iris OpenGL Engine'
+DEFAULT_HW_CORES = 8
+DEFAULT_HW_MEMORY = 8
+# 默认 Chrome 147 品牌信息
+DEFAULT_UA_BRANDS = [
+    {'brand': 'Google Chrome', 'version': '147'},
+    {'brand': 'Chromium', 'version': '147'},
+    {'brand': 'Not)A;Brand', 'version': '24'},
+]
+DEFAULT_UA_PLATFORM = 'Linux'  # 与 UA 里的 X11; Linux 对齐
+DEFAULT_UA_PLATFORM_VER = '6.5.0'
+DEFAULT_UA_FULL_VER = '147.0.0.0'
 
 
 def build_init_script(
@@ -233,6 +294,17 @@ def build_init_script(
             .replace('__RENDERER__', (webgl_renderer or DEFAULT_WEBGL_RENDERER)))
     if 'window_dims' in features:
         add('window_dims', _JS_WINDOW_DIMS)
+    if 'hardware' in features:
+        add('hardware', _JS_HARDWARE
+            .replace('__HW_CORES__', str(DEFAULT_HW_CORES))
+            .replace('__HW_MEMORY__', str(DEFAULT_HW_MEMORY)))
+    if 'ua_data' in features:
+        import json as _json
+        add('ua_data', _JS_UA_DATA
+            .replace('__UA_BRANDS__', _json.dumps(DEFAULT_UA_BRANDS))
+            .replace('__UA_PLATFORM_VER__', DEFAULT_UA_PLATFORM_VER)
+            .replace('__UA_PLATFORM__', DEFAULT_UA_PLATFORM)
+            .replace('__UA_FULL_VER__', DEFAULT_UA_FULL_VER))
     return '\n'.join(parts)
 
 

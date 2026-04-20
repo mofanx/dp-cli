@@ -65,7 +65,7 @@ dp open <url>    # 不加任何 --auto-connect 或 --port
 `https://` 可省略：
 - `dp open example.com` → `https://example.com`
 - `dp goto baidu.com` → `https://baidu.com`
-- `dp tab-new zhipin.com --new-window` → `https://zhipin.com`
+- `dp tab-new shop.example.com --new-window` → `https://shop.example.com`
 
 ### 多会话隔离（可选）
 
@@ -246,7 +246,7 @@ dp goto "https://my-site.com/dashboard"  → 已登录状态
 ```
 dp tab-list                           → 查看所有标签页（显示 [pinned] 标记）
 dp tab-new "example.com" --new-window  → 新窗口创建标签页（自动化专用），自动绑定
-dp tab-select zhipin                   → 按 URL 关键词绑定标签页
+dp tab-select example                  → 按 URL 关键词绑定标签页
 dp tab-select 1                        → 按序号绑定（从 0 开始）
 dp tab-select none                     → 解除绑定，恢复默认行为
 dp snapshot                           → 操作绑定的标签页（无需激活）
@@ -261,7 +261,7 @@ dp tab-close                          → 关闭绑定的标签页
 **典型场景：**
 ```bash
 dp open --auto-connect
-dp tab-new https://www.zhipin.com --new-window   # 新窗口 + 自动绑定
+dp tab-new https://shop.example.com --new-window   # 新窗口 + 自动绑定
 dp snapshot                                        # 只操作绑定的标签页
 dp click "ref:5"                                   # 同时你可在原窗口自由浏览
 ```

@@ -92,7 +92,7 @@ def register(cli):
         TARGET 支持：
           序号    dp tab-select 0        （按标签页序号）
           tab_id  dp tab-select ABC123   （按标签页 ID）
-          URL     dp tab-select zhipin   （按 URL 关键词匹配）
+          URL     dp tab-select example  （按 URL 关键词匹配）
           none    dp tab-select none     （解除绑定，恢复默认行为）
         """
         # 解除绑定

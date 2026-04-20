@@ -37,6 +37,47 @@ dp open https://example.com --port 9222
 dp snapshot
 ```
 
+## Connect to a Normally-Launched Chrome (Chrome 144+)
+
+No `--remote-debugging-port` required. Chrome 144+ exposes opt-in remote debugging
+via `chrome://inspect`:
+
+1. Open your Chrome as usual (no special flags)
+2. Visit `chrome://inspect/#remote-debugging`
+3. Check **"Allow remote debugging for this browser instance"**
+4. Run `dp open --auto-connect`
+
+```bash
+dp open --auto-connect                              # stable channel, default profile
+dp open --auto-connect --channel beta               # pick a different channel
+dp open --auto-connect --probe-dir ~/my-profile     # custom user-data-dir
+```
+
+### How it works
+
+Chrome 144+ in this mode exposes **only** a browser-level WebSocket and omits the HTTP
+REST API (`/json`, `/json/version`, ...) that DrissionPage / puppeteer / Playwright
+depend on. `dp-cli` transparently handles this:
+
+1. Reads `DevToolsActivePort` from the user-data-dir → real CDP port
+2. Probes the port — if `/json/version` is missing, identifies this as inspect mode
+3. Spawns a local bridge (`python -m dp_cli.bridge`) that:
+   - Synthesizes the missing HTTP endpoints from CDP calls
+   - Multiplexes page-level CDP traffic over a single browser-level WebSocket
+     via `Target.attachToTarget(flatten=True)`
+4. Points DrissionPage at the bridge. Subsequent `dp` commands reuse the same bridge.
+
+The bridge subprocess and its port are tracked in the session file; `dp close` stops
+the bridge automatically and never quits your Chrome (it's your browser, not dp's).
+
+### Caveats
+
+- Chrome always shows an **"Allow remote debugging"** dialog per new WebSocket client.
+  Since bridge maintains one WebSocket and dp commands share it, you confirm at most
+  once per `dp open --auto-connect`.
+- Works with whatever profile Chrome is actually using — same cookies, logins, history.
+- Classic `--remote-debugging-port=9222` mode still works unchanged via `dp open --port 9222`.
+
 ## Anti-Detection (stealth)
 
 Bypass `navigator.webdriver`, `HeadlessChrome` UA, empty `plugins`, SwiftShader WebGL,
@@ -96,8 +137,11 @@ dp extract "css:.item-card" \
 ```
 dp_cli/
 ├── main.py              # CLI entry point (~47 lines)
-├── session.py           # Browser session management
-├── snapshot.py          # Page snapshot & data extraction engine
+├── session.py           # Browser session management + auto-connect bridge glue
+├── bridge.py            # chrome://inspect mode CDP bridge (python -m dp_cli.bridge)
+├── bridge_manager.py    # Bridge subprocess lifecycle + inspect-mode detection
+├── stealth.py           # Anti-detection JS patches (applied via CDP)
+├── snapshot/            # a11y-tree snapshot & data extraction engine
 ├── output.py            # JSON output helpers
 └── commands/
     ├── _utils.py        # Shared decorators & helpers

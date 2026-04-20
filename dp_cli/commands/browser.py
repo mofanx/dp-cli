@@ -1,9 +1,13 @@
 # -*- coding:utf-8 -*-
 """浏览器生命周期命令: open / goto / reload / go-back / go-forward / close / close-all / list / delete-data / stealth"""
+from pathlib import Path
+
 import click
 
 from dp_cli.session import (get_browser, close_browser, list_sessions,
-                            delete_session, load_session, save_session)
+                            delete_session, load_session, save_session,
+                            discover_port_from_profile,
+                            default_user_data_dir_for_channel)
 from dp_cli.output import ok, error, format_page_info
 from dp_cli.commands._utils import session_option, _get_page, normalize_url
 from dp_cli.stealth import apply_stealth, PRESETS, DEFAULT_UA
@@ -19,21 +23,37 @@ def register(cli):
     @click.option('--profile', 'user_data_dir', default=None, help='用户数据目录')
     @click.option('--proxy', default=None, help='代理服务器，如 http://127.0.0.1:7890')
     @click.option('--port', type=int, default=None, help='连接指定端口的已有浏览器实例')
+    @click.option('--auto-connect', is_flag=True,
+                  help='从用户常规启动的 Chrome 读取 DevToolsActivePort 自动发现端口'
+                       '（需 Chrome 144+，用户在 chrome://inspect/#remote-debugging 启用）')
+    @click.option('--channel', type=click.Choice(['stable', 'beta', 'dev', 'canary', 'chromium']),
+                  default='stable', show_default=True,
+                  help='配合 --auto-connect 使用，定位默认 user-data-dir')
+    @click.option('--probe-dir', 'probe_dir', default=None,
+                  help='配合 --auto-connect 使用，显式指定要探测的 user-data-dir '
+                       '（覆盖 --channel 的默认路径）')
     @click.option('--new', is_flag=True, help='强制创建新实例（不复用已有会话）')
     @click.option('--stealth', is_flag=True, help='连接后自动启用反自动化检测补丁（full 预设）')
-    def cmd_open(url, session, headless, browser_path, user_data_dir, proxy, port, new, stealth):
+    def cmd_open(url, session, headless, browser_path, user_data_dir, proxy, port,
+                 auto_connect, channel, probe_dir, new, stealth):
         """打开浏览器并可选导航到 URL。
 
         \b
-        【复用用户自己的浏览器】(最常见场景，保留登录状态/Cookie/历史)
+        【复用用户自己的浏览器 - 方式 A：--remote-debugging-port 启动】
         第一步：用调试模式启动你自己的 Chrome/Chromium：
           google-chrome --remote-debugging-port=9222
         第二步：用 dp 接管：
           dp open --port 9222
-          dp open https://example.com --port 9222
-        第三步：后续命令无需再指定 --port（会话自动记住端口）：
-          dp snapshot
-          dp click "text:登录"
+
+        \b
+        【复用用户自己的浏览器 - 方式 B：--auto-connect（Chrome 144+ 推荐）】
+        无需特殊启动参数，正常打开 Chrome 即可：
+          1. 打开 Chrome，访问 chrome://inspect/#remote-debugging
+          2. 勾选 "Allow remote debugging for this browser instance"
+          3. dp open --auto-connect
+        dp 会从 Chrome 的 user-data-dir 自动读取 DevToolsActivePort 拿到端口。
+        指定非 stable 渠道：dp open --auto-connect --channel beta
+        指定自定义 profile：dp open --auto-connect --probe-dir ~/my-chrome-profile
 
         \b
         【dp 自动管理浏览器】
@@ -53,6 +73,36 @@ def register(cli):
         """
         if new:
             delete_session(session)
+
+        # --auto-connect：走 probe_dir 路径，get_browser 会自动检测 inspect
+        # 模式并起 bridge 代理（chrome://inspect 模式无 HTTP REST API）
+        if auto_connect:
+            if port:
+                error('--auto-connect 不能和 --port 同时使用',
+                      code='CONFLICTING_OPTIONS')
+                return
+            if probe_dir:
+                dir_to_probe = Path(probe_dir).expanduser()
+            else:
+                dir_to_probe = default_user_data_dir_for_channel(channel)
+                if not dir_to_probe:
+                    error(f'未找到 {channel} 渠道的默认 user-data-dir，'
+                          f'请用 --probe-dir 显式指定',
+                          code='PROFILE_NOT_FOUND')
+                    return
+            # 提前验证能读到 DevToolsActivePort，给用户清晰错误
+            try:
+                discover_port_from_profile(dir_to_probe)
+            except (FileNotFoundError, ValueError) as e:
+                error('自动发现端口失败', code='AUTOCONNECT_FAILED', detail=str(e))
+                return
+            # 写入 session，让 get_browser 走 probe_dir 分支
+            sess = load_session(session) or {}
+            sess['probe_dir'] = str(dir_to_probe)
+            sess['auto_connect'] = True
+            sess['user_connected'] = True
+            save_session(session, sess)
+
         try:
             page = get_browser(session, headless=headless, browser_path=browser_path,
                                user_data_dir=user_data_dir, proxy=proxy, port=port)
@@ -157,9 +207,17 @@ def register(cli):
             error(f'会话 [{session}] 不存在', code='SESSION_NOT_FOUND')
             return
         user_connected = sess.get('user_connected', False)
+        auto_connect = sess.get('auto_connect', False)
         if user_connected and not force:
-            delete_session(session)
-            ok(msg=f'已断开与 [{session}] 的连接（浏览器仍运行）。用 --force 关闭浏览器。')
+            # auto-connect/--port 默认只断开（不 quit 用户的 Chrome）；
+            # close_browser 会同时停 bridge 子进程（若有）
+            result = close_browser(session)
+            if result:
+                extra = '，bridge 已停' if auto_connect else ''
+                ok(msg=f'已断开与 [{session}] 的连接（浏览器仍运行{extra}）。'
+                       f'用 --force 可尝试彻底关闭浏览器。')
+            else:
+                error('断开失败', code='CLOSE_FAILED')
         else:
             result = close_browser(session, del_data=del_data)
             if result:

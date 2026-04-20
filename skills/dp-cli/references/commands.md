@@ -4,11 +4,17 @@
 >
 > 使用逻辑和工作流见主文件 `../SKILL.md`
 
+## 全局选项
+
+| 选项 | 说明 |
+|------|------|
+| `-s <name>` / `--session <name>` | 选择会话（不同 session 相互隔离） |
+
 ## 命令一览
 
 | 类别 | 命令 | 说明 |
 |------|------|------|
-| 浏览器 | `open`, `close`, `close-all`, `list` | 启动/关闭/列出会话 |
+| 浏览器 | `open`, `close`, `close-all`, `list`, `stealth` | 启动/关闭/列出会话，反检测补丁 |
 | 导航 | `goto`, `reload`, `go-back`, `go-forward` | 页面跳转 |
 | 快照 | `snapshot` | 页面结构分析（核心，输出带 `[N]` 编号） |
 | 提取 | `extract`, `query`, `find`, `inspect`, `dom` | 数据提取和元素查询 |
@@ -81,3 +87,39 @@ dp dom "ref:21" -d parent --depth 5 → 向上追溯，找容器
 dp dom "ref:21" -d children         → 查看子节点
 dp dom "ref:21" -d siblings         → 查看兄弟节点
 ```
+
+## open 连接模式速查
+
+| 参数 | 行为 | 使用条件 |
+|------|------|---------|
+| `--auto-connect` | 自动发现 Chrome 调试端口（Chrome 144+，必要时起 bridge） | **首选**；需用户在 `chrome://inspect/#remote-debugging` 勾选 Allow |
+| `--port <N>` | 连接用户用 `--remote-debugging-port=N` 启动的 Chrome | 旧版 Chrome 或用户已手动启动 |
+| `--channel beta\|dev\|canary\|chromium` | 搭配 `--auto-connect`，定位非 stable 渠道的默认 profile | 只用非 stable Chrome 时 |
+| `--probe-dir <path>` | 搭配 `--auto-connect`，显式指定 user-data-dir | 自定义 profile 路径 |
+| `--stealth` | 连接后立即应用 full 反检测预设 | 目标站点有反爬/检测 |
+| `--new` | 强制新建会话（删除同名已有会话） | 会话状态混乱时 |
+| （无连接参数） | dp 自管新启一个临时浏览器 | 仅纯公开页面、不需登录态 |
+
+## stealth 命令
+
+```
+dp stealth                           → full 预设（推荐）
+dp stealth --preset mild             → 只改 webdriver + UA
+dp stealth --ua "Mozilla/5.0 ..."    → 自定义 User-Agent
+dp stealth --feature webdriver --feature plugins   → 精细选择
+dp stealth --langs "zh-CN,zh,en"     → 改 navigator.languages
+```
+
+full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plugins` / `languages` / `WebGL VENDOR&RENDERER` / `window.outerWidth&Height`
+
+## 错误码速查
+
+| code | 含义 | 典型处理 |
+|------|------|---------|
+| `AUTOCONNECT_FAILED` | 读不到 DevToolsActivePort | 指引用户在 `chrome://inspect` 勾选 Allow |
+| `BROWSER_START_FAILED` + "timed out" | bridge 等待 Allow 超时 | 提示用户点 Chrome 中的 Allow |
+| `SESSION_NOT_FOUND` | `dp close`/`dp dom` 等命令找不到会话 | 先执行 `dp open --auto-connect` |
+| `TAB_NOT_FOUND` | `dp tab-select N` 的 N 越界 | 先 `dp tab-list` 看索引 |
+| `CONFLICTING_OPTIONS` | `--auto-connect` 与 `--port` 同用 | 二选一 |
+| `NAVIGATE_FAILED` | 导航失败（网络/超时/白名单） | 调 `--timeout` 或检查网络/代理 |
+| `STEALTH_FAILED` | 注入补丁失败 | 先确认页面已连接；切到空页再重试 |

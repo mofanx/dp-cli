@@ -5,10 +5,15 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
 ## Features
 
 - **Anti-detection by default** — not based on webdriver, `navigator.webdriver` is `false`
-- **Reuse your own browser** — connect to a running Chrome via `--port`, keeping login state and cookies
-- **Powerful locator syntax** — descriptive strings stable across navigation (no ephemeral refs)
-- **Structured data extraction** — `extract` + `query` + `snapshot --mode content` for scraping list pages
+- **Reuse your own browser** — `--auto-connect` (Chrome 144+, no CLI flag needed) or `--port`
+- **Hybrid snapshot** — a11y tree + Vimium-style clickable detection, catches icon-only buttons
+  and custom menu items the a11y tree misses; every element gets an `[N]` ref with
+  confidence markers (`⚡` medium, `?` low)
+- **`dp scan`** — fast Vimium-style listing of interactive elements (viewport-only mode available)
+- **Powerful locator syntax** — descriptive strings stable across navigation
+- **Structured data extraction** — `extract` + `query` + `snapshot` for scraping list pages
 - **Network listening** — capture XHR/Fetch requests and response bodies
+- **Stealth patches** — `dp stealth` bypasses common automation detections
 - **Dual mode** — browser control + pure HTTP requests
 - **Shadow-root / iframe** — traverse directly without switching context
 - **JSON output** — all commands output JSON, AI-friendly
@@ -77,6 +82,47 @@ the bridge automatically and never quits your Chrome (it's your browser, not dp'
   once per `dp open --auto-connect`.
 - Works with whatever profile Chrome is actually using — same cookies, logins, history.
 - Classic `--remote-debugging-port=9222` mode still works unchanged via `dp open --port 9222`.
+
+## Hybrid Snapshot (a11y + Vimium-style)
+
+The default `dp snapshot` fuses two element-discovery paths:
+
+1. **Browser a11y tree** via CDP — the structural skeleton (headings, lists, form roles,
+   explicit `<a>`/`<button>`, any `role="..."` element).
+2. **Vimium-style clickable detection** — a JS probe that flags icon-only buttons,
+   `<div onclick>`, `[tabindex>=0]`, `aria-selected`, `cursor:pointer` elements, etc.
+   that the a11y tree misses.
+
+Results are deduplicated by `backendNodeId` and rendered with confidence markers:
+
+| Marker | Confidence | Triggers |
+|--------|-----------|----------|
+| none   | **high**   | `<a href>`, `<button>`, `<input>`, `role=button/link/...`, `contenteditable` |
+| `⚡`   | **medium** | `onclick` / `jsaction` / `tabindex>=0` / `aria-selected` / `<audio>/<video>` |
+| `?`    | **low**    | `cursor:pointer` / class keyword match (`btn` / `click` / `toggle` / …) |
+
+Every element gets an `[N]` ref usable in any command: `dp click "ref:5"`.
+
+```bash
+dp snapshot                     # a11y + clickable (default); high + medium markers
+dp snapshot --viewport-only     # clickable probe limited to viewport (faster)
+dp snapshot --include-low       # also surface `?` low-confidence heuristics
+dp snapshot --no-clickables     # a11y tree only (legacy behavior)
+```
+
+### `dp scan` — fast clickable-only listing
+
+When you only need "what can I click next?" without the full a11y tree:
+
+```bash
+dp scan                         # full page, high+medium
+dp scan --viewport              # only elements currently in viewport
+dp scan --confidence all        # include low-confidence heuristics
+dp scan --confidence high       # only the sure-thing clickables
+```
+
+Both `snapshot` and `scan` share the same `[N]` ref numbering per session, so
+`dp click "ref:N"` works regardless of which one produced the snapshot.
 
 ## Anti-Detection (stealth)
 

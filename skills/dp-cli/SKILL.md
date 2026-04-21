@@ -91,22 +91,56 @@ dp -s work snapshot     # 只作用于 work 会话
 
 ## 核心思维：先看再做
 
-**任何浏览器任务的第一步都是 `dp snapshot`，不要盲目操作。**
+**任何浏览器任务的第一步都是 `dp snapshot`（理解全页）或 `dp scan`（只看可点的），不要盲目操作。**
 
-快照基于浏览器原生 a11y tree，输出：
-- 页面完整结构（标题层级、区域划分、列表）
-- 所有可交互元素及其定位器（link/button/input 等）
-- 内容文本（段落、代码块、列表项）
-- **每个元素都有 `[N]` 编号**，可直接用 `ref:N` 引用操作
+### dp snapshot：全页快照（大而全）
+
+基于两种来源融合：
+1. **浏览器 a11y tree**（骨架）——结构 / 标题 / 列表 / 明确的 `role` / `<a>` / `<button>` 等
+2. **Vimium 风格可交互元素补充**（补盲）——a11y tree 漏掉的纯图标按钮、菜单项、`<div onclick>`、有 `tabindex` 的自定义控件、`cursor:pointer` 启发式匹配等
+
+输出末尾会有 `### Additional Interactive Elements` 区块，列出 a11y tree 没收录但可能可点的元素。**每个元素都有 `[N]` 编号**，配合 `⚡` / `?` 置信度标记：
+
+| 标记 | 含义 |
+|------|------|
+| 无 | **high** 置信度（确定可点，如 `<button>`, `<a href>`, `role=button`）|
+| `⚡` | **medium** 置信度（很可能，如 `onclick` / `tabindex>=0` / `aria-selected`）|
+| `?` | **low** 置信度（启发式，可能假阳性；默认不显示，需 `--include-low`） |
 
 三种模式：
-- `dp snapshot` — **full**（默认），完整内容，首次调用用这个
-- `dp snapshot --mode brief` — 精简模式，截断长文本保留结构+交互，省 token
-- `dp snapshot --mode text` — 纯文本，按阅读顺序输出
+- `dp snapshot` — **full**（默认），完整内容 + clickable 补充，首次调用用这个
+- `dp snapshot --mode brief` — 精简模式，省 token，适合循环调用
+- `dp snapshot --mode text` — 纯文本，按阅读顺序
 
-**快照是你理解页面的唯一入口，拿到快照后直接用 `ref:N` 操作元素。**
+补充探测开关：
+- `--viewport-only` 只扫视口，更快（适合长页面）
+- `--include-low` 包含 low 置信度（假阳性↑，但能捕获更冷门的 clickable）
+- `--no-clickables` 关闭补充探测，回到纯 a11y tree（旧行为）
 
-**重要：每次 `dp snapshot` 后编号会重新分配。操作导致页面变化后，需要重新 snapshot 获取新编号。**
+### dp scan：快速可交互清单（小而快）
+
+当你只关心"当前页面下一步能点什么"、不需要 a11y tree 的完整结构时，用 `dp scan` 更省 token：
+
+```
+dp scan                            # 扫全页，high+medium
+dp scan --viewport                 # 只扫视口内
+dp scan --confidence high          # 只要最确定的
+dp scan --confidence all           # 包含 low（含启发式）
+```
+
+输出结构同补充元素（`[N]` 编号 + `⚡` / `?` 标记 + locator），`ref:N` 与 `dp click`/`dp fill` 无缝配合。
+
+**区别速查**：
+
+| 场景 | 用哪个 |
+|------|--------|
+| 理解新页面、首次调用 | `dp snapshot` |
+| 读取文章 / 列表内容 / 结构信息 | `dp snapshot` |
+| 循环操作中只看"还能点什么" | `dp scan` 或 `dp snapshot --mode brief` |
+| 弹窗 / 下拉菜单出现后想找新选项 | `dp scan --viewport`（很快） |
+| 纯图标工具栏（GitHub/VSCode 式 UI） | `dp snapshot` 或 `dp scan` 都能覆盖 |
+
+**重要：每次 `dp snapshot` 或 `dp scan` 后编号会重新分配。操作导致页面变化后，需要重新执行获取新编号。**
 
 ---
 
@@ -353,9 +387,9 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 
 1. **先连接用户浏览器** — 默认 `dp open --auto-connect`，失败再降级到 `--port 9222`
 2. **提示用户点 Allow** — 执行 `--auto-connect` 后，主动告诉用户留意 Chrome 的 Allow 授权框
-3. **先 snapshot，后操作** — 不要猜页面结构
-4. **用 ref:N 引用元素** — `dp click "ref:5"` 最高效，每次 snapshot 后编号刷新
-5. **善用 brief 模式省 token** — 循环操作中用 `--mode brief`
+3. **先 snapshot/scan，后操作** — 不要猜页面结构；snapshot 看全貌，scan 只看可点
+4. **用 ref:N 引用元素** — `dp click "ref:5"` 最高效，每次 snapshot/scan 后编号刷新
+5. **善用 brief 模式 / scan 省 token** — 循环操作用 `--mode brief` 或改用 `dp scan`
 6. **操作后再 snapshot 确认** — 验证结果而非假设成功
 7. **小量验证再批量** — `dp query ... --limit 2` 确认后再 `dp extract`
 8. **动态页面先等待** — `dp wait --loaded` / `--locator` / `--text` / `--locator-gone`
@@ -377,7 +411,8 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 
 ## 故障排查
 
-- **元素找不到** → `dp snapshot` 确认元素存在 → `dp wait --locator` 等动态加载
+- **元素找不到** → `dp snapshot` 确认元素存在；若 a11y tree 没有，看末尾 `Additional Interactive Elements` 或直接 `dp scan --confidence all` 找补充元素 → `dp wait --locator` 等动态加载
+- **纯图标按钮 / 自定义菜单项无 ref** → `dp scan` 或 `dp snapshot --include-low`（启发式匹配会把 `⚡` medium / `?` low 也列出）
 - **`AUTOCONNECT_FAILED`（找不到 DevToolsActivePort）** → 指引用户在 `chrome://inspect/#remote-debugging` 勾选 **Allow remote debugging for this browser instance**
 - **`dp open --auto-connect` 卡住不返回** → 用户没点 Allow → 提示用户切到 Chrome 窗口点 **Allow** 授权对话框
 - **`BROWSER_START_FAILED` 带 "timed out"** → 同上，Allow 未点；90 秒超时会返回

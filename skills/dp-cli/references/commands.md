@@ -16,7 +16,7 @@
 |------|------|------|
 | 浏览器 | `open`, `close`, `close-all`, `list`, `stealth` | 启动/关闭/列出会话，反检测补丁 |
 | 导航 | `goto`, `reload`, `go-back`, `go-forward` | 页面跳转 |
-| 快照 | `snapshot` | 页面结构分析（核心，输出带 `[N]` 编号） |
+| 快照 | `snapshot`, `scan` | 页面结构分析（snapshot=全页，scan=仅可点）；输出带 `[N]` 编号 |
 | 提取 | `extract`, `query`, `find`, `inspect`, `dom` | 数据提取和元素查询 |
 | 交互 | `click`, `dblclick`, `fill`, `clear`, `select`, `check`, `hover`, `scroll`, `scroll-to`, `drag`, `upload` | 元素操控 |
 | 键盘 | `press`, `type` | 键盘输入 |
@@ -32,6 +32,37 @@
 | Storage | `localstorage-*`, `sessionstorage-*` | localStorage/sessionStorage 操作 |
 | 窗口 | `resize`, `maximize` | 窗口控制 |
 | 配置 | `config-set`, `delete-data` | 浏览器路径/数据目录 |
+
+## snapshot 模式 & 开关
+
+| 选项 | 行为 |
+|------|------|
+| `--mode full` | 默认；完整内容 + clickable 补充 |
+| `--mode brief` | 精简（省 token），结构+交互保留 |
+| `--mode text` | 纯文本按阅读顺序 |
+| `--selector CSS` | 只快照指定子树 |
+| `--no-clickables` | 关闭 Vimium 风格补充探测，纯 a11y tree |
+| `--include-low` | 启用 low 置信度（`?` 标记，含 `cursor:pointer` 启发式） |
+| `--viewport-only` | 补充探测只看视口内（省 token、更快） |
+| `--format json` | JSON 原始结构输出 |
+| `--filename PATH` | 保存到文件 |
+
+## scan 命令（Vimium 风格，仅可交互元素）
+
+```
+dp scan                              # 扫全页，high+medium 置信度
+dp scan --viewport                   # 只扫视口内
+dp scan --confidence high            # 只要最确定的
+dp scan --confidence high,medium     # 默认
+dp scan --confidence all             # 包含 low（启发式）
+dp scan --max 500                    # 限制最多返回
+dp scan --format json                # JSON 输出
+```
+
+输出元素标记：
+- 无标记 = **high**（`<a href>`, `<button>`, `role=button` 等明确可点）
+- `⚡` = **medium**（`onclick` / `tabindex>=0` / `aria-selected` / `<audio>/<video>`）
+- `?` = **low**（`cursor:pointer` / class 关键词匹配的启发式，可能假阳性）
 
 ## snapshot 输出示例
 

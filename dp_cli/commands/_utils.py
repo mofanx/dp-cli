@@ -75,7 +75,7 @@ def _get_page(session: str, raw: bool = False):
 
 
 _KNOWN_PREFIX = re.compile(
-    r'^(css[:=]|xpath[:=]|text[:=^$]|tag[:=^$]|@@?[\w]|ref:)', re.IGNORECASE)
+    r'^(css[:=]|xpath[:=]|text[:=^$]|tag[:=^$]|@@?[\w]|ref:|pw:)', re.IGNORECASE)
 _CSS_ID_CLASS = re.compile(r'^[#.][\w-]')           # #id  .class
 _CSS_TAG_SEL = re.compile(r'^[\w-]+[.#\[][\w-]')   # div.class  a[href]  h1#title
 _CSS_COMBINATOR = re.compile(r'[\[>+~]|::|:(?:nth|first|last|not|has)')  # [attr] > + ~ ::pseudo :nth-child
@@ -145,17 +145,58 @@ def _mark_element_by_backend_id(page, backend_node_id: int) -> str:
     return marker
 
 
-def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
-    """解析定位器：ref:N 展开 + 智能前缀补全。
+def _resolve_pw(expr: str, session: str, page) -> str:
+    """解析 pw: 表达式 → 在页面上打标 → 返回 @data-dp-ref=<marker>。
 
-    如果 locator 以 'ref:' 开头，从 session 的 refs 映射中查找。
-      - 有 backendNodeId 时：通过 CDP 现场打临时属性，返回 @data-dp-ref=<marker>
-        （最鲁棒，绕开 CSS Modules / 动态 class / xpath 变化）
-      - 无 backendNodeId 或打标失败时：回落到保存的 locator 字符串
-      - 再失败，用 name 作 text 定位器
+    失败（语法错 / 未匹配 / 浏览器不可用）会调用 error 并退出。
+    """
+    from dp_cli.locators import parse_pw, build_pw_js, PwParseError
+    try:
+        matchers = parse_pw(expr)
+    except PwParseError as e:
+        error(f'pw 定位器语法错误: {e}', code='PW_SYNTAX')
+        raise SystemExit(1)
+
+    if page is None:
+        try:
+            page = _get_page(session)
+        except SystemExit:
+            raise
+        except Exception as e:
+            error('无法连接浏览器会话', code='SESSION_NOT_FOUND', detail=str(e))
+            raise SystemExit(1)
+
+    js = build_pw_js(matchers)
+    try:
+        marker = page.run_js(js)
+    except Exception as e:
+        error(f'pw 定位器求值失败', code='PW_EVAL_FAILED', detail=str(e))
+        raise SystemExit(1)
+
+    if not marker:
+        error(f'pw 定位器未匹配到元素: pw:{expr}', code='PW_NOT_FOUND')
+        raise SystemExit(1)
+
+    return f'@data-dp-ref={marker}'
+
+
+def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
+    """解析定位器：ref:N 展开 + pw: 表达式求值 + 智能前缀补全。
+
+    - pw:<expr>：Playwright 风格（role/text/label/placeholder/alt/title/
+      testid/css/xpath/nth/has-text/visible），支持 >> 链式。通过 JS 求值
+      + 打标，返回 @data-dp-ref=<marker>。
+    - ref:N：从 session 的 refs 映射中查找。
+        · 有 backendNodeId 时：通过 CDP 现场打临时属性，返回 @data-dp-ref=
+          （最鲁棒，绕开 CSS Modules / 动态 class / xpath 变化）
+        · 无 backendNodeId 或打标失败时：回落到保存的 locator 字符串
+        · 再失败，用 name 作 text 定位器
+    - 其它：智能补全 css:/xpath: 前缀。
 
     :param page: 可选，传入避免内部再调用 _get_page；为 None 时按需懒加载。
     """
+    if locator.startswith('pw:'):
+        return _resolve_pw(locator[3:], session, page)
     if not locator.startswith('ref:'):
         return normalize_locator(locator)
 

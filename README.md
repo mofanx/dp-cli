@@ -10,7 +10,8 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
   and custom menu items the a11y tree misses; every element gets an `[N]` ref with
   confidence markers (`⚡` medium, `?` low)
 - **`dp scan`** — fast Vimium-style listing of interactive elements (viewport-only mode available)
-- **Powerful locator syntax** — descriptive strings stable across navigation
+- **Powerful locator syntax** — descriptive strings stable across navigation, plus
+  Playwright-style `pw:role=button[name="Submit"] >> nth=2` chains
 - **Structured data extraction** — `extract` + `query` + `snapshot` for scraping list pages
 - **Network listening** — capture XHR/Fetch requests and response bodies
 - **Stealth patches** — `dp stealth` bypasses common automation detections
@@ -128,6 +129,53 @@ dp scan --confidence high       # only the sure-thing clickables
 
 Both `snapshot` and `scan` share the same `[N]` ref numbering per session, so
 `dp click "ref:N"` works regardless of which one produced the snapshot.
+
+## Playwright-style locators (`pw:` prefix)
+
+Need semantic, role-based targeting on a fresh page (no snapshot required)?
+Use the `pw:` prefix. Syntax mirrors Playwright, and chains with `>>`:
+
+```bash
+# By ARIA role (with accessible name — exact / substring / regex)
+dp click 'pw:role=button[name="Submit"]'
+dp click 'pw:role=button[name=/^Sign/i]'
+dp click 'pw:role=link[name=More]'         # substring
+
+# By visible text (exact / substring / regex)
+dp click 'pw:text="Login"'                 # exact
+dp click 'pw:text=Login'                   # substring (case-insensitive)
+dp click 'pw:text=/^log/i'                 # regex
+
+# By form affordances
+dp fill  'pw:placeholder=Search…' "chatgpt"
+dp fill  'pw:label="Email"' "a@b.com"
+dp click 'pw:alt="Logo"'
+dp click 'pw:title="Close"'
+dp click 'pw:testid=submit-btn'            # data-testid / data-test-id / data-test
+
+# Chain with >> (each step narrows the scope)
+dp click 'pw:css=.sidebar >> role=listitem[name="Chat"] >> nth=2'
+dp click 'pw:css=li >> has-text="Python"'
+dp click 'pw:role=list >> nth=-1'          # negative index = from end
+
+# Raw css/xpath chunks mix freely
+dp click 'pw:xpath=//nav >> role=link[name=Docs]'
+```
+
+**Matchers**: `role` / `text` / `label` / `placeholder` / `alt` / `title` /
+`testid` / `css` / `xpath` / `nth` / `has-text` / `visible`
+
+**Value forms**: `bare` = substring, `"quoted"` = exact, `/pattern/flags` = regex
+
+**Visibility**: `role` / `text` / `has-text` automatically skip elements hidden
+via `display:none`, `visibility:hidden`, `hidden` attribute, or
+`aria-hidden="true"` (matches Playwright semantics).
+
+**Shadow DOM**: open shadow roots are traversed automatically.
+
+Under the hood the matcher chain is evaluated in-page as JS, the target element
+is tagged with a one-shot `data-dp-ref` attribute, and DrissionPage resolves it
+by that attribute — bypassing stale classes / CSS Modules / dynamic XPath.
 
 ## Anti-Detection (stealth)
 

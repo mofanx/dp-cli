@@ -154,6 +154,7 @@ dp scan --confidence all           # 包含 low（含启发式）
 | 语法 | 说明 | 示例 |
 |------|------|------|
 | **`ref:N`** | **快照编号（推荐）** | **`ref:5`** |
+| **`pw:...`** | **Playwright 风格（语义化，支持 `>>` 链式）** | **`pw:role=button[name="Submit"]`** |
 | `text:xxx` | 文本包含 | `text:登录` |
 | `text=xxx` | 文本精确 | `text=提交` |
 | `#id` | ID | `#submit` |
@@ -164,11 +165,44 @@ dp scan --confidence all           # 包含 low（含启发式）
 | `t:tag` | 标签名 | `t:button` |
 | `@@A@@B` | 多条件与 | `@@tag()=button@@text():提交` |
 
-**定位器优先级**：`ref:N` > `#id` > `@data-testid` / `@aria-label` > `text:` > `.class` > `css:` > `xpath:`
+**定位器优先级**：`ref:N`（快照后最快）> `pw:role/testid/label`（语义最稳，无需快照）> `#id` > `@data-testid` / `@aria-label` > `text:` > `.class` > `css:` > `xpath:`
 
 属性匹配：`@class:active`(包含) `@class=active`(精确) `@class^=btn`(前缀) `@class$=large`(后缀)
 
 **快照输出的每个元素都自带推荐定位器（`→` 后面的部分），直接复制使用即可。**
+
+### `pw:` Playwright 风格（语义化定位，推荐跨站点通用）
+
+不想每次都 snapshot 的话，用 `pw:` 直接按语义定位：
+
+```bash
+# role + accessible name（最语义化，跨 CSS 重构稳定）
+dp click 'pw:role=button[name="Submit"]'
+dp click 'pw:role=button[name=/^Sign/i]'        # 正则，i=忽略大小写
+dp click 'pw:role=link[name=More]'               # 裸值=substring
+
+# 文本（精确/含/正则）
+dp click 'pw:text="登录"'                        # 精确
+dp click 'pw:text=登录'                          # 包含
+dp click 'pw:text=/^log/i'                       # 正则
+
+# 表单语义
+dp fill  'pw:placeholder=搜索' "chatgpt"
+dp fill  'pw:label="邮箱"' "a@b.com"
+dp click 'pw:testid=submit-btn'                  # data-testid / data-test-id / data-test
+
+# 链式 >>（每步缩小作用域）
+dp click 'pw:css=.sidebar >> role=listitem[name="Chat"] >> nth=2'
+dp click 'pw:css=li >> has-text="Python"'
+dp click 'pw:role=list >> nth=-1'                # -1 = 最后一个
+dp click 'pw:xpath=//nav >> role=link[name=Docs]'
+```
+
+支持的 matcher：`role` / `text` / `label` / `placeholder` / `alt` / `title` / `testid` / `css` / `xpath` / `nth` / `has-text` / `visible`
+
+值的形式：`裸值`=子串 · `"引号"`=精确 · `/regex/flags`=正则
+
+**默认过滤隐藏元素**（`display:none` 链 / `hidden` / `aria-hidden=true`），Shadow DOM 自动穿透。失败会报 `PW_NOT_FOUND`。
 
 ---
 

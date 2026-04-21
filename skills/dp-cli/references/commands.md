@@ -119,6 +119,42 @@ dp dom "ref:21" -d children         → 查看子节点
 dp dom "ref:21" -d siblings         → 查看兄弟节点
 ```
 
+## `pw:` Playwright 风格定位器
+
+无需先 snapshot，直接语义定位，所有交互命令（click/fill/hover/check/...）都支持。
+
+```
+dp click 'pw:role=button[name="Submit"]'         # role + accessible name（精确）
+dp click 'pw:role=button[name=/^Sign/i]'         # name 用正则，i=忽略大小写
+dp click 'pw:role=link[name=More]'               # 裸值=子串匹配
+
+dp click 'pw:text="登录"'                        # 精确文本
+dp click 'pw:text=登录'                          # 子串文本
+dp click 'pw:text=/^log/i'                       # 正则文本
+
+dp fill  'pw:placeholder=搜索' "chatgpt"         # placeholder 属性
+dp fill  'pw:label="邮箱"' "a@b.com"             # <label> 关联的控件
+dp click 'pw:alt="Logo"' / 'pw:title="关闭"'
+dp click 'pw:testid=submit-btn'                  # data-testid / data-test-id / data-test
+
+# 链式 >>：每段缩小作用域
+dp click 'pw:css=.sidebar >> role=listitem[name="Chat"] >> nth=2'
+dp click 'pw:css=li >> has-text="Python"'        # has-text 作为过滤器
+dp click 'pw:role=list >> nth=-1'                # nth 支持负数（-1=最后一个）
+dp click 'pw:xpath=//nav >> role=link[name=Docs]'
+```
+
+**Matcher 全集**：`role` · `text` · `label` · `placeholder` · `alt` · `title` · `testid` · `css` · `xpath` · `nth` · `has-text` · `visible`
+
+**值形式**：`裸值`=substring · `"引号"`=exact · `/pattern/flags`=regex（JS 语法，flags ∈ `gimsuy`）
+
+**可见性**：`role` / `text` / `has-text` 默认过滤掉隐藏元素（`display:none` 链 / `hidden` / `aria-hidden=true`）；Shadow DOM 自动穿透。
+
+**失败码**：
+- `PW_SYNTAX` — 表达式语法错
+- `PW_NOT_FOUND` — 没匹配到元素
+- `PW_EVAL_FAILED` — JS 执行异常（极少见）
+
 ## open 连接模式速查
 
 | 参数 | 行为 | 使用条件 |

@@ -106,11 +106,55 @@ def normalize_locator(loc: str) -> str:
     return loc
 
 
-def resolve_locator(locator: str, session: str = 'default') -> str:
+def _mark_element_by_backend_id(page, backend_node_id: int) -> str:
+    """通过 CDP 给指定 backendNodeId 的元素打一个临时 data-dp-ref 属性，
+    返回 marker 字符串，调用方可用 @data-dp-ref=<marker> 精确定位。
+
+    这是 ref:N → Element 的最鲁棒通路：
+      - 绕开 CSS Modules / React 动态 class 命名
+      - 绕开 xpath 结构变化
+      - 只要 DOM 节点还在，backendNodeId 稳定
+
+    失败（节点已不存在、CDP 异常）返回 None。
+    """
+    import uuid
+    marker = 'dp' + uuid.uuid4().hex[:12]
+    try:
+        res = page.run_cdp('DOM.resolveNode', backendNodeId=int(backend_node_id))
+    except Exception:
+        return None
+    if not isinstance(res, dict):
+        return None
+    obj_id = (res.get('object') or {}).get('objectId')
+    if not obj_id:
+        return None
+    try:
+        page.run_cdp(
+            'Runtime.callFunctionOn',
+            objectId=obj_id,
+            functionDeclaration=(
+                'function(m){'
+                'try{this.setAttribute("data-dp-ref", m);}catch(e){}'
+                '}'
+            ),
+            arguments=[{'value': marker}],
+            returnByValue=True,
+        )
+    except Exception:
+        return None
+    return marker
+
+
+def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
     """解析定位器：ref:N 展开 + 智能前缀补全。
 
-    如果 locator 以 'ref:' 开头，从 session 的 refs 映射中查找真实定位器。
-    否则尝试智能补全 css:/xpath: 前缀。
+    如果 locator 以 'ref:' 开头，从 session 的 refs 映射中查找。
+      - 有 backendNodeId 时：通过 CDP 现场打临时属性，返回 @data-dp-ref=<marker>
+        （最鲁棒，绕开 CSS Modules / 动态 class / xpath 变化）
+      - 无 backendNodeId 或打标失败时：回落到保存的 locator 字符串
+      - 再失败，用 name 作 text 定位器
+
+    :param page: 可选，传入避免内部再调用 _get_page；为 None 时按需懒加载。
     """
     if not locator.startswith('ref:'):
         return normalize_locator(locator)
@@ -130,11 +174,27 @@ def resolve_locator(locator: str, session: str = 'default') -> str:
               code='REF_NOT_FOUND')
         raise SystemExit(1)
 
+    # 1. 首选：backendNodeId 打标
+    bid = ref_data.get('backendNodeId')
+    if bid:
+        if page is None:
+            try:
+                page = _get_page(session)
+            except SystemExit:
+                page = None
+            except Exception:
+                page = None
+        if page is not None:
+            marker = _mark_element_by_backend_id(page, bid)
+            if marker:
+                return f'@data-dp-ref={marker}'
+
+    # 2. 回退：原保存的 locator 字符串
     real_loc = ref_data.get('locator')
     if real_loc and not real_loc.startswith('t:'):
         return real_loc
 
-    # locator 不可用时（如 t:p），尝试用 name 作为 text 定位器
+    # 3. 再回退：用 name 作文字定位
     name = ref_data.get('name', '')
     if name and len(name) <= 50:
         return f'text:{name}'

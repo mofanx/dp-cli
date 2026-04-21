@@ -219,7 +219,7 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     # ── 追加 clickable_extras（a11y tree 漏掉的可交互元素）──
     extras = snapshot.get('clickable_extras') or []
     if extras:
-        from .clickable import CONFIDENCE_MARKER
+        from .clickable import format_clickable_record
         lines.append('')
         meta = snapshot.get('clickable_meta') or {}
         header_suffix = []
@@ -232,38 +232,23 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
         lines.append(f'### Additional Interactive Elements'
                      f' (Vimium-style, not in a11y tree){suffix_str}')
         lines.append(f'- 共 {len(extras)} 个；⚡ = medium 置信, ? = low 置信；'
-                     f'用 ref:N 引用')
+                     f'@zone=位置区域（top-left/top-right/center/… 9 宫格）；'
+                     f'(icon)=仅图标；用 ref:N 引用')
         lines.append('')
         for rec in extras:
             ctx['counter'] += 1
             rid = ctx['counter']
-            marker = CONFIDENCE_MARKER.get(rec.get('confidence'), '')
-            tag = rec.get('tag', '')
-            text = (rec.get('text') or '').strip()
-            reason = rec.get('reason') or ''
-            loc = rec.get('locator') or ''
-            rect = rec.get('rect') or {}
-
-            parts = [f'- [{rid}] {marker}{tag}']
-            if text:
-                display_text = text[:80] + '…' if len(text) > 80 else text
-                parts.append(f'"{display_text}"')
-            meta_parts = [reason]
-            if rect.get('w'):
-                meta_parts.append(f'{rect["w"]}x{rect["h"]}')
-            parts.append(f'({", ".join(meta_parts)})')
-            if loc:
-                parts.append(f'→ {loc}')
-            lines.append(' '.join(parts))
-
+            lines.append('- ' + format_clickable_record(rec, rid))
             # 记入 refs 以便 click/fill 引用
             ctx['refs'][str(rid)] = {
-                'locator': loc,
-                'role': f'clickable/{tag}',
-                'name': text[:100],
+                'locator': rec.get('locator') or '',
+                'role': f"clickable/{rec.get('tag', '')}",
+                'name': (rec.get('label') or rec.get('text') or '')[:100],
                 'backendNodeId': rec.get('backendNodeId'),
                 'confidence': rec.get('confidence'),
-                'reason': reason,
+                'reason': rec.get('reason'),
+                'zone': rec.get('zone'),
+                'iconOnly': bool(rec.get('iconOnly')),
             }
 
     if snapshot.get('clickable_warning'):

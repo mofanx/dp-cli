@@ -98,8 +98,13 @@ Results are deduplicated by `backendNodeId` and rendered with confidence markers
 | Marker | Confidence | Triggers |
 |--------|-----------|----------|
 | none   | **high**   | `<a href>`, `<button>`, `<input>`, `role=button/link/...`, `contenteditable` |
-| `⚡`   | **medium** | `onclick` / `jsaction` / `tabindex>=0` / `aria-selected` / `<audio>/<video>` |
-| `?`    | **low**    | `cursor:pointer` / class keyword match (`btn` / `click` / `toggle` / …) |
+| `⚡`   | **medium** | `onclick` / `jsaction` / `tabindex>=0` / `aria-selected` / `<audio>/<video>`, or `cursor:pointer` + heuristic (aria-label / icon child / small square / class keyword) — **catches most React/Vue icon buttons** |
+| `?`    | **low**    | bare `cursor:pointer` / class keyword only (no other signals); hidden unless `--include-low` |
+
+Output includes helpful context:
+- `@top-left`, `@top-right`, `@center`, `@bottom` … — position in the 9-region viewport grid
+- `(icon)` — icon-only button (no visible label, has `<svg>` / `<img>` child)
+- Shadow DOM is traversed automatically (open shadow roots)
 
 Every element gets an `[N]` ref usable in any command: `dp click "ref:5"`.
 

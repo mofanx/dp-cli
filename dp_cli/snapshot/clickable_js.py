@@ -1,49 +1,52 @@
 # -*- coding:utf-8 -*-
 """
-Vimium-C 风格的可点击元素探测 JS 脚本
+Vimium-C 风格的可点击元素探测 JS 脚本（v2）
 
-运行在浏览器内通过 CDP Runtime.evaluate；遍历可见 DOM 节点，
-按多级规则识别可交互元素并打上临时属性 `data-dp-scan-id`，便于
-Python 端通过 CDP DOM 树将其映射到 backendNodeId。
+改进点（相比 v1）：
+  1. 递归遍历 Shadow DOM（open shadow root），React/Vue 组件和 Web Components 都能看见
+  2. cursor:pointer 启发式升级：
+     满足下列任一 → MEDIUM（默认显示，不再必须 --include-low）：
+       · 有 aria-label / title / data-tooltip 等 label 属性
+       · 包含 svg / img / i / [class*=icon] 子元素（图标按钮特征）
+       · 本身就是 svg / i 标签
+       · rect 是小方形（12-80px、宽高差 ≤16）—— 图标按钮尺寸特征
+       · class 名匹配 btn/click/toggle/menu... 关键词
+     都不满足的普通 cursor:pointer 仍为 LOW
+  3. 父子 cursor:pointer 去重更严：子元素覆盖父元素 ≥50% 面积时，父元素让位
+  4. 新增字段：
+     · label: aria-label / title / svg <title> 等无障碍名（优先于 innerText）
+     · zone: 位置区域（top-left / top-right / center / bottom 等 9 宫格）
+     · iconOnly: 布尔值，无文字但有图标子元素
+  5. 更强的 label 回退：svg > title、子 img alt、data-tooltip、data-tippy-content
+  6. 识别更多框架 click 属性：@click（Vue）、v-on:click、(click)（Angular）
 
-三级置信度：
-  high    — 明确可点击（<a href>, <button>, role=button 等）
-  medium  — 很可能可点击（onclick/jsaction/tabindex>=0/aria-selected）
-  low     — 启发式（cursor:pointer 或 class 名匹配 btn/click/… 规则）
-
-规则参考：vimium-c/content/local_links.ts
+注意：DrissionPage.run_js(code) 会把 code 包成函数体，只有顶层 return 才能
+得到返回值；IIFE 返回值会被丢弃，所以用 `const __r = ...; return __r;`。
 """
 
-# 探测脚本：返回 {elements: [...], total: N, truncated: bool}
-# 模板占位符：%(viewport_only)s, %(max_elements)d, %(include_low)s
-#
-# 注意：DrissionPage.run_js(code) 会把 code 包成函数体，只有顶层 return 才能
-# 获得返回值；单纯 IIFE `(()=>{...})()` 的返回值会被丢弃。所以下面用
-# `const __r = (function(){...})(); return __r;` 的形式。
 DETECT_CLICKABLES_JS = r"""
 const __dp_detect_result = (function() {
   const VIEWPORT_ONLY = %(viewport_only)s;
   const MAX_ELEMENTS = %(max_elements)d;
   const INCLUDE_LOW = %(include_low)s;
 
-  const CLICKABLE_ROLES = /^(button|link|checkbox|radio|combobox|menu|menuitem|menuitemcheckbox|menuitemradio|tab|option|switch|slider|spinbutton|searchbox|textbox|treeitem|row|cell|gridcell|listbox|listitem)$/i;
+  const CLICKABLE_ROLES = /^(button|link|checkbox|radio|combobox|menu|menuitem|menuitemcheckbox|menuitemradio|tab|option|switch|slider|spinbutton|searchbox|textbox|treeitem|row|cell|gridcell|listbox|listitem|article|tooltip)$/i;
 
-  // 类名关键词正则：btn/button/click/action/link/menu/toggle/tab/close/open/expand/collapse/dropdown/trigger
-  const CLASS_PATTERN = /(?:^|[\s_-])(btn|button|click|action|select|link|menu|toggle|tab|close|open|expand|collapse|dropdown|trigger|hoverable|selectable|clickable)(?:$|[\s_-])/i;
+  const CLASS_PATTERN = /(?:^|[\s_-])(btn|button|click|action|select|link|menu|toggle|tab|close|open|expand|collapse|dropdown|trigger|hoverable|selectable|clickable|chip|pill|tag|card|avatar|icon|ico)(?:$|[\s_-])/i;
 
-  // 非可编辑 input 类型
-  const UNEDITABLE_INPUT = new Set(['hidden', 'submit', 'reset', 'button', 'checkbox', 'radio', 'image', 'file', 'color', 'range']);
+  const ICON_CLASS_PATTERN = /(?:^|[\s_-])(icon|ico|fa|fa-|glyphicon|material-icons|anticon|lucide|svg)/i;
 
   function isElementVisible(el) {
     const rects = el.getClientRects();
     if (!rects.length) return null;
     const rect = el.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return null;
-    const style = getComputedStyle(el);
+    let style;
+    try { style = getComputedStyle(el); } catch (e) { return null; }
     if (style.display === 'none' || style.visibility === 'hidden') return null;
     const op = parseFloat(style.opacity);
     if (op < 0.05) return null;
-    return rect;
+    return { rect: rect, style: style };
   }
 
   function inViewport(rect) {
@@ -54,46 +57,120 @@ const __dp_detect_result = (function() {
   function classNameString(el) {
     const cn = el.className;
     if (typeof cn === 'string') return cn;
-    // SVGAnimatedString
-    if (cn && typeof cn.baseVal === 'string') return cn.baseVal;
+    if (cn && typeof cn.baseVal === 'string') return cn.baseVal;  // SVGAnimatedString
     return '';
   }
 
-  function parentHasMatchingCursor(el) {
+  // 计算 9 宫格区域名（基于元素中心点和视口）
+  function computeZone(rect) {
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const W = window.innerWidth || 1, H = window.innerHeight || 1;
+    const xPart = cx < W / 3 ? 'left' : cx > W * 2 / 3 ? 'right' : 'center';
+    const yPart = cy < H / 3 ? 'top' : cy > H * 2 / 3 ? 'bottom' : 'middle';
+    if (yPart === 'middle' && xPart === 'center') return 'center';
+    if (yPart === 'middle') return xPart;
+    if (xPart === 'center') return yPart;
+    return yPart + '-' + xPart;
+  }
+
+  // 父元素是否也 cursor:pointer —— 若是则本元素应让位给父（保留最外层 pointer）
+  // 这样能避免 <div style="cursor:pointer"><svg><use/></svg></div> 里 svg/use 被重复登记
+  function parentIsPointer(el) {
     const p = el.parentElement;
     if (!p) return false;
     try { return getComputedStyle(p).cursor === 'pointer'; } catch (e) { return false; }
   }
 
-  function parentHasMatchingClass(el) {
-    const p = el.parentElement;
-    if (!p) return false;
-    return CLASS_PATTERN.test(classNameString(p));
+  // 获取元素的"无障碍名"——优先级 aria-label > aria-labelledby > 控件专属 > innerText > title/alt > 图标兜底
+  function getAccessibleText(el) {
+    let t = el.getAttribute && el.getAttribute('aria-label');
+    if (t && t.trim()) return t.trim();
+
+    const lbi = el.getAttribute && el.getAttribute('aria-labelledby');
+    if (lbi) {
+      const ids = lbi.split(/\s+/);
+      const texts = [];
+      for (const id of ids) {
+        const ref = document.getElementById(id);
+        if (ref) texts.push((ref.innerText || ref.textContent || '').trim());
+      }
+      const joined = texts.filter(Boolean).join(' ').trim();
+      if (joined) return joined;
+    }
+
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input') {
+      const type = (el.type || 'text').toLowerCase();
+      if (type === 'submit' || type === 'button') return (el.value || '').trim();
+      return (el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || '').trim();
+    }
+
+    // innerText（优先取，很多图标按钮实际上有 sr-only 文字）
+    const it = ((el.innerText || el.textContent) || '').trim().replace(/\s+/g, ' ');
+    if (it && it.length <= 120) return it;
+    if (it) return it.slice(0, 120);
+
+    // 各种 tooltip / title 属性
+    t = el.getAttribute('title')
+      || el.getAttribute('alt')
+      || el.getAttribute('data-tooltip')
+      || el.getAttribute('data-tippy-content')
+      || el.getAttribute('data-original-title')
+      || el.getAttribute('data-bs-original-title')
+      || el.getAttribute('data-title');
+    if (t && t.trim()) return t.trim();
+
+    // svg > title 子节点
+    try {
+      const svgTitle = el.querySelector('svg > title, svg > desc');
+      if (svgTitle) {
+        const st = (svgTitle.textContent || '').trim();
+        if (st) return st;
+      }
+      // 子节点 aria-label
+      const innerLabeled = el.querySelector('[aria-label]');
+      if (innerLabeled) {
+        const al = innerLabeled.getAttribute('aria-label');
+        if (al && al.trim()) return al.trim();
+      }
+      // 子 img alt
+      const imgAlt = el.querySelector('img[alt]');
+      if (imgAlt) {
+        const alt = imgAlt.getAttribute('alt');
+        if (alt && alt.trim()) return alt.trim();
+      }
+    } catch (e) {}
+
+    return '';
   }
 
-  // 判断一个元素是否可交互，返回 {confidence, reason} 或 null
-  function classify(el) {
+  // 判断是否是"仅图标"的按钮（无有效文字，但包含图标子元素）
+  function detectIconOnly(el, accessibleText) {
+    if (accessibleText) return false;
+    try {
+      if (el.querySelector('svg, img, :scope > i, :scope > [class*="icon"], :scope > [class*="Icon"]')) {
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // 核心分类
+  function classify(el, style, rect) {
     const tag = el.tagName.toLowerCase();
 
-    // HIGH
+    // HIGH 级：原生交互标签
     if (tag === 'a') {
       if (!el.hasAttribute('href') && !el.hasAttribute('onclick')) return null;
       return { confidence: 'high', reason: 'a' };
     }
-    if (tag === 'button') {
-      if (el.disabled) return null;
-      return { confidence: 'high', reason: 'button' };
+    if (tag === 'button' && !el.disabled) return { confidence: 'high', reason: 'button' };
+    if (tag === 'select' && !el.disabled) return { confidence: 'high', reason: 'select' };
+    if (tag === 'textarea' && !el.disabled) {
+      return { confidence: 'high', reason: el.readOnly ? 'textarea[ro]' : 'textarea' };
     }
-    if (tag === 'select') {
-      if (el.disabled) return null;
-      return { confidence: 'high', reason: 'select' };
-    }
-    if (tag === 'textarea') {
-      if (el.disabled) return null;
-      return { confidence: 'high', reason: el.readOnly ? 'textarea[readonly]' : 'textarea' };
-    }
-    if (tag === 'input') {
-      if (el.disabled) return null;
+    if (tag === 'input' && !el.disabled) {
       const type = (el.type || 'text').toLowerCase();
       if (type === 'hidden') return null;
       return { confidence: 'high', reason: 'input[' + type + ']' };
@@ -102,16 +179,14 @@ const __dp_detect_result = (function() {
       return { confidence: 'high', reason: tag };
     }
     if (tag === 'label') {
-      // 仅当关联到实际控件时，<label> 本身可点击触发控件
       if (el.htmlFor || el.control) return { confidence: 'high', reason: 'label' };
-      // 没有关联的 label 不登记（点击无效）
       return null;
     }
     if (tag === 'audio' || tag === 'video') {
       return { confidence: 'medium', reason: tag };
     }
     if (tag === 'iframe' || tag === 'frame') {
-      return { confidence: 'low', reason: tag };  // 一般不直接点击
+      return { confidence: 'low', reason: tag };
     }
 
     // contenteditable
@@ -126,18 +201,17 @@ const __dp_detect_result = (function() {
       return { confidence: 'high', reason: 'role=' + role };
     }
 
-    // onclick / onmousedown / jsaction / ng-click
-    if (el.hasAttribute('onclick') || el.hasAttribute('onmousedown')) {
+    // MEDIUM 级：显式事件 / 框架 click / tabindex / aria-selected
+    if (el.hasAttribute('onclick') || el.hasAttribute('onmousedown') || el.hasAttribute('onpointerdown')) {
       return { confidence: 'medium', reason: 'onclick-attr' };
     }
     if (el.hasAttribute('jsaction')) {
       return { confidence: 'medium', reason: 'jsaction' };
     }
-    if (el.hasAttribute('ng-click') || el.hasAttribute('(click)')) {
-      return { confidence: 'medium', reason: 'framework-click' };
+    if (el.hasAttribute('ng-click') || el.hasAttribute('(click)')
+        || el.hasAttribute('@click') || el.hasAttribute('v-on:click')) {
+      return { confidence: 'medium', reason: 'fw-click' };
     }
-
-    // tabindex >= 0
     const ti = el.getAttribute('tabindex');
     if (ti !== null) {
       const tiNum = parseInt(ti, 10);
@@ -145,96 +219,120 @@ const __dp_detect_result = (function() {
         return { confidence: 'medium', reason: 'tabindex=' + tiNum };
       }
     }
-
-    // aria-selected / aria-checked
     if (el.hasAttribute('aria-selected') || el.hasAttribute('aria-checked')) {
-      return { confidence: 'medium', reason: 'aria-selected' };
+      return { confidence: 'medium', reason: 'aria-state' };
     }
 
-    // LOW 级需要 include_low 开关
-    if (!INCLUDE_LOW) return null;
+    // cursor:pointer + 启发式 —— 这是 React/Vue 图标按钮的主要特征
+    const isPointer = style.cursor === 'pointer';
+    if (isPointer) {
+      // 父元素也是 cursor:pointer → 让位给父（保留最外层，Vimium 同策略）
+      if (parentIsPointer(el)) return null;
 
-    // cursor:pointer（父元素也 pointer 则跳过避免冗余）
-    let style;
-    try { style = getComputedStyle(el); } catch (e) { return null; }
-    if (style.cursor === 'pointer' && !parentHasMatchingCursor(el)) {
+      const ariaLabel = el.getAttribute('aria-label');
+      const title = el.getAttribute('title');
+      const tooltip = el.getAttribute('data-tooltip')
+        || el.getAttribute('data-tippy-content')
+        || el.getAttribute('data-original-title');
+      const hasLabel = !!(ariaLabel || title || tooltip);
+
+      let hasIconChild = false;
+      try {
+        hasIconChild = !!el.querySelector('svg, img, i.fa, i[class*="icon"], [class*="icon"]:not(body)');
+      } catch (e) {}
+
+      const isIconTag = tag === 'svg' || tag === 'i';
+      const widthOk = rect.width >= 12 && rect.width <= 80;
+      const heightOk = rect.height >= 12 && rect.height <= 80;
+      const aspectOk = Math.abs(rect.width - rect.height) <= 24;
+      const smallSquare = widthOk && heightOk && aspectOk;
+
+      const cn = classNameString(el);
+      const hasClassHint = cn && (CLASS_PATTERN.test(cn) || ICON_CLASS_PATTERN.test(cn));
+
+      if (hasLabel) return { confidence: 'medium', reason: 'cursor+label' };
+      if (hasIconChild && smallSquare) return { confidence: 'medium', reason: 'cursor+icon' };
+      if (hasIconChild) return { confidence: 'medium', reason: 'cursor+icon-child' };
+      if (isIconTag) return { confidence: 'medium', reason: 'cursor+' + tag };
+      if (smallSquare) return { confidence: 'medium', reason: 'cursor+square' };
+      if (hasClassHint) return { confidence: 'medium', reason: 'cursor+class' };
+
+      // 兜底：普通 cursor:pointer（文字链接类样式） → LOW
+      if (!INCLUDE_LOW) return null;
       return { confidence: 'low', reason: 'cursor:pointer' };
     }
 
-    // class 名关键词
+    // LOW 级：class 名关键词匹配（无 cursor:pointer）
+    if (!INCLUDE_LOW) return null;
     const cn = classNameString(el);
-    if (cn && CLASS_PATTERN.test(cn) && !parentHasMatchingClass(el)) {
-      return { confidence: 'low', reason: 'class-pattern' };
-    }
-
-    // SVG 且 cursor:pointer（上面已处理，但 SVG 有时 cursor 继承）
-    if (tag === 'svg' && style.cursor === 'pointer') {
-      return { confidence: 'low', reason: 'svg-cursor' };
+    if (cn && CLASS_PATTERN.test(cn)) {
+      const p = el.parentElement;
+      if (!p || !CLASS_PATTERN.test(classNameString(p))) {
+        return { confidence: 'low', reason: 'class-pattern' };
+      }
     }
 
     return null;
   }
 
-  function getAccessibleText(el) {
-    // aria-label 优先
-    let t = el.getAttribute('aria-label');
-    if (t) return t.trim();
-    // aria-labelledby
-    const lbi = el.getAttribute('aria-labelledby');
-    if (lbi) {
-      const ids = lbi.split(/\s+/);
-      const texts = [];
-      for (const id of ids) {
-        const ref = document.getElementById(id);
-        if (ref) texts.push((ref.innerText || ref.textContent || '').trim());
+  // 遍历所有元素（含 open Shadow DOM）
+  function collectAll() {
+    const out = [];
+    function walk(root) {
+      let nodes;
+      try { nodes = root.querySelectorAll('*'); } catch (e) { return; }
+      for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        out.push(el);
+        if (el.shadowRoot) {
+          try { walk(el.shadowRoot); } catch (e) {}
+        }
       }
-      const joined = texts.filter(Boolean).join(' ').trim();
-      if (joined) return joined;
     }
-    // input 的 value / placeholder / type
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'input') {
-      const type = (el.type || 'text').toLowerCase();
-      if (type === 'submit' || type === 'button') return (el.value || '').trim();
-      return (el.getAttribute('placeholder') || el.getAttribute('aria-placeholder') || '').trim();
-    }
-    // innerText（截断）
-    const it = (el.innerText || '').trim().replace(/\s+/g, ' ');
-    if (it) return it.slice(0, 120);
-    // title / alt
-    return (el.getAttribute('title') || el.getAttribute('alt') || '').trim();
+    walk(document);
+    return out;
   }
 
-  // 去掉之前可能残留的 data-dp-scan-id（比如上次调用异常中断）
-  document.querySelectorAll('[data-dp-scan-id]').forEach(el => el.removeAttribute('data-dp-scan-id'));
+  // 清理上次残留
+  try {
+    document.querySelectorAll('[data-dp-scan-id]').forEach(el => el.removeAttribute('data-dp-scan-id'));
+  } catch (e) {}
 
   const results = [];
   let counter = 0;
   let truncated = false;
 
-  // 遍历所有元素
-  const all = document.querySelectorAll('*');
+  const all = collectAll();
   for (let i = 0; i < all.length; i++) {
     if (results.length >= MAX_ELEMENTS) { truncated = true; break; }
     const el = all[i];
 
-    const cls = classify(el);
-    if (!cls) continue;
-
-    const rect = isElementVisible(el);
-    if (!rect) continue;
+    const vis = isElementVisible(el);
+    if (!vis) continue;
+    const rect = vis.rect;
+    const style = vis.style;
 
     if (VIEWPORT_ONLY && !inViewport(rect)) continue;
 
+    const cls = classify(el, style, rect);
+    if (!cls) continue;
+
     counter++;
     try { el.setAttribute('data-dp-scan-id', String(counter)); } catch (e) { continue; }
+
+    const text = getAccessibleText(el).slice(0, 150);
+    const iconOnly = detectIconOnly(el, text);
+    const zone = computeZone(rect);
 
     results.push({
       scanId: counter,
       tag: el.tagName.toLowerCase(),
       confidence: cls.confidence,
       reason: cls.reason,
-      text: getAccessibleText(el).slice(0, 150),
+      text: text,
+      label: text,
+      iconOnly: iconOnly,
+      zone: zone,
       rect: {
         x: Math.round(rect.left),
         y: Math.round(rect.top),
@@ -250,12 +348,22 @@ const __dp_detect_result = (function() {
 return __dp_detect_result;
 """
 
-# 清理脚本：移除所有 data-dp-scan-id 属性
 CLEANUP_CLICKABLES_JS = r"""
 const __dp_cleanup_result = (function() {
-  const nodes = document.querySelectorAll('[data-dp-scan-id]');
   let n = 0;
-  nodes.forEach(el => { el.removeAttribute('data-dp-scan-id'); n++; });
+  function walk(root) {
+    let nodes;
+    try { nodes = root.querySelectorAll('[data-dp-scan-id]'); } catch (e) { return; }
+    nodes.forEach(el => { el.removeAttribute('data-dp-scan-id'); n++; });
+    // 清理 shadow DOM 里的
+    try {
+      const all = root.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        if (all[i].shadowRoot) walk(all[i].shadowRoot);
+      }
+    } catch (e) {}
+  }
+  walk(document);
   return { cleaned: n };
 })();
 return __dp_cleanup_result;

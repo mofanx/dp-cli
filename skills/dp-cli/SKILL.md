@@ -104,8 +104,13 @@ dp -s work snapshot     # 只作用于 work 会话
 | 标记 | 含义 |
 |------|------|
 | 无 | **high** 置信度（确定可点，如 `<button>`, `<a href>`, `role=button`）|
-| `⚡` | **medium** 置信度（很可能，如 `onclick` / `tabindex>=0` / `aria-selected`）|
-| `?` | **low** 置信度（启发式，可能假阳性；默认不显示，需 `--include-low`） |
+| `⚡` | **medium** 置信度（很可能，如 `onclick` / `tabindex>=0` / `aria-selected`，以及带 aria-label / 图标子元素 / 小方形的 `cursor:pointer` 元素——覆盖绝大多数 React/Vue 图标按钮）|
+| `?` | **low** 置信度（仅 `cursor:pointer` 或 class 关键词，无其他信号；默认不显示，需 `--include-low`） |
+
+输出附带的上下文信息：
+- **`@top-left` / `@top-right` / `@center` …** — 9 宫格位置区域（左上/右上/中心/下方等），便于快速定位
+- **`(icon)`** — 仅图标按钮（无可见文本，含 `<svg>`/`<img>` 子元素）
+- **Shadow DOM** 自动穿透（open shadow root）—— Web Components / 现代框架组件全覆盖
 
 三种模式：
 - `dp snapshot` — **full**（默认），完整内容 + clickable 补充，首次调用用这个

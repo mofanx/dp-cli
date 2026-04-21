@@ -50,26 +50,44 @@ def test_detect_js_is_raw_string_no_percent_collision():
 def test_detect_js_covers_vimium_rules():
     """快速核查关键规则都在脚本里，避免被误删。"""
     body = DETECT_CLICKABLES_JS
-    # HIGH
+    # HIGH 级
     assert "tag === 'a'" in body
     assert "tag === 'button'" in body
     assert "tag === 'input'" in body
     assert "tag === 'select'" in body
     assert "contenteditable" in body
     assert "CLICKABLE_ROLES.test" in body
-    # MEDIUM
+    # MEDIUM 级
     assert "'onclick'" in body
     assert "'jsaction'" in body
     assert "'tabindex'" in body
     assert "'aria-selected'" in body
-    # LOW
-    assert "cursor:pointer" in body.lower() or "'pointer'" in body
+    # 框架 click 属性（Vue / Angular）
+    assert "@click" in body
+    assert "v-on:click" in body
+    # cursor:pointer 启发式
+    assert "isPointer" in body
     assert "CLASS_PATTERN.test" in body
+    assert "ICON_CLASS_PATTERN" in body
+    assert "parentIsPointer" in body
+    # 新字段：zone / iconOnly / shadow DOM
+    assert "computeZone" in body
+    assert "detectIconOnly" in body
+    assert "shadowRoot" in body
     # 可见性
     assert "getClientRects" in body
     assert "getBoundingClientRect" in body
     # 临时属性
     assert "data-dp-scan-id" in body
+
+
+def test_detect_js_shadow_dom_traversal():
+    """Shadow DOM 递归：collectAll 必须检查 shadowRoot。"""
+    body = DETECT_CLICKABLES_JS
+    assert "collectAll" in body
+    assert "shadowRoot" in body
+    # 清理脚本也要覆盖 shadow DOM
+    assert "shadowRoot" in CLEANUP_CLICKABLES_JS
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,32 +106,54 @@ def test_format_clickable_record_high():
         'confidence': 'high',
         'reason': 'button',
         'text': 'Sign in',
+        'label': 'Sign in',
+        'zone': 'top-right',
+        'iconOnly': False,
         'rect': {'x': 10, 'y': 20, 'w': 80, 'h': 32},
         'locator': '#signin',
     }
     s = format_clickable_record(rec, ref_id=5)
     assert s.startswith('[5] button')
     assert '"Sign in"' in s
-    assert 'button' in s  # reason
-    assert '80x32' in s
+    assert '@top-right' in s
     assert '→ #signin' in s
-    # high 不带标记
+    # 默认紧凑格式不含 reason / 尺寸
+    assert 'button,' not in s
+    assert '80x32' not in s
+    # high 不带置信度标记
     assert '⚡' not in s
     assert '?' not in s
 
 
-def test_format_clickable_record_medium_has_marker():
+def test_format_clickable_record_verbose_shows_reason_and_size():
+    rec = {
+        'tag': 'button', 'confidence': 'high', 'reason': 'button',
+        'label': 'OK', 'zone': 'center', 'iconOnly': False,
+        'rect': {'w': 80, 'h': 32}, 'locator': '#ok',
+    }
+    s = format_clickable_record(rec, ref_id=1, verbose=True)
+    assert '(button, 80x32)' in s
+
+
+def test_format_clickable_record_icon_only_no_label():
     rec = {
         'tag': 'div',
         'confidence': 'medium',
-        'reason': 'onclick-attr',
-        'text': 'Open',
-        'rect': {'x': 0, 'y': 0, 'w': 24, 'h': 24},
-        'locator': '.open-btn',
+        'reason': 'cursor+icon',
+        'text': '',
+        'label': '',
+        'zone': 'top-left',
+        'iconOnly': True,
+        'rect': {'w': 32, 'h': 32},
+        'locator': '.sidebar-toggle',
     }
     s = format_clickable_record(rec, ref_id=3)
     assert '⚡' in s
-    assert 'onclick-attr' in s
+    assert '(icon)' in s
+    assert '@top-left' in s
+    assert '→ .sidebar-toggle' in s
+    # 无 label 不应出现空引号
+    assert '""' not in s
 
 
 def test_format_clickable_record_low_has_marker():
@@ -121,10 +161,14 @@ def test_format_clickable_record_low_has_marker():
         'tag': 'span',
         'confidence': 'low',
         'reason': 'cursor:pointer',
-        'text': '…',
-        'rect': {'x': 0, 'y': 0, 'w': 16, 'h': 16},
+        'text': 'See more',
+        'label': 'See more',
+        'zone': 'bottom',
+        'iconOnly': False,
+        'rect': {'w': 60, 'h': 16},
         'locator': '.more',
     }
     s = format_clickable_record(rec, ref_id=9)
     assert '?' in s
-    assert 'cursor:pointer' in s
+    assert '"See more"' in s
+    assert '@bottom' in s

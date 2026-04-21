@@ -106,6 +106,9 @@ def detect_clickables(page,
             'confidence': e.get('confidence'),
             'reason': e.get('reason'),
             'text': e.get('text'),
+            'label': e.get('label'),
+            'iconOnly': bool(e.get('iconOnly')),
+            'zone': e.get('zone'),
             'rect': e.get('rect'),
             'inViewport': e.get('inViewport'),
             'backendNodeId': backend_node_id,
@@ -167,31 +170,41 @@ CONFIDENCE_MARKER = {
 }
 
 
-def format_clickable_record(rec: dict, ref_id: int) -> str:
+def format_clickable_record(rec: dict, ref_id: int, verbose: bool = False) -> str:
     """把一条 ClickableRecord 渲染成一行文本。
 
-    示例：
-      [42] ⚡ button "Sign in" (role=button, pos=120,340, 80x32) → #signin
-      [43] ? span "•••" (cursor:pointer, pos=200,150, 24x24) → .more-icon
+    默认紧凑格式（给 AI / 用户看，强调有用信息）：
+      [5] button "Sign in" @top-right → #signin
+      [8] ⚡ div "User profile" @top-left (icon) → .user-menu-btn
+      [9] ⚡ svg @top-right (icon) → xpath://header//svg[3]
+      [12] ? span "see more" @bottom → css:.footer > span:nth-child(3)
+
+    verbose=True 时追加 reason + 尺寸，用于调试：
+      [5] button "Sign in" @top-right (button, 80x32) → #signin
     """
     marker = CONFIDENCE_MARKER.get(rec.get('confidence'), '')
     tag = rec.get('tag', '')
-    text = rec.get('text') or ''
+    label = (rec.get('label') or rec.get('text') or '').strip()
+    zone = rec.get('zone') or ''
+    icon_only = bool(rec.get('iconOnly'))
     reason = rec.get('reason') or ''
     rect = rec.get('rect') or {}
     loc = rec.get('locator') or ''
 
     parts = [f'[{ref_id}]', f'{marker}{tag}']
-    if text:
-        parts.append(f'"{text[:80]}"')
-    rect_str = ''
-    if rect:
-        rect_str = f'{rect.get("w", 0)}x{rect.get("h", 0)}@{rect.get("x", 0)},{rect.get("y", 0)}'
-    meta = f'({reason}'
-    if rect_str:
-        meta += f', {rect_str}'
-    meta += ')'
-    parts.append(meta)
+    if label:
+        display = label[:80] + '…' if len(label) > 80 else label
+        parts.append(f'"{display}"')
+    elif icon_only:
+        # 无 label 但有 icon：标注 (icon) 提示这是图标按钮
+        parts.append('(icon)')
+    if zone:
+        parts.append(f'@{zone}')
+    if verbose:
+        meta_bits = [reason]
+        if rect.get('w'):
+            meta_bits.append(f'{rect["w"]}x{rect["h"]}')
+        parts.append(f'({", ".join(meta_bits)})')
     if loc:
         parts.append(f'→ {loc}')
     return ' '.join(parts)

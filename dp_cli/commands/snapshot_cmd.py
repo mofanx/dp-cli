@@ -105,7 +105,9 @@ def register(cli):
     @click.option('--format', 'fmt', type=click.Choice(['text', 'json']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')
-    def scan(session, viewport_only, confidence, max_elements, fmt, filename):
+    @click.option('--verbose', '-v', is_flag=True, default=False,
+                  help='显示 detection reason 和像素尺寸（调试用）')
+    def scan(session, viewport_only, confidence, max_elements, fmt, filename, verbose):
         """Vimium 风格扫描当前页面的可交互元素（纯 DOM 遍历，不依赖 a11y tree）。
 
         \b
@@ -188,40 +190,26 @@ def register(cli):
             f'{len(filtered)} after filter'
             + (' (truncated)' if data.get('truncated') else '')
         )
-        rendered_lines.append('- 用 ref:N 引用元素（⚡ = medium, ? = low）')
+        rendered_lines.append(
+            '- ⚡ = medium, ? = low；@zone = 位置区域（top-left/top-right/… 9 宫格）；'
+            '(icon) = 仅图标按钮；用 ref:N 引用'
+        )
         rendered_lines.append('')
 
-        # 置信度标记
-        marker_map = {'high': '', 'medium': '⚡ ', 'low': '? '}
+        from ..snapshot.clickable import format_clickable_record
 
         for i, rec in enumerate(filtered, start=1):
             refs[str(i)] = {
                 'locator': rec.get('locator') or '',
                 'role': f"clickable/{rec.get('tag', '')}",
-                'name': (rec.get('text') or '')[:100],
+                'name': (rec.get('label') or rec.get('text') or '')[:100],
                 'backendNodeId': rec.get('backendNodeId'),
                 'confidence': rec.get('confidence'),
                 'reason': rec.get('reason'),
+                'zone': rec.get('zone'),
+                'iconOnly': bool(rec.get('iconOnly')),
             }
-            marker = marker_map.get(rec.get('confidence'), '')
-            tag = rec.get('tag', '')
-            text = (rec.get('text') or '').strip()
-            reason = rec.get('reason') or ''
-            rect = rec.get('rect') or {}
-            loc = rec.get('locator') or ''
-
-            parts = [f'- [{i}] {marker}{tag}']
-            if text:
-                disp = text[:80] + '…' if len(text) > 80 else text
-                parts.append(f'"{disp}"')
-            meta_bits = [reason]
-            if rect.get('w'):
-                meta_bits.append(f'{rect["w"]}x{rect["h"]}')
-                meta_bits.append(f'@{rect.get("x", 0)},{rect.get("y", 0)}')
-            parts.append(f'({", ".join(meta_bits)})')
-            if loc:
-                parts.append(f'→ {loc}')
-            rendered_lines.append(' '.join(parts))
+            rendered_lines.append('- ' + format_clickable_record(rec, i, verbose=verbose))
 
         # 保存 refs 到 session
         if refs:

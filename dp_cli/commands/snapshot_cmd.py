@@ -9,7 +9,7 @@ from dp_cli.output import ok, error
 from dp_cli.session import save_refs
 from dp_cli.snapshot import (extract_structured, query_elements,
                               take_a11y_snapshot, render_a11y_text,
-                              render_a11y_plain_text)
+                              render_a11y_plain_text, detect_clickables)
 from dp_cli.snapshot.utils import suggest_locator
 from dp_cli.commands._utils import session_option, _get_page, records_to_csv, resolve_locator
 
@@ -25,8 +25,15 @@ def register(cli):
     @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存到文件路径')
-    def snapshot(session, mode, selector, fmt, filename):
-        """获取页面快照（基于浏览器原生 a11y tree，通用性极强）。
+    @click.option('--no-clickables', is_flag=True, default=False,
+                  help='禁用 Vimium 风格可交互元素补充探测（默认开启）')
+    @click.option('--include-low', is_flag=True, default=False,
+                  help='包含 low 置信度元素（cursor:pointer / class 规则匹配，可能假阳性）')
+    @click.option('--viewport-only', is_flag=True, default=False,
+                  help='补充探测只看视口内元素（省 token、更快）')
+    def snapshot(session, mode, selector, fmt, filename,
+                 no_clickables, include_low, viewport_only):
+        """获取页面快照（a11y tree + Vimium 风格可交互元素补充）。
 
         \b
         模式说明（默认 full）:
@@ -35,17 +42,29 @@ def register(cli):
           text   纯文本模式，按阅读顺序输出可见文本
 
         \b
+        可交互元素补充探测（默认开启）:
+          a11y tree 会漏掉纯图标按钮、弹窗菜单项等未标 ARIA role 的元素。
+          补充探测会扫描 DOM，按 Vimium 规则识别这类元素并给出 ref:N 引用。
+          输出中以 ⚡ 标记 medium 置信度，? 标记 low 置信度。
+
+        \b
         示例:
-          dp snapshot                          # 完整快照（推荐首次调用）
+          dp snapshot                          # 完整快照（默认含 clickable 补充）
           dp snapshot --mode brief             # 精简模式（省 token，适合循环调用）
-          dp snapshot --mode text              # 纯文本（全量文字内容）
-          dp snapshot --selector ".main"        # 只获取指定区域
-          dp snapshot --format json            # JSON 格式输出
+          dp snapshot --viewport-only          # 只扫视口内，更快
+          dp snapshot --include-low            # 启用 low 置信度（可能假阳性）
+          dp snapshot --no-clickables          # 纯 a11y tree，旧版本行为
+          dp snapshot --selector ".main"       # 只获取指定区域
         """
         page = _get_page(session)
 
         try:
-            data = take_a11y_snapshot(page, selector=selector)
+            data = take_a11y_snapshot(
+                page, selector=selector,
+                with_clickables=not no_clickables,
+                include_low=include_low,
+                viewport_only=viewport_only,
+            )
         except Exception as e:
             error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
             return
@@ -71,6 +90,164 @@ def register(cli):
         if filename:
             Path(filename).write_text(output, encoding='utf-8')
             ok(msg=f'快照已保存到 {filename}')
+        else:
+            click.echo(output)
+
+    @cli.command('scan')
+    @session_option
+    @click.option('--viewport', 'viewport_only', is_flag=True, default=False,
+                  help='只扫描视口内元素（更快、更少结果）')
+    @click.option('--confidence', default='high,medium', show_default=True,
+                  help='逗号分隔的置信度过滤，可选 high / medium / low；'
+                       '使用 "all" 等价于 high,medium,low')
+    @click.option('--max', 'max_elements', default=1000, show_default=True,
+                  help='最多返回多少个元素')
+    @click.option('--format', 'fmt', type=click.Choice(['text', 'json']),
+                  default='text', show_default=True, help='输出格式')
+    @click.option('--filename', default=None, help='保存到文件路径')
+    def scan(session, viewport_only, confidence, max_elements, fmt, filename):
+        """Vimium 风格扫描当前页面的可交互元素（纯 DOM 遍历，不依赖 a11y tree）。
+
+        \b
+        与 dp snapshot 的区别:
+          snapshot  返回完整 a11y tree + clickable 补充（大、慢、全面）
+          scan      只返回可交互元素清单（小、快、适合执行脚本）
+
+        \b
+        置信度分级:
+          high    明确可点击（<a href>, <button>, role=button 等）
+          medium  很可能可点击（onclick / jsaction / tabindex / aria-selected）
+          low     启发式匹配（cursor:pointer / class 含 btn/click/… 关键词）
+          默认只返回 high + medium；用 --confidence all 看全部
+
+        \b
+        输出的每个元素都有 [N] 编号，可直接 dp click "ref:N" 引用。
+        输出中 ⚡ 标记 medium 置信度，? 标记 low 置信度。
+
+        \b
+        示例:
+          dp scan                                # 扫全页，high + medium
+          dp scan --viewport                     # 只扫视口内
+          dp scan --confidence high              # 只要高置信度
+          dp scan --confidence all               # 包含 low 置信度
+          dp scan --format json                  # JSON 输出
+        """
+        # 解析 confidence 过滤
+        conf_str = (confidence or '').strip().lower()
+        if conf_str == 'all':
+            wanted = {'high', 'medium', 'low'}
+        else:
+            wanted = {c.strip() for c in conf_str.split(',') if c.strip()}
+        unknown = wanted - {'high', 'medium', 'low'}
+        if unknown:
+            error('无效的置信度值', code='INVALID_CONFIDENCE',
+                  detail=f'unknown: {sorted(unknown)}; 可选: high, medium, low, all')
+            return
+        include_low = 'low' in wanted
+
+        page = _get_page(session)
+        try:
+            data = detect_clickables(
+                page,
+                viewport_only=viewport_only,
+                max_elements=max_elements,
+                include_low=include_low,
+            )
+        except Exception as e:
+            error('扫描失败', code='SCAN_FAILED', detail=str(e))
+            return
+
+        if data.get('method') == 'failed':
+            error('扫描失败', code='SCAN_FAILED',
+                  detail=data.get('error', '未知'))
+            return
+
+        # 置信度过滤（JS 的 include_low 控制是否 *生成* low；
+        # 这里再按 wanted 精确过滤——例如用户只要 high）
+        filtered = [e for e in data.get('elements', [])
+                    if e.get('confidence') in wanted]
+
+        # 分配 ref:N 并保存到 session
+        refs = {}
+        url = page.url
+        title = page.title
+        rendered_lines = []
+
+        # 头部
+        mode_parts = []
+        if viewport_only:
+            mode_parts.append('viewport')
+        mode_parts.append(f"confidence={','.join(sorted(wanted))}")
+        mode_tag = ', '.join(mode_parts)
+
+        rendered_lines.append(f'### Clickable Scan ({mode_tag})')
+        rendered_lines.append(f'- URL: {url}')
+        rendered_lines.append(f'- Title: {title}')
+        rendered_lines.append(
+            f'- Detected: {data.get("total", 0)} total, '
+            f'{len(filtered)} after filter'
+            + (' (truncated)' if data.get('truncated') else '')
+        )
+        rendered_lines.append('- 用 ref:N 引用元素（⚡ = medium, ? = low）')
+        rendered_lines.append('')
+
+        # 置信度标记
+        marker_map = {'high': '', 'medium': '⚡ ', 'low': '? '}
+
+        for i, rec in enumerate(filtered, start=1):
+            refs[str(i)] = {
+                'locator': rec.get('locator') or '',
+                'role': f"clickable/{rec.get('tag', '')}",
+                'name': (rec.get('text') or '')[:100],
+                'backendNodeId': rec.get('backendNodeId'),
+                'confidence': rec.get('confidence'),
+                'reason': rec.get('reason'),
+            }
+            marker = marker_map.get(rec.get('confidence'), '')
+            tag = rec.get('tag', '')
+            text = (rec.get('text') or '').strip()
+            reason = rec.get('reason') or ''
+            rect = rec.get('rect') or {}
+            loc = rec.get('locator') or ''
+
+            parts = [f'- [{i}] {marker}{tag}']
+            if text:
+                disp = text[:80] + '…' if len(text) > 80 else text
+                parts.append(f'"{disp}"')
+            meta_bits = [reason]
+            if rect.get('w'):
+                meta_bits.append(f'{rect["w"]}x{rect["h"]}')
+                meta_bits.append(f'@{rect.get("x", 0)},{rect.get("y", 0)}')
+            parts.append(f'({", ".join(meta_bits)})')
+            if loc:
+                parts.append(f'→ {loc}')
+            rendered_lines.append(' '.join(parts))
+
+        # 保存 refs 到 session
+        if refs:
+            save_refs(session, url, refs)
+
+        if fmt == 'json':
+            output = json.dumps({
+                'status': 'ok',
+                'data': {
+                    'page': {'url': url, 'title': title},
+                    'meta': {
+                        'total_detected': data.get('total'),
+                        'after_filter': len(filtered),
+                        'truncated': data.get('truncated'),
+                        'viewport_only': viewport_only,
+                        'confidence_filter': sorted(wanted),
+                    },
+                    'elements': filtered,
+                }
+            }, ensure_ascii=False, indent=2)
+        else:
+            output = '\n'.join(rendered_lines)
+
+        if filename:
+            Path(filename).write_text(output, encoding='utf-8')
+            ok(msg=f'扫描结果已保存到 {filename}')
         else:
             click.echo(output)
 

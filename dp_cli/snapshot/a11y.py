@@ -50,14 +50,24 @@ _REF_CONTENT_ROLES = frozenset({
 })
 
 
-def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
+def take_a11y_snapshot(page, selector=None, max_depth=None,
+                       with_clickables: bool = True,
+                       include_low: bool = False,
+                       viewport_only: bool = False) -> dict:
     """
-    获取页面 a11y tree。
+    获取页面 a11y tree，并（可选）合并 Vimium 风格的可点击元素探测。
 
     :param page: DrissionPage 的 ChromiumPage 对象
     :param selector: CSS 选择器，限定子树范围（可选）
     :param max_depth: 最大深度限制（可选，传给 CDP）
-    :return: 标准化的 a11y tree 数据
+    :param with_clickables: True 时额外运行 clickable 探测并合并到快照；
+                            收集 a11y tree 漏掉的可交互元素（如纯图标按钮、
+                            弹窗菜单项等）
+    :param include_low: with_clickables=True 时，是否包含 low 置信度元素
+                        （cursor:pointer 或 class-pattern 启发式匹配）
+    :param viewport_only: with_clickables=True 时，是否只探测视口内可见元素
+    :return: 标准化的 a11y tree 数据；若 with_clickables=True，
+             额外带 'clickable_extras' 字段（补充 a11y tree 未覆盖的可交互元素）
     """
     page.wait.doc_loaded()
     page_info = {'url': page.url, 'title': page.title}
@@ -91,6 +101,42 @@ def take_a11y_snapshot(page, selector=None, max_depth=None) -> dict:
         }
         if selector_warning:
             result['warning'] = selector_warning
+
+        # ── 可选：合并 clickable 探测结果 ──
+        # 注意：clickable 必须自己建 bid_map —— 它的 JS 会给元素加
+        # data-dp-scan-id 临时属性，bid_map 必须在那之后再建才能包含 scan-id
+        if with_clickables:
+            try:
+                from .clickable import detect_clickables
+                clk = detect_clickables(
+                    page,
+                    viewport_only=viewport_only,
+                    include_low=include_low,
+                )
+                # 收集 a11y tree 已覆盖的 backendNodeId（有 locator 的交互节点）
+                covered = {n['backendNodeId'] for n in normalized
+                           if n.get('backendNodeId')
+                           and n.get('locator')
+                           and n['role'] in _INTERACTIVE_ROLES}
+                # 过滤出 a11y 未覆盖的元素
+                extras = [e for e in clk.get('elements', [])
+                          if not (e.get('backendNodeId')
+                                  and e['backendNodeId'] in covered)]
+                # 过滤策略：如果有 rect 且 w/h < 2，跳过（已在 JS 过滤过，双保险）
+                extras = [e for e in extras
+                          if e.get('rect') and e['rect'].get('w', 0) >= 2]
+                result['clickable_extras'] = extras
+                result['clickable_meta'] = {
+                    'total_detected': clk.get('total', 0),
+                    'covered_by_a11y': clk.get('total', 0) - len(extras),
+                    'extras': len(extras),
+                    'truncated': clk.get('truncated', False),
+                    'viewport_only': viewport_only,
+                    'include_low': include_low,
+                }
+            except Exception as ce:
+                result['clickable_warning'] = f'clickable 探测失败（非致命）：{ce}'
+
         return result
     except Exception as cdp_err:
         cdp_error_msg = str(cdp_err)
@@ -170,12 +216,69 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     else:
         lines.append('（a11y tree 为空）')
 
+    # ── 追加 clickable_extras（a11y tree 漏掉的可交互元素）──
+    extras = snapshot.get('clickable_extras') or []
+    if extras:
+        from .clickable import CONFIDENCE_MARKER
+        lines.append('')
+        meta = snapshot.get('clickable_meta') or {}
+        header_suffix = []
+        if meta.get('viewport_only'):
+            header_suffix.append('viewport-only')
+        if meta.get('include_low'):
+            header_suffix.append('include-low')
+        suffix_str = (f' — {", ".join(header_suffix)}'
+                      if header_suffix else '')
+        lines.append(f'### Additional Interactive Elements'
+                     f' (Vimium-style, not in a11y tree){suffix_str}')
+        lines.append(f'- 共 {len(extras)} 个；⚡ = medium 置信, ? = low 置信；'
+                     f'用 ref:N 引用')
+        lines.append('')
+        for rec in extras:
+            ctx['counter'] += 1
+            rid = ctx['counter']
+            marker = CONFIDENCE_MARKER.get(rec.get('confidence'), '')
+            tag = rec.get('tag', '')
+            text = (rec.get('text') or '').strip()
+            reason = rec.get('reason') or ''
+            loc = rec.get('locator') or ''
+            rect = rec.get('rect') or {}
+
+            parts = [f'- [{rid}] {marker}{tag}']
+            if text:
+                display_text = text[:80] + '…' if len(text) > 80 else text
+                parts.append(f'"{display_text}"')
+            meta_parts = [reason]
+            if rect.get('w'):
+                meta_parts.append(f'{rect["w"]}x{rect["h"]}')
+            parts.append(f'({", ".join(meta_parts)})')
+            if loc:
+                parts.append(f'→ {loc}')
+            lines.append(' '.join(parts))
+
+            # 记入 refs 以便 click/fill 引用
+            ctx['refs'][str(rid)] = {
+                'locator': loc,
+                'role': f'clickable/{tag}',
+                'name': text[:100],
+                'backendNodeId': rec.get('backendNodeId'),
+                'confidence': rec.get('confidence'),
+                'reason': reason,
+            }
+
+    if snapshot.get('clickable_warning'):
+        lines.append('')
+        lines.append(f"⚠ {snapshot['clickable_warning']}")
+
     # 回填头部：包含 ref 统计
     ref_count = ctx['counter']
     lines[header_idx] = f'### Page Snapshot ({mode_label})'
-    lines[stats_idx] = (f"- Nodes: {stats.get('total', 0)} total, "
-                        f"{stats.get('interactive', 0)} interactive, "
-                        f"{ref_count} refs")
+    stats_line = (f"- Nodes: {stats.get('total', 0)} total, "
+                  f"{stats.get('interactive', 0)} interactive, "
+                  f"{ref_count} refs")
+    if extras:
+        stats_line += f" (含 {len(extras)} 个 a11y 外可交互)"
+    lines[stats_idx] = stats_line
     if ref_count > 0:
         lines[stats_idx] += f" — 使用 ref:N 引用元素，如 dp click \"ref:1\""
 
@@ -195,14 +298,28 @@ def render_a11y_plain_text(snapshot: dict, refs: dict = None) -> str:
     :return: 纯文本字符串
     """
     tree = snapshot.get('tree', {})
-    if not tree:
-        return ''
 
     # 如果需要收集 refs，在纯文本渲染过程中顺便收集
     if refs is not None:
         ctx = {'counter': 0, 'refs': refs}
-        _collect_refs_only(tree, ctx)
+        if tree:
+            _collect_refs_only(tree, ctx)
+        # 合并 clickable_extras 的 refs（与 full/brief 保持编号一致）
+        for rec in snapshot.get('clickable_extras') or []:
+            ctx['counter'] += 1
+            rid = ctx['counter']
+            ctx['refs'][str(rid)] = {
+                'locator': rec.get('locator') or '',
+                'role': f"clickable/{rec.get('tag', '')}",
+                'name': (rec.get('text') or '')[:100],
+                'backendNodeId': rec.get('backendNodeId'),
+                'confidence': rec.get('confidence'),
+                'reason': rec.get('reason'),
+            }
         refs.update(ctx['refs'])
+
+    if not tree:
+        return ''
 
     parts = []
     _collect_plain_text(tree, parts)

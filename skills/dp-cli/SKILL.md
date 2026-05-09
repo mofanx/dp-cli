@@ -453,7 +453,7 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 - **元素找不到** → `dp snapshot` 确认元素存在；若 a11y tree 没有，看末尾 `Additional Interactive Elements` 或直接 `dp scan --confidence all` 找补充元素 → `dp wait --locator` 等动态加载
 - **纯图标按钮 / 自定义菜单项无 ref** → `dp scan` 或 `dp snapshot --include-low`（启发式匹配会把 `⚡` medium / `?` low 也列出）
 - **`AUTOCONNECT_FAILED`（找不到 DevToolsActivePort）** → 指引用户在 `chrome://inspect/#remote-debugging` 勾选 **Allow remote debugging for this browser instance**
-- **`dp open --auto-connect` 卡住不返回** → 用户没点 Allow → 提示用户切到 Chrome 窗口点 **Allow** 授权对话框
+- **`dp open --auto-connect` 卡住不返回** → 用户没点 Allow → 提示用户切到 Chrome 窗口点 **Allow** 授权对话框；Ubuntu Gnome 环境可用 `references/auto-connect-gnome.sh` 自动完成此操作
 - **`BROWSER_START_FAILED` 带 "timed out"** → 同上，Allow 未点；90 秒超时会返回
 - **`--auto-connect` 反复失败** → 降级到经典模式：`google-chrome --remote-debugging-port=9222` + `dp open --port 9222`
 - **被网站检测（空白页/验证码/反爬）** → 先 `dp stealth`，或打开时加 `--stealth`

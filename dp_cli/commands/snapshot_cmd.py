@@ -243,7 +243,7 @@ def register(cli):
     @session_option
     @click.argument('container')
     @click.argument('fields_json')
-    @click.option('--limit', default=None, help='最多提取多少条记录', show_default=True)
+    @click.option('--limit', type=int, default=None, help='最多提取多少条记录', show_default=True)
     @click.option('--output', 'output_fmt', type=click.Choice(['json', 'csv']),
                   default='json', show_default=True, help='输出格式')
     @click.option('--filename', default=None, help='保存结果到文件')

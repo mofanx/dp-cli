@@ -23,7 +23,7 @@ def register(cli):
     @click.option('--profile', 'user_data_dir', default=None, help='用户数据目录')
     @click.option('--proxy', default=None, help='代理服务器，如 http://127.0.0.1:7890')
     @click.option('--port', type=int, default=None, help='连接指定端口的已有浏览器实例')
-    @click.option('--auto-connect', is_flag=True,
+    @click.option('--auto-connect', '-a', is_flag=True,
                   help='从用户常规启动的 Chrome 读取 DevToolsActivePort 自动发现端口'
                        '（需 Chrome 144+，用户在 chrome://inspect/#remote-debugging 启用）')
     @click.option('--channel', type=click.Choice(['stable', 'beta', 'dev', 'canary', 'chromium']),

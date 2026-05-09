@@ -452,12 +452,16 @@ def _export_dp_script(actions: list) -> str:
             lines.append(f'dp click {_shell_quote(locator)}')
         elif typ == 'press':
             key = action.get('key') or ''
-            lines.append(f'dp key {_shell_quote(key)}')
+            lines.append(f'dp press {_shell_quote(key)}')
         elif typ == 'scroll':
             delta = action.get('delta') or {}
             mouse = action.get('mouse') or {}
-            lines.append(f'# scroll {_shell_quote(locator) if locator else ""} dx={delta.get("x", 0)} dy={delta.get("y", 0)} mouse=({mouse.get("x")},{mouse.get("y")})')
-            lines.append('# TODO: 当前 dp-cli 尚未提供 scroll 命令，可按上述 locator/坐标复现滚动')
+            cmd = f'dp scroll --x {int(delta.get("x", 0) or 0)} --y {int(delta.get("y", 0) or 0)}'
+            if locator:
+                cmd += f' --locator {_shell_quote(locator)}'
+            if mouse.get('x') is not None and mouse.get('y') is not None:
+                cmd += f' --mouse-x {int(mouse.get("x"))} --mouse-y {int(mouse.get("y"))}'
+            lines.append(cmd)
         else:
             lines.append(f'# unsupported action: {json.dumps(action, ensure_ascii=False)}')
     return '\n'.join(lines).rstrip() + '\n'

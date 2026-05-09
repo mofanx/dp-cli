@@ -71,6 +71,13 @@ def _get_page(session: str, raw: bool = False):
         except Exception:
             pass  # 不能让 stealth 失败阻塞常规命令
 
+    if sess.get('recording'):
+        try:
+            from dp_cli.recorder import inject_recorder
+            inject_recorder(target)
+        except Exception:
+            pass
+
     return target
 
 

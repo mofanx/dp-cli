@@ -119,6 +119,12 @@ def register(cli):
             sess = load_session(session)
             sess['active_tab'] = tab_id
             save_session(session, sess)
+            if sess.get('recording'):
+                try:
+                    from dp_cli.recorder import inject_recorder
+                    inject_recorder(tab)
+                except Exception:
+                    pass
             ok({'id': tab_id, 'url': tab.url, 'title': tab.title},
                msg='已绑定，dp 命令将在此标签页执行')
         except Exception as e:

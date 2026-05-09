@@ -422,6 +422,253 @@ def format_actions_text(actions: list, raw: bool = False) -> str:
     return '\n'.join(lines).rstrip()
 
 
+def export_actions(actions: list, fmt: str) -> str:
+    if fmt == 'json':
+        return json.dumps(actions, ensure_ascii=False, indent=2)
+    if fmt == 'dp':
+        return _export_dp_script(actions)
+    if fmt == 'playwright':
+        return _export_playwright_sync_script(actions)
+    if fmt == 'playwright-async':
+        return _export_playwright_async_script(actions)
+    if fmt == 'selenium':
+        return _export_selenium_script(actions)
+    raise ValueError(f'不支持的导出格式: {fmt}')
+
+
+def _export_dp_script(actions: list) -> str:
+    lines = ['#!/usr/bin/env bash', 'set -e', '']
+    for action in actions:
+        typ = action.get('type')
+        locator = _action_locator(action)
+        if typ == 'click' and locator:
+            lines.append(f'dp click {_shell_quote(locator)}')
+        elif typ == 'fill' and locator:
+            lines.append(f'dp fill {_shell_quote(locator)} {_shell_quote(action.get("value", ""))}')
+        elif typ == 'select' and locator:
+            lines.append(f'dp select {_shell_quote(locator)} {_shell_quote(action.get("value", ""))}')
+        elif typ == 'check' and locator:
+            lines.append(f'# check: {locator} -> {action.get("checked")}')
+            lines.append(f'dp click {_shell_quote(locator)}')
+        elif typ == 'press':
+            key = action.get('key') or ''
+            lines.append(f'dp key {_shell_quote(key)}')
+        elif typ == 'scroll':
+            delta = action.get('delta') or {}
+            mouse = action.get('mouse') or {}
+            lines.append(f'# scroll {_shell_quote(locator) if locator else ""} dx={delta.get("x", 0)} dy={delta.get("y", 0)} mouse=({mouse.get("x")},{mouse.get("y")})')
+            lines.append('# TODO: 当前 dp-cli 尚未提供 scroll 命令，可按上述 locator/坐标复现滚动')
+        else:
+            lines.append(f'# unsupported action: {json.dumps(action, ensure_ascii=False)}')
+    return '\n'.join(lines).rstrip() + '\n'
+
+
+def _export_playwright_sync_script(actions: list) -> str:
+    lines = [
+        'from playwright.sync_api import sync_playwright',
+        '',
+        '',
+        'def run():',
+        '    with sync_playwright() as p:',
+        '        browser = p.chromium.launch(headless=False)',
+        '        page = browser.new_page()',
+    ]
+    first_url = _first_url(actions)
+    if first_url:
+        lines.append(f'        page.goto({_py_quote(first_url)})')
+    for action in actions:
+        typ = action.get('type')
+        selector = _playwright_selector(action)
+        if typ == 'click' and selector:
+            lines.append(f'        page.locator({_py_quote(selector)}).click()')
+        elif typ == 'fill' and selector:
+            lines.append(f'        page.locator({_py_quote(selector)}).fill({_py_quote(action.get("value", ""))})')
+        elif typ == 'select' and selector:
+            lines.append(f'        page.locator({_py_quote(selector)}).select_option({_py_quote(action.get("value", ""))})')
+        elif typ == 'check' and selector:
+            method = 'check' if action.get('checked') else 'uncheck'
+            lines.append(f'        page.locator({_py_quote(selector)}).{method}()')
+        elif typ == 'press':
+            key = action.get('key') or ''
+            if selector:
+                lines.append(f'        page.locator({_py_quote(selector)}).press({_py_quote(key)})')
+            else:
+                lines.append(f'        page.keyboard.press({_py_quote(key)})')
+        elif typ == 'scroll':
+            delta = action.get('delta') or {}
+            mouse = action.get('mouse') or {}
+            if mouse.get('x') is not None and mouse.get('y') is not None:
+                lines.append(f'        page.mouse.move({mouse.get("x")}, {mouse.get("y")})')
+            lines.append(f'        page.mouse.wheel({delta.get("x", 0)}, {delta.get("y", 0)})')
+    lines.extend([
+        '',
+        '',
+        'if __name__ == "__main__":',
+        '    run()',
+    ])
+    return '\n'.join(lines) + '\n'
+
+
+def _export_playwright_async_script(actions: list) -> str:
+    lines = [
+        'from playwright.async_api import async_playwright',
+        '',
+        '',
+        'async def run():',
+        '    async with async_playwright() as p:',
+        '        browser = await p.chromium.launch(headless=False)',
+        '        page = await browser.new_page()',
+    ]
+    first_url = _first_url(actions)
+    if first_url:
+        lines.append(f'        await page.goto({_py_quote(first_url)})')
+    for action in actions:
+        typ = action.get('type')
+        selector = _playwright_selector(action)
+        if typ == 'click' and selector:
+            lines.append(f'        await page.locator({_py_quote(selector)}).click()')
+        elif typ == 'fill' and selector:
+            lines.append(f'        await page.locator({_py_quote(selector)}).fill({_py_quote(action.get("value", ""))})')
+        elif typ == 'select' and selector:
+            lines.append(f'        await page.locator({_py_quote(selector)}).select_option({_py_quote(action.get("value", ""))})')
+        elif typ == 'check' and selector:
+            method = 'check' if action.get('checked') else 'uncheck'
+            lines.append(f'        await page.locator({_py_quote(selector)}).{method}()')
+        elif typ == 'press':
+            key = action.get('key') or ''
+            if selector:
+                lines.append(f'        await page.locator({_py_quote(selector)}).press({_py_quote(key)})')
+            else:
+                lines.append(f'        await page.keyboard.press({_py_quote(key)})')
+        elif typ == 'scroll':
+            delta = action.get('delta') or {}
+            mouse = action.get('mouse') or {}
+            if mouse.get('x') is not None and mouse.get('y') is not None:
+                lines.append(f'        await page.mouse.move({mouse.get("x")}, {mouse.get("y")})')
+            lines.append(f'        await page.mouse.wheel({delta.get("x", 0)}, {delta.get("y", 0)})')
+    lines.extend([
+        '',
+        '',
+        '# import asyncio',
+        '# asyncio.run(run())',
+    ])
+    return '\n'.join(lines) + '\n'
+
+
+def _export_selenium_script(actions: list) -> str:
+    lines = [
+        'from selenium import webdriver',
+        'from selenium.webdriver.common.by import By',
+        'from selenium.webdriver.common.keys import Keys',
+        'from selenium.webdriver.support.ui import Select',
+        'from selenium.webdriver.common.action_chains import ActionChains',
+        '',
+        '',
+        'def find(driver, locator):',
+        '    if locator.startswith("css:"):',
+        '        return driver.find_element(By.CSS_SELECTOR, locator[4:])',
+        '    if locator.startswith("xpath:"):',
+        '        return driver.find_element(By.XPATH, locator[6:])',
+        '    if locator.startswith("text:"):',
+        '        text = locator[5:]',
+        '        return driver.find_element(By.XPATH, f"//*[normalize-space()={text!r}]")',
+        '    return driver.find_element(By.CSS_SELECTOR, locator)',
+        '',
+        '',
+        'def run():',
+        '    driver = webdriver.Chrome()',
+    ]
+    first_url = _first_url(actions)
+    if first_url:
+        lines.append(f'    driver.get({_py_quote(first_url)})')
+    lines.append('    actions = ActionChains(driver)')
+    for action in actions:
+        typ = action.get('type')
+        locator = _action_locator(action)
+        if typ == 'click' and locator:
+            lines.append(f'    find(driver, {_py_quote(locator)}).click()')
+        elif typ == 'fill' and locator:
+            lines.append(f'    el = find(driver, {_py_quote(locator)})')
+            lines.append('    el.clear()')
+            lines.append(f'    el.send_keys({_py_quote(action.get("value", ""))})')
+        elif typ == 'select' and locator:
+            lines.append(f'    Select(find(driver, {_py_quote(locator)})).select_by_value({_py_quote(action.get("value", ""))})')
+        elif typ == 'check' and locator:
+            lines.append(f'    el = find(driver, {_py_quote(locator)})')
+            if action.get('checked'):
+                lines.append('    if not el.is_selected():')
+                lines.append('        el.click()')
+            else:
+                lines.append('    if el.is_selected():')
+                lines.append('        el.click()')
+        elif typ == 'press':
+            key = _selenium_key(action.get('key') or '')
+            locator = locator or ''
+            if locator:
+                lines.append(f'    find(driver, {_py_quote(locator)}).send_keys({key})')
+            else:
+                lines.append(f'    actions.send_keys({key}).perform()')
+        elif typ == 'scroll':
+            delta = action.get('delta') or {}
+            mouse = action.get('mouse') or {}
+            if mouse.get('x') is not None and mouse.get('y') is not None:
+                lines.append(f'    actions.move_by_offset({mouse.get("x")}, {mouse.get("y")}).perform()')
+            lines.append(f'    driver.execute_script("window.scrollBy(arguments[0], arguments[1]);", {delta.get("x", 0)}, {delta.get("y", 0)})')
+    lines.extend([
+        '',
+        '',
+        'if __name__ == "__main__":',
+        '    run()',
+    ])
+    return '\n'.join(lines) + '\n'
+
+
+def _action_locator(action: dict) -> str:
+    element = action.get('element') or {}
+    return action.get('best_locator') or element.get('best_locator') or ''
+
+
+def _playwright_selector(action: dict) -> str:
+    locator = _action_locator(action)
+    if locator.startswith('css:'):
+        return locator[4:]
+    if locator.startswith('text:'):
+        return f'text={locator[5:]}'
+    element = action.get('element') or {}
+    locators = element.get('locators') or {}
+    css = locators.get('css') or ''
+    if css.startswith('css:'):
+        return css[4:]
+    return locator
+
+
+def _first_url(actions: list) -> str:
+    for action in actions:
+        page = action.get('page') or {}
+        url = page.get('url')
+        if url:
+            return url
+    return ''
+
+
+def _shell_quote(value) -> str:
+    value = str(value)
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _py_quote(value) -> str:
+    return repr(str(value))
+
+
+def _selenium_key(key: str) -> str:
+    mapping = {
+        'Enter': 'Keys.ENTER',
+        'Escape': 'Keys.ESCAPE',
+        'Tab': 'Keys.TAB',
+    }
+    return mapping.get(key, repr(key))
+
+
 def _element_label(element: dict) -> str:
     attrs = element.get('attrs') or {}
     for key in ('aria-label', 'placeholder', 'name', 'id'):

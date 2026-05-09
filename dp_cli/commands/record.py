@@ -9,7 +9,7 @@ from dp_cli.output import ok, error
 from dp_cli.session import load_session, save_session
 from dp_cli.recorder import (inject_recorder, stop_recorder, get_recorded_actions,
                              clear_recorded_actions, get_recorder_status,
-                             format_actions_text)
+                             format_actions_text, export_actions)
 
 
 def register(cli):
@@ -92,3 +92,24 @@ def register(cli):
             ok(get_recorder_status(page))
         except Exception as e:
             error('读取录制状态失败', code='RECORD_STATUS_FAILED', detail=str(e))
+
+    @cli.command('record-export')
+    @session_option
+    @click.option('--format', 'fmt',
+                  type=click.Choice(['dp', 'playwright', 'playwright-async', 'selenium', 'json']),
+                  default='dp', show_default=True, help='导出格式')
+    @click.option('--filename', default=None, help='保存导出结果到文件')
+    def record_export(session, fmt, filename):
+        """把录制结果导出为脚本。"""
+        page = _get_page(session)
+        try:
+            actions = get_recorded_actions(page)
+            output = export_actions(actions, fmt)
+            if filename:
+                Path(filename).write_text(output, encoding='utf-8')
+                ok({'count': len(actions), 'format': fmt},
+                   msg=f'录制脚本已导出到 {filename}')
+            else:
+                click.echo(output)
+        except Exception as e:
+            error('导出录制脚本失败', code='RECORD_EXPORT_FAILED', detail=str(e))

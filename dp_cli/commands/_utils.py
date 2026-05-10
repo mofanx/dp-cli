@@ -25,11 +25,12 @@ def session_option(f):
                         help='会话名称，默认 default', show_default=True)(f)
 
 
-def _get_page(session: str, raw: bool = False):
+def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     """获取页面对象，失败则 error 退出。
 
     :param raw: True 时始终返回 ChromiumPage（用于浏览器级操作如标签页管理）。
                 False 时返回绑定的标签页 ChromiumTab（如有），否则返回 ChromiumPage。
+    :param inject_recording: session 录制中时是否自动注入录制器。
     """
     try:
         page = get_browser(session)
@@ -71,7 +72,7 @@ def _get_page(session: str, raw: bool = False):
         except Exception:
             pass  # 不能让 stealth 失败阻塞常规命令
 
-    if sess.get('recording'):
+    if inject_recording and sess.get('recording'):
         try:
             from dp_cli.recorder import inject_recorder
             inject_recorder(target)

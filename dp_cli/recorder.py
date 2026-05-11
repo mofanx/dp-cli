@@ -1,12 +1,13 @@
 # -*- coding:utf-8 -*-
 """浏览器操作录制器：记录点击、输入、选择、按键与滚动。"""
 import json
-
+import time
 
 _RECORDER_JS = r"""
 (function () {
   if (window.__dpRecorder && window.__dpRecorder.version) {
     window.__dpRecorder.start();
+    recordPageEntry();
     return window.__dpRecorder.status();
   }
 
@@ -36,10 +37,16 @@ _RECORDER_JS = r"""
 
   function readActions() {
     try {
-      return JSON.parse(localStorage.getItem(GLOBAL_STORE_KEY) || sessionStorage.getItem(STORE_KEY) || '[]');
+      const nameData = JSON.parse(window.name || '{}');
+      if (nameData && Array.isArray(nameData.__dpRecorderActions)) return nameData.__dpRecorderActions;
     } catch (e) {
-      return [];
     }
+    try {
+      const stored = localStorage.getItem(GLOBAL_STORE_KEY) || sessionStorage.getItem(STORE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+    }
+    return [];
   }
 
   function saveActions(actions) {
@@ -49,20 +56,40 @@ _RECORDER_JS = r"""
     try {
       localStorage.setItem(GLOBAL_STORE_KEY, JSON.stringify(actions));
     } catch (e) {}
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      nameData.__dpRecorderActions = actions;
+      window.name = JSON.stringify(nameData);
+    } catch (e) {
+      try { window.name = JSON.stringify({__dpRecorderActions: actions}); } catch (err) {}
+    }
   }
 
   function readState() {
     try {
-      return JSON.parse(sessionStorage.getItem(STATE_KEY) || '{}');
+      const nameData = JSON.parse(window.name || '{}');
+      if (nameData && nameData.__dpRecorderState) return nameData.__dpRecorderState;
     } catch (e) {
-      return {};
     }
+    try {
+      const stored = sessionStorage.getItem(STATE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+    }
+    return {};
   }
 
   function saveState(state) {
     try {
       sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
     } catch (e) {}
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      nameData.__dpRecorderState = state;
+      window.name = JSON.stringify(nameData);
+    } catch (e) {
+      try { window.name = JSON.stringify({__dpRecorderState: state}); } catch (err) {}
+    }
   }
 
   function isRecording() {
@@ -72,6 +99,8 @@ _RECORDER_JS = r"""
   function setRecording(recording) {
     const state = readState();
     state.recording = recording;
+    if (recording && !state.sessionId) state.sessionId = String(now()) + '-' + Math.random().toString(16).slice(2);
+    if (recording && !state.startedAt) state.startedAt = now();
     state.updatedAt = now();
     saveState(state);
   }
@@ -218,6 +247,23 @@ _RECORDER_JS = r"""
     saveActions(actions);
   }
 
+  function recordPageEntry() {
+    // 简化版本：只初始化/恢复录制状态，不检测导航
+    const state = readState();
+    console.log('[dp-recorder] recordPageEntry: recording=' + state.recording);
+    
+    // 更新当前页面信息
+    state.lastUrl = location.href;
+    state.lastTitle = document.title;
+    state.lastEntryAt = now();
+    state.updatedAt = now();
+    // 确保 recording 标志持续
+    if (!state.recording && state.recording !== false) {
+      state.recording = true;
+    }
+    saveState(state);
+  }
+
   function findScrollable(el) {
     let cur = el && el.nodeType === 1 ? el : el.parentElement;
     while (cur && cur !== document.body && cur !== document.documentElement) {
@@ -308,28 +354,48 @@ _RECORDER_JS = r"""
     }, 80);
   }
 
+  // 导航事件监听已移除，专注于页面内操作录制
   document.addEventListener('click', onClick, true);
   document.addEventListener('input', onInput, true);
   document.addEventListener('change', onInput, true);
   document.addEventListener('keydown', onKeyDown, true);
   document.addEventListener('wheel', onWheel, true);
 
+  console.log('[dp-recorder] initialized, version:', VERSION);
+
   window.__dpRecorder = {
     version: VERSION,
     start: function () { setRecording(true); },
     stop: function () { setRecording(false); return readActions(); },
-    clear: function () { saveActions([]); },
+    clear: function () {
+      saveActions([]);
+      try { sessionStorage.removeItem(STORE_KEY); } catch (e) {}
+      try { localStorage.removeItem(GLOBAL_STORE_KEY); } catch (e) {}
+      try { sessionStorage.removeItem(STATE_KEY); } catch (e) {}
+      try {
+        const nameData = JSON.parse(window.name || '{}');
+        nameData.__dpRecorderActions = [];
+        delete nameData.__dpRecorderState;
+        window.name = JSON.stringify(nameData);
+      } catch (e) {}
+    },
     actions: readActions,
     status: function () { return {recording: isRecording(), count: readActions().length, version: VERSION}; }
   };
 
   window.__dpRecorder.start();
+  recordPageEntry();
   return window.__dpRecorder.status();
 })();
 """
 
 
 def inject_recorder(page) -> dict:
+    try:
+        page.run_cdp('Page.addScriptToEvaluateOnNewDocument',
+                     source=_RECORDER_JS)
+    except Exception:
+        pass
     return page.run_js(_RECORDER_JS)
 
 
@@ -338,6 +404,26 @@ def stop_recorder(page) -> list:
     if (window.__dpRecorder) {
       return window.__dpRecorder.stop();
     }
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      const state = nameData.__dpRecorderState || {};
+      state.recording = false;
+      state.updatedAt = Date.now();
+      delete state.pendingNavigation;
+      nameData.__dpRecorderState = state;
+      window.name = JSON.stringify(nameData);
+    } catch (e) {}
+    try {
+      const state = JSON.parse(sessionStorage.getItem('__dp_recorder_state__') || '{}');
+      state.recording = false;
+      state.updatedAt = Date.now();
+      delete state.pendingNavigation;
+      sessionStorage.setItem('__dp_recorder_state__', JSON.stringify(state));
+    } catch (e) {}
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      if (nameData && Array.isArray(nameData.__dpRecorderActions)) return nameData.__dpRecorderActions;
+    } catch (e) {}
     try {
       return JSON.parse(localStorage.getItem('__dp_recorder_actions_global__') || sessionStorage.getItem('__dp_recorder_actions__') || '[]');
     } catch (e) {
@@ -350,6 +436,10 @@ def stop_recorder(page) -> list:
 def get_recorded_actions(page) -> list:
     script = """
     if (window.__dpRecorder) return window.__dpRecorder.actions();
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      if (nameData && Array.isArray(nameData.__dpRecorderActions)) return nameData.__dpRecorderActions;
+    } catch (e) {}
     try {
       return JSON.parse(localStorage.getItem('__dp_recorder_actions_global__') || sessionStorage.getItem('__dp_recorder_actions__') || '[]');
     } catch (e) {
@@ -364,6 +454,13 @@ def clear_recorded_actions(page) -> None:
     if (window.__dpRecorder) window.__dpRecorder.clear();
     try { sessionStorage.removeItem('__dp_recorder_actions__'); } catch (e) {}
     try { localStorage.removeItem('__dp_recorder_actions_global__'); } catch (e) {}
+    try { sessionStorage.removeItem('__dp_recorder_state__'); } catch (e) {}
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      nameData.__dpRecorderActions = [];
+      delete nameData.__dpRecorderState;
+      window.name = JSON.stringify(nameData);
+    } catch (e) {}
     """
     page.run_js(script)
 
@@ -371,6 +468,13 @@ def clear_recorded_actions(page) -> None:
 def get_recorder_status(page) -> dict:
     script = """
     if (window.__dpRecorder) return window.__dpRecorder.status();
+    try {
+      const nameData = JSON.parse(window.name || '{}');
+      if (nameData && Array.isArray(nameData.__dpRecorderActions)) {
+        const state = nameData.__dpRecorderState || {};
+        return {recording: state.recording === true, count: nameData.__dpRecorderActions.length, version: null};
+      }
+    } catch (e) {}
     try {
       const actions = JSON.parse(localStorage.getItem('__dp_recorder_actions_global__') || sessionStorage.getItem('__dp_recorder_actions__') || '[]');
       const state = JSON.parse(sessionStorage.getItem('__dp_recorder_state__') || '{}');
@@ -563,14 +667,12 @@ def _export_selenium_script(actions: list) -> str:
     lines = [
         'from selenium import webdriver',
         'from selenium.webdriver.common.by import By',
-        'from selenium.webdriver.common.keys import Keys',
-        'from selenium.webdriver.support.ui import Select',
         'from selenium.webdriver.common.action_chains import ActionChains',
+        'from selenium.webdriver.support.ui import Select',
+        'import time',
         '',
         '',
         'def find(driver, locator):',
-        '    if locator.startswith("css:"):',
-        '        return driver.find_element(By.CSS_SELECTOR, locator[4:])',
         '    if locator.startswith("xpath:"):',
         '        return driver.find_element(By.XPATH, locator[6:])',
         '    if locator.startswith("text:"):',

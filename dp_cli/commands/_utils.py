@@ -29,7 +29,7 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     """获取页面对象，失败则 error 退出。
 
     :param raw: True 时始终返回 ChromiumPage（用于浏览器级操作如标签页管理）。
-                False 时返回绑定的标签页 ChromiumTab（如有），否则返回 ChromiumPage。
+                False 时返回绑定的标签页 ChromiumTab（如有），否则返回当前激活标签页。
     :param inject_recording: session 录制中时是否自动注入录制器。
     """
     try:
@@ -54,7 +54,10 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
                 save_session(session, sess)
                 target = page
         else:
-            target = page
+            try:
+                target = page.latest_tab or page
+            except Exception:
+                target = page
 
     # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dp 命令是独立
     # Python 进程/独立 session，必须重新注册才能让下一次 navigation 生效。

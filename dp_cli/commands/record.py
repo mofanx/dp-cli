@@ -13,12 +13,41 @@ from dp_cli.recorder import (inject_recorder, stop_recorder, get_recorded_action
 
 
 def _get_active_page_for_record(session):
-    page = _get_page(session, raw=True, inject_recording=False)
+    """获取浏览器当前激活的标签页用于录制（忽略 session 中的 active_tab 绑定）"""
+    from dp_cli.session import get_browser
+    page = get_browser(session)
+    
+    # 使用 CDP 找到当前真正激活的标签页
     try:
-        tab = page.latest_tab
-        return tab or page
+        result = page.run_cdp('Target.getTargets')
+        for target in result.get('targetInfos', []):
+            if target.get('attached') and target.get('type') == 'page':
+                target_id = target.get('targetId')
+                # 通过 targetId 获取对应的 tab
+                for tab in [page.get_tab(tid) for tid in _get_all_tab_ids(page)]:
+                    if tab and tab.tab_id == target_id:
+                        return tab
+    except Exception as e:
+        print(f'[record] Failed to get active tab via CDP: {e}', file=__import__('sys').stderr)
+    
+    # 回退到 latest_tab
+    try:
+        return page.latest_tab or page
     except Exception:
         return page
+
+
+def _get_all_tab_ids(page):
+    """获取所有标签页的 ID 列表"""
+    try:
+        # 使用 CDP 获取所有目标
+        result = page.run_cdp('Target.getTargets')
+        return [
+            t.get('targetId') for t in result.get('targetInfos', [])
+            if t.get('type') == 'page'
+        ]
+    except Exception:
+        return []
 
 
 def _get_recording_page(session):
@@ -46,12 +75,14 @@ def register(cli):
     @cli.command('record-start')
     @session_option
     @click.option('--clear', 'clear_first', is_flag=True, default=False,
-                  help='开始前清空已有录制记录')
-    def record_start(session, clear_first):
+                  help='开始前清空已有录制记录（默认已清空，保留兼容）')
+    @click.option('--append', is_flag=True, default=False,
+                  help='追加到已有录制记录，不清空历史动作')
+    def record_start(session, clear_first, append):
         """开始录制当前页面的人工操作。"""
         page = _get_active_page_for_record(session)
         try:
-            if clear_first:
+            if clear_first or not append:
                 clear_recorded_actions(page)
             status = inject_recorder(page)
             sess = load_session(session) or {}
@@ -60,10 +91,16 @@ def register(cli):
             if tab_id:
                 sess['active_tab'] = tab_id
                 sess['recording_tab'] = tab_id
+            sess['recording_start_url'] = getattr(page, 'url', None)
+
+            # 导航检测由 JS 端 recordPageEntry() 处理
+            # 依赖 performance.navigation API 自动检测 navigate/reload/back_forward
             save_session(session, sess)
             data = dict(status or {})
             data['tab'] = _page_info(page)
-            ok(data, msg='操作录制已开始，已绑定当前激活标签页')
+            msg = (f'操作录制已开始，已绑定标签页: {data["tab"]["url"][:40]}...\n'
+                   f'  提示: 如果绑定不正确，请先执行 "dp tab-select <序号>" 选择正确标签，再录制')
+            ok(data, msg=msg)
         except Exception as e:
             error('启动录制失败', code='RECORD_START_FAILED', detail=str(e))
 
@@ -79,10 +116,13 @@ def register(cli):
         """停止录制并输出本次记录。"""
         page = _get_recording_page(session)
         try:
+            # 获取页面内操作记录（JS 录制的 click/fill/scroll/press 等）
             actions = stop_recorder(page)
+
             sess = load_session(session) or {}
             sess['recording'] = False
             sess.pop('recording_tab', None)
+            sess.pop('recording_start_url', None)
             save_session(session, sess)
             target_file = output or filename
             if raw:
@@ -133,6 +173,8 @@ def register(cli):
         page = _get_recording_page(session)
         try:
             data = get_recorder_status(page)
+            sess = load_session(session) or {}
+            data['recording'] = bool(sess.get('recording'))
             data['tab'] = _page_info(page)
             ok(data)
         except Exception as e:

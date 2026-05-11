@@ -231,7 +231,7 @@ def register(cli):
                   help='计数元素（如 ".item"）；省略则用页面高度判断')
     @click.option('--container', default=None,
                   help='在指定容器内滚动（用于内部可滚动区域的 SPA）')
-    @click.option('--max', 'max_rounds', default=30, show_default=True, type=int,
+    @click.option('--max', 'max_rounds', default=300, show_default=True, type=int,
                   help='最大滚动轮数')
     @click.option('--stable', default=2, show_default=True, type=int,
                   help='连续 N 轮无增长视为到底')

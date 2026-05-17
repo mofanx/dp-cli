@@ -7,7 +7,8 @@ import click
 from dp_cli.session import (get_browser, close_browser, list_sessions,
                             delete_session, load_session, save_session,
                             discover_port_from_profile,
-                            default_user_data_dir_for_channel)
+                            default_user_data_dir_for_channel,
+                            sniff_auto_user_data_dir)
 from dp_cli.output import ok, error, format_page_info
 from dp_cli.commands._utils import session_option, _get_page, normalize_url
 from dp_cli.stealth import apply_stealth, PRESETS, DEFAULT_UA
@@ -24,11 +25,14 @@ def register(cli):
     @click.option('--proxy', default=None, help='代理服务器，如 http://127.0.0.1:7890')
     @click.option('--port', type=int, default=None, help='连接指定端口的已有浏览器实例')
     @click.option('--auto-connect', '-a', is_flag=True,
-                  help='从用户常规启动的 Chrome 读取 DevToolsActivePort 自动发现端口'
-                       '（需 Chrome 144+，用户在 chrome://inspect/#remote-debugging 启用）')
-    @click.option('--channel', type=click.Choice(['stable', 'beta', 'dev', 'canary', 'chromium']),
-                  default='stable', show_default=True,
-                  help='配合 --auto-connect 使用，定位默认 user-data-dir')
+                  help='从用户常规启动的 Chrome/Edge 读取 DevToolsActivePort 自动发现端口'
+                       '（需 Chrome/Edge 144+，用户在 chrome://inspect/#remote-debugging 或 '
+                       'edge://inspect/#devices 启用）')
+    @click.option('--channel',
+                  type=click.Choice(['auto', 'stable', 'beta', 'dev', 'canary', 'chromium', 'edge']),
+                  default='auto', show_default=True,
+                  help='配合 --auto-connect 使用，定位默认 user-data-dir；'
+                       'auto = 依次嗅探 chrome stable → edge stable，取首个含 DevToolsActivePort 的目录')
     @click.option('--probe-dir', 'probe_dir', default=None,
                   help='配合 --auto-connect 使用，显式指定要探测的 user-data-dir '
                        '（覆盖 --channel 的默认路径）')
@@ -46,14 +50,16 @@ def register(cli):
           dp open --port 9222
 
         \b
-        【复用用户自己的浏览器 - 方式 B：--auto-connect（Chrome 144+ 推荐）】
-        无需特殊启动参数，正常打开 Chrome 即可：
-          1. 打开 Chrome，访问 chrome://inspect/#remote-debugging
+        【复用用户自己的浏览器 - 方式 B：--auto-connect（Chrome/Edge 144+ 推荐）】
+        无需特殊启动参数，正常打开 Chrome 或 Edge 即可：
+          1. 打开浏览器：
+             - Chrome：访问 chrome://inspect/#remote-debugging
+             - Edge:   访问 edge://inspect/#devices
           2. 勾选 "Allow remote debugging for this browser instance"
-          3. dp open --auto-connect
-        dp 会从 Chrome 的 user-data-dir 自动读取 DevToolsActivePort 拿到端口。
-        指定非 stable 渠道：dp open --auto-connect --channel beta
-        指定自定义 profile：dp open --auto-connect --probe-dir ~/my-chrome-profile
+          3. dp open --auto-connect            # 默认 auto：先嗅探 Chrome，再 Edge
+             dp open --auto-connect --channel edge   # 强制使用 Edge stable
+             dp open --auto-connect --channel beta   # 使用 Chrome beta
+             dp open --auto-connect --probe-dir ~/my-profile   # 自定义 profile
 
         \b
         【dp 自动管理浏览器】
@@ -83,6 +89,20 @@ def register(cli):
                 return
             if probe_dir:
                 dir_to_probe = Path(probe_dir).expanduser()
+            elif channel == 'auto':
+                # 自动嗅探：chrome stable → edge stable，取首个含 DevToolsActivePort 的目录
+                hit, diag = sniff_auto_user_data_dir()
+                if hit is None:
+                    detail = '\n'.join(f'  - {ch:7s} {p}  [{reason}]'
+                                       for ch, p, reason in diag)
+                    error('自动嗅探未找到含 DevToolsActivePort 的 user-data-dir。\n'
+                          '请先在 Chrome (chrome://inspect/#remote-debugging) 或 '
+                          'Edge (edge://inspect/#devices) 启用远程调试，\n'
+                          '或用 --channel/--probe-dir 显式指定。\n'
+                          f'嗅探记录：\n{detail}',
+                          code='PROFILE_NOT_FOUND')
+                    return
+                dir_to_probe = hit
             else:
                 dir_to_probe = default_user_data_dir_for_channel(channel)
                 if not dir_to_probe:

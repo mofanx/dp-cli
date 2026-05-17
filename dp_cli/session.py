@@ -84,9 +84,9 @@ def _detect_headless(port: int) -> bool:
 
 
 def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
-    """返回指定 channel 的 Chrome 默认 user-data-dir。
+    """返回指定 channel 的 Chrome/Edge 默认 user-data-dir。
 
-    :param channel: stable / beta / dev / canary / chromium
+    :param channel: stable / beta / dev / canary / chromium / edge
     :return: 用户数据目录 Path；不存在时返回 None
     """
     home = Path.home()
@@ -98,6 +98,7 @@ def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
             'dev':      [home / '.config' / 'google-chrome-unstable'],
             'canary':   [home / '.config' / 'google-chrome-canary'],
             'chromium': [home / '.config' / 'chromium'],
+            'edge':     [home / '.config' / 'microsoft-edge'],
         }
     elif sys.platform == 'darwin':
         base = home / 'Library' / 'Application Support'
@@ -107,6 +108,7 @@ def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
             'dev':      [base / 'Google' / 'Chrome Dev'],
             'canary':   [base / 'Google' / 'Chrome Canary'],
             'chromium': [base / 'Chromium'],
+            'edge':     [base / 'Microsoft Edge'],
         }
     elif sys.platform.startswith('win'):
         local = Path(os.environ.get('LOCALAPPDATA', home / 'AppData' / 'Local'))
@@ -116,12 +118,63 @@ def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
             'dev':      [local / 'Google' / 'Chrome Dev' / 'User Data'],
             'canary':   [local / 'Google' / 'Chrome SxS' / 'User Data'],
             'chromium': [local / 'Chromium' / 'User Data'],
+            'edge':     [local / 'Microsoft' / 'Edge' / 'User Data'],
         }
 
     for p in candidates.get(channel, []):
         if p.exists():
             return p
     return None
+
+
+# --auto-connect 不传 --channel 时的嗅探顺序：先 Chrome stable，再 Edge stable
+_AUTO_SNIFF_CHANNELS = ('stable', 'edge')
+
+
+def _is_port_alive(port: int, timeout: float = 0.3) -> bool:
+    """轻量 TCP 探活：能 connect 上即视为活的。"""
+    import socket
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def sniff_auto_user_data_dir() -> tuple[Path | None, list[tuple[str, Path, str]]]:
+    """auto channel：按 _AUTO_SNIFF_CHANNELS 顺序查找首个含可用 DevToolsActivePort 的目录。
+
+    会校验端口实际可连通，避免命中浏览器已关闭后残留的陈旧文件。
+
+    :return: (命中目录或 None, 诊断记录列表)
+        诊断记录每项为 (channel, path, reason)，reason 取值：
+          - 'hit'        命中（文件存在且端口活）
+          - 'no_dir'     用户数据目录不存在
+          - 'no_port'    目录存在但缺 DevToolsActivePort
+          - 'stale'      DevToolsActivePort 存在但端口不通（陈旧残留）
+          - 'bad_file'   DevToolsActivePort 文件解析失败
+    """
+    diag: list[tuple[str, Path, str]] = []
+    for ch in _AUTO_SNIFF_CHANNELS:
+        p = default_user_data_dir_for_channel(ch)
+        if p is None:
+            diag.append((ch, Path('<not found>'), 'no_dir'))
+            continue
+        f = p / 'DevToolsActivePort'
+        if not f.exists():
+            diag.append((ch, p, 'no_port'))
+            continue
+        try:
+            port = discover_port_from_profile(p)
+        except (FileNotFoundError, ValueError):
+            diag.append((ch, p, 'bad_file'))
+            continue
+        if not _is_port_alive(port):
+            diag.append((ch, p, 'stale'))
+            continue
+        diag.append((ch, p, 'hit'))
+        return p, diag
+    return None, diag
 
 
 def discover_port_from_profile(user_data_dir: str | os.PathLike) -> int:
@@ -137,9 +190,11 @@ def discover_port_from_profile(user_data_dir: str | os.PathLike) -> int:
     if not p.exists():
         raise FileNotFoundError(
             f'未找到 {p}。请确认：\n'
-            f'  1. 浏览器正在运行，且 --user-data-dir 匹配：{user_data_dir}\n'
-            f'  2. 已在地址栏打开 chrome://inspect/#remote-debugging 并点击\n'
-            f'     "Allow remote debugging for this browser instance"（需 Chrome 144+）'
+            f'  1. 浏览器正在运行，且 user-data-dir 匹配：{user_data_dir}\n'
+            f'  2. 已在地址栏打开 chrome://inspect/#remote-debugging\n'
+            f'     （Edge 用 edge://inspect/#devices）并点击\n'
+            f'     "Allow remote debugging for this browser instance"\n'
+            f'     （需 Chrome/Edge 144+）'
         )
     lines = [l.strip() for l in p.read_text(encoding='utf-8').splitlines() if l.strip()]
     if not lines:

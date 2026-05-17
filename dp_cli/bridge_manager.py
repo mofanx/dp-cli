@@ -94,9 +94,10 @@ def start_bridge(user_data_dir: str | os.PathLike,
 
     # 立即提示用户：bridge 正在连接；若 Chrome 弹出授权框请点击。
     # 写 stderr 避免污染 stdout 的 JSON 输出。
-    print('[dp] 正在启动 bridge 并连接 Chrome…', file=sys.stderr, flush=True)
-    print('[dp] 💡 若 Chrome 弹出 "Allow remote debugging" 对话框，'
-          '请切到 Chrome 窗口点击 "Allow"（后续命令会自动复用连接）',
+    print('[dp] 正在启动 bridge 并连接浏览器（Chrome/Edge）…',
+          file=sys.stderr, flush=True)
+    print('[dp] 💡 若浏览器弹出 "Allow remote debugging" 对话框，'
+          '请切到浏览器窗口点击 "Allow"（后续命令会自动复用连接）',
           file=sys.stderr, flush=True)
 
     # 异步读 stderr，方便 timeout 时回显给用户
@@ -143,7 +144,7 @@ def start_bridge(user_data_dir: str | os.PathLike,
             proc.terminate()
             raise RuntimeError(
                 f'bridge 启动超时 ({ready_timeout}s)。\n'
-                f'若是首次连接：请把 Chrome 窗口切到前台，点击弹出的'
+                f'若是首次连接：请把浏览器窗口（Chrome/Edge）切到前台，点击弹出的'
                 f' "Allow remote debugging for this browser instance" 对话框。\n'
                 f'当前 bridge stderr:\n{_collect_stderr()}'
             )

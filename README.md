@@ -5,7 +5,7 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
 ## Features
 
 - **Anti-detection by default** — not based on webdriver, `navigator.webdriver` is `false`
-- **Reuse your own browser** — `--auto-connect` (Chrome 144+, no CLI flag needed) or `--port`
+- **Reuse your own browser** — `--auto-connect` (Chrome/Edge 144+, no CLI flag needed) or `--port`
 - **Hybrid snapshot** — a11y tree + Vimium-style clickable detection, catches icon-only buttons
   and custom menu items the a11y tree misses; every element gets an `[N]` ref with
   confidence markers (`⚡` medium, `?` low)
@@ -43,25 +43,26 @@ dp open https://example.com --port 9222
 dp snapshot
 ```
 
-## Connect to a Normally-Launched Chrome (Chrome 144+)
+## Connect to a Normally-Launched Chrome/Edge (Chrome/Edge 144+)
 
-No `--remote-debugging-port` required. Chrome 144+ exposes opt-in remote debugging
-via `chrome://inspect`:
+No `--remote-debugging-port` required. Chrome/Edge 144+ exposes opt-in remote debugging
+via `chrome://inspect` (Chrome) or `edge://inspect/#devices` (Edge):
 
-1. Open your Chrome as usual (no special flags)
-2. Visit `chrome://inspect/#remote-debugging`
+1. Open your Chrome or Edge as usual (no special flags)
+2. Visit `chrome://inspect/#remote-debugging` (Chrome) or `edge://inspect/#devices` (Edge)
 3. Check **"Allow remote debugging for this browser instance"**
 4. Run `dp open --auto-connect`
 
 ```bash
-dp open --auto-connect                              # stable channel, default profile
-dp open --auto-connect --channel beta               # pick a different channel
+dp open --auto-connect                              # auto channel: sniffs Chrome stable → Edge stable
+dp open --auto-connect --channel edge              # force Edge stable
+dp open --auto-connect --channel beta               # Chrome beta
 dp open --auto-connect --probe-dir ~/my-profile     # custom user-data-dir
 ```
 
 ### How it works
 
-Chrome 144+ in this mode exposes **only** a browser-level WebSocket and omits the HTTP
+Chrome/Edge 144+ in this mode exposes **only** a browser-level WebSocket and omits the HTTP
 REST API (`/json`, `/json/version`, ...) that DrissionPage / puppeteer / Playwright
 depend on. `dp-cli` transparently handles this:
 
@@ -74,14 +75,14 @@ depend on. `dp-cli` transparently handles this:
 4. Points DrissionPage at the bridge. Subsequent `dp` commands reuse the same bridge.
 
 The bridge subprocess and its port are tracked in the session file; `dp close` stops
-the bridge automatically and never quits your Chrome (it's your browser, not dp's).
+the bridge automatically and never quits your browser (it's your browser, not dp's).
 
 ### Caveats
 
-- Chrome always shows an **"Allow remote debugging"** dialog per new WebSocket client.
+- Chrome/Edge always shows an **"Allow remote debugging"** dialog per new WebSocket client.
   Since bridge maintains one WebSocket and dp commands share it, you confirm at most
   once per `dp open --auto-connect`.
-- Works with whatever profile Chrome is actually using — same cookies, logins, history.
+- Works with whatever profile Chrome/Edge is actually using — same cookies, logins, history.
 - Classic `--remote-debugging-port=9222` mode still works unchanged via `dp open --port 9222`.
 
 ## Hybrid Snapshot (a11y + Vimium-style)

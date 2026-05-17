@@ -13,11 +13,11 @@ description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操�
 
 ## 第一步：连接用户浏览器
 
-dp-cli 支持两种方式连接用户自己的 Chrome。**默认首选 `--auto-connect`**：无需命令行启动参数，对非技术用户最友好。
+dp-cli 支持两种方式连接用户自己的 Chrome/Edge。**默认首选 `--auto-connect`**：无需命令行启动参数，对非技术用户最友好。
 
 **不要询问用户用哪种方式，按下面决策流程自动选择即可。**
 
-### 推荐路径：--auto-connect（Chrome 144+）
+### 推荐路径：--auto-connect（Chrome/Edge 144+）
 
 ```bash
 # 尝试连接（首次使用会让用户做一次性配置）
@@ -29,20 +29,20 @@ dp snapshot
 
 **首次使用时若报错 `AUTOCONNECT_FAILED`，指引用户做一次性配置：**
 
-> 请在 Chrome 中打开 `chrome://inspect/#remote-debugging`，勾选顶部的
-> **"Allow remote debugging for this browser instance"** 复选框，然后重试。
+> 请在浏览器中打开 `chrome://inspect/#remote-debugging`（Chrome）或 `edge://inspect/#devices`（Edge），
+> 勾选顶部的 **"Allow remote debugging for this browser instance"** 复选框，然后重试。
 
 配置完成后，该设置持久化；以后任何时候都可直接用 `dp open --auto-connect`。
 
-**⚠ 关键提示：执行 `dp open --auto-connect` 后，Chrome 可能弹出 "Allow remote debugging" 授权对话框。必须主动告诉用户：**
+**⚠ 关键提示：执行 `dp open --auto-connect` 后，浏览器（Chrome/Edge）可能弹出 "Allow remote debugging" 授权对话框。必须主动告诉用户：**
 
-> 请切到 Chrome 窗口，点击弹出的 "Allow remote debugging" 对话框中的 **Allow** 按钮。后续命令会复用同一个连接，不会再弹框。
+> 请切到浏览器窗口，点击弹出的 "Allow remote debugging" 对话框中的 **Allow** 按钮。后续命令会复用同一个连接，不会再弹框。
 
 命令会阻塞最多 90 秒等待授权。一次会话内只需点一次。
 
 ### 备选路径：--port 9222（经典模式）
 
-当 `--auto-connect` 无法用（Chrome 版本低于 144、用户不愿打开 chrome://inspect 等）时使用：
+当 `--auto-connect` 无法用（浏览器版本低于 144、用户不愿打开 chrome://inspect/edge://inspect 等）时使用：
 
 ```bash
 # 1) 指引用户执行一次（窗口保持打开）：
@@ -80,11 +80,11 @@ dp -s work snapshot     # 只作用于 work 会话
 ### 决策流程（给 AI 的执行规则）
 
 1. 默认先跑 `dp open --auto-connect`
-   - 立即告诉用户："请留意 Chrome 窗口是否弹出 Allow 对话框并点击 Allow"
+   - 立即告诉用户："请留意浏览器（Chrome/Edge）窗口是否弹出 Allow 对话框并点击 Allow"
    - 若返回 `status: ok` → 连接成功，继续执行任务
-   - 若返回 `code: AUTOCONNECT_FAILED` → 指引用户在 `chrome://inspect/#remote-debugging` 勾选 Allow 复选框后重试
+   - 若返回 `code: AUTOCONNECT_FAILED` → 指引用户在 `chrome://inspect/#remote-debugging`（Chrome）或 `edge://inspect/#devices`（Edge）勾选 Allow 复选框后重试
    - 若返回 `code: BROWSER_START_FAILED` 且 detail 含 "timed out" → 用户没点 Allow → 提示用户点击 Allow 后重试
-2. 若用户明确说 Chrome 版本低 / 不想用 --auto-connect → 备选 `--port 9222`
+2. 若用户明确说浏览器版本低 / 不想用 --auto-connect → 备选 `--port 9222`
 3. 后续命令**不要**再加 `--auto-connect` 或 `--port`（会话已复用）
 
 ---
@@ -424,8 +424,8 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 
 ## 关键原则
 
-1. **先连接用户浏览器** — 默认 `dp open --auto-connect`，失败再降级到 `--port 9222`
-2. **提示用户点 Allow** — 执行 `--auto-connect` 后，主动告诉用户留意 Chrome 的 Allow 授权框
+1. **先连接用户浏览器** — 默认 `dp open --auto-connect`（自动嗅探 Chrome stable → Edge stable），失败再降级到 `--port 9222`
+2. **提示用户点 Allow** — 执行 `--auto-connect` 后，主动告诉用户留意浏览器（Chrome/Edge）的 Allow 授权框
 3. **先 snapshot/scan，后操作** — 不要猜页面结构；snapshot 看全貌，scan 只看可点
 4. **用 ref:N 引用元素** — `dp click "ref:5"` 最高效，每次 snapshot/scan 后编号刷新
 5. **善用 brief 模式 / scan 省 token** — 循环操作用 `--mode brief` 或改用 `dp scan`
@@ -452,7 +452,7 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 
 - **元素找不到** → `dp snapshot` 确认元素存在；若 a11y tree 没有，看末尾 `Additional Interactive Elements` 或直接 `dp scan --confidence all` 找补充元素 → `dp wait --locator` 等动态加载
 - **纯图标按钮 / 自定义菜单项无 ref** → `dp scan` 或 `dp snapshot --include-low`（启发式匹配会把 `⚡` medium / `?` low 也列出）
-- **`AUTOCONNECT_FAILED`（找不到 DevToolsActivePort）** → 指引用户在 `chrome://inspect/#remote-debugging` 勾选 **Allow remote debugging for this browser instance**
+- **`AUTOCONNECT_FAILED`（找不到 DevToolsActivePort）** → 指引用户在 `chrome://inspect/#remote-debugging`（Chrome）或 `edge://inspect/#devices`（Edge）勾选 **Allow remote debugging for this browser instance**
 - **`dp open --auto-connect` 卡住不返回** → 用户没点 Allow → 提示用户切到 Chrome 窗口点 **Allow** 授权对话框；Ubuntu Gnome 环境可用 `references/auto-connect-gnome.sh` 自动完成此操作
 - **`BROWSER_START_FAILED` 带 "timed out"** → 同上，Allow 未点；90 秒超时会返回
 - **`--auto-connect` 反复失败** → 降级到经典模式：`google-chrome --remote-debugging-port=9222` + `dp open --port 9222`

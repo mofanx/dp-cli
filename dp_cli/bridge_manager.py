@@ -8,8 +8,10 @@ chrome://inspect 桥接进程生命周期管理
 - start_bridge(user_data_dir): spawn `python -m dp_cli.bridge` 子进程，
   等待其向 stdout 打印 "BRIDGE_READY host=... port=..." 标记后返回 (pid, port)。
 
-- stop_bridge(pid): 向子进程发 SIGTERM；如 2 秒未退出再 SIGKILL。
-- is_bridge_alive(pid): OS 级存在性检查。
+- stop_bridge(pid): 向子进程发终止信号；如 2 秒未退出再强杀。
+  POSIX: SIGTERM → SIGKILL（针对整个进程组）。
+  Windows: CTRL_BREAK_EVENT → taskkill /F /T。
+- is_bridge_alive(pid): OS 级存在性检查（Windows 走 OpenProcess）。
 """
 
 from __future__ import annotations
@@ -21,6 +23,59 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+IS_WINDOWS = sys.platform == 'win32'
+
+
+def _detach_spawn_kwargs() -> dict:
+    """让 bridge 子进程脱离父进程的信号/控制台分组。
+
+    POSIX: ``start_new_session=True`` → setsid，使 bridge 自成进程组，
+    父进程 Ctrl-C 不会传递过来。
+    Windows: ``CREATE_NEW_PROCESS_GROUP`` 让我们后续可以发 CTRL_BREAK_EVENT；
+    ``CREATE_NO_WINDOW`` 避免在 GUI/服务环境弹出黑色控制台窗口。
+    """
+    if IS_WINDOWS:
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        CREATE_NO_WINDOW = 0x08000000
+        return {'creationflags': CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW}
+    return {'start_new_session': True}
+
+
+def _win_pid_alive(pid: int) -> bool:
+    """Windows: 用 OpenProcess + GetExitCodeProcess 判断进程是否存活。"""
+    import ctypes
+    from ctypes import wintypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    h = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h:
+        return False
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(h, ctypes.byref(code)):
+            return False
+        return code.value == STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(h)
+
+
+def _win_terminate(pid: int) -> None:
+    """Windows: taskkill /F /T 强杀进程及其子进程树。"""
+    try:
+        subprocess.run(
+            ['taskkill', '/F', '/T', '/PID', str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except Exception:
+        pass
 
 
 _READY_RE = re.compile(r'^BRIDGE_READY host=(?P<host>\S+) port=(?P<port>\d+)\s*$')
@@ -82,14 +137,15 @@ def start_bridge(user_data_dir: str | os.PathLike,
         '--listen', str(listen_port),
         '-v',
     ]
-    # start_new_session 让 bridge 成为独立进程组，防止父进程 SIGINT 误杀
+    # 让 bridge 成为独立进程组，防止父进程 SIGINT/Ctrl-C 误杀。
+    # POSIX 走 start_new_session；Windows 走 CREATE_NEW_PROCESS_GROUP。
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        start_new_session=True,
         bufsize=1,  # 行缓冲
+        **_detach_spawn_kwargs(),
     )
 
     # 立即提示用户：bridge 正在连接；若 Chrome 弹出授权框请点击。
@@ -173,6 +229,8 @@ def start_bridge(user_data_dir: str | os.PathLike,
 def is_bridge_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if IS_WINDOWS:
+        return _win_pid_alive(pid)
     try:
         os.kill(pid, 0)
         return True
@@ -185,18 +243,37 @@ def is_bridge_alive(pid: int) -> bool:
 
 
 def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
-    """停止 bridge 子进程。返回是否成功终止。"""
+    """停止 bridge 子进程。返回是否成功终止。
+
+    POSIX: SIGTERM 整个进程组 → 等待 → SIGKILL。
+    Windows: CTRL_BREAK_EVENT（依赖 spawn 时的 CREATE_NEW_PROCESS_GROUP）
+             → 等待 → taskkill /F /T 终止进程树。
+    """
     if not is_bridge_alive(pid):
         return True
-    # 先 SIGTERM 整个进程组（start_new_session 让 bridge 自成组）
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
+
+    if IS_WINDOWS:
+        # 1) 优雅: 给整个进程组发 CTRL_BREAK_EVENT
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, signal.CTRL_BREAK_EVENT)
         except Exception:
             pass
-    except Exception:
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not is_bridge_alive(pid):
+                return True
+            time.sleep(0.05)
+
+        # 2) 强杀: taskkill /F /T 终止进程树
+        _win_terminate(pid)
+        time.sleep(0.1)
+        return not is_bridge_alive(pid)
+
+    # POSIX: 先 SIGTERM 整个进程组（start_new_session 让 bridge 自成组）
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError):
         try:
             os.kill(pid, signal.SIGTERM)
         except Exception:

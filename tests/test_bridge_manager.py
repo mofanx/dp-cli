@@ -110,15 +110,18 @@ def test_detect_port_closed():
 def test_alive_and_stop_real_subprocess():
     """验证 stop_bridge 的信号确实让进程退出。
 
-    注意：stop_bridge 的返回值依赖 is_bridge_alive(pid)，而后者用 os.kill(pid,0)
-    探测，对“未 reap 的僵尸进程”会误判为活着。生产流程中 bridge 是上一次 dp 调用
-    spawn 的孤儿（start_new_session + 父进程早退出 → 被 init 收尸），所以
-    is_bridge_alive 会正确返回 False。本测试里 Popen 还持有子进程，我们用
-    proc.poll() 显式 reap 以模拟生产环境再断言。
+    注意（POSIX）：stop_bridge 的返回值依赖 is_bridge_alive(pid)，而后者用
+    os.kill(pid,0) 探测，对"未 reap 的僵尸进程"会误判为活着。生产流程中
+    bridge 是上一次 dp 调用 spawn 的孤儿（start_new_session + 父进程早退出
+    → 被 init 收尸），所以 is_bridge_alive 会正确返回 False。本测试里 Popen
+    还持有子进程，我们用 proc.poll() 显式 reap 以模拟生产环境再断言。
+
+    Windows: is_bridge_alive 走 OpenProcess + GetExitCodeProcess，没有僵尸
+    进程问题；stop_bridge 用 CTRL_BREAK_EVENT + taskkill /F /T 终止。
     """
     proc = subprocess.Popen(
         [sys.executable, '-c', 'import time; time.sleep(60)'],
-        start_new_session=True,
+        **bridge_manager._detach_spawn_kwargs(),
     )
     try:
         assert bridge_manager.is_bridge_alive(proc.pid) is True

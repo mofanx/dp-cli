@@ -464,11 +464,29 @@ async def main_async(user_data_dir: Path, host: str, port: int) -> None:
     # 等待终止信号
     stop_evt = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop_evt.set)
-        except NotImplementedError:
-            pass
+
+    if sys.platform == 'win32':
+        # Windows ProactorEventLoop 不支持 add_signal_handler。
+        # 改用 signal.signal 拦截 SIGINT / SIGBREAK（来自 CTRL_BREAK_EVENT）。
+        # signal handler 跑在主线程的信号上下文中，必须用 call_soon_threadsafe
+        # 通知 event loop。
+        def _win_signal_handler(signum, frame):
+            loop.call_soon_threadsafe(stop_evt.set)
+
+        for sig_name in ('SIGINT', 'SIGBREAK', 'SIGTERM'):
+            sig = getattr(signal, sig_name, None)
+            if sig is None:
+                continue
+            try:
+                signal.signal(sig, _win_signal_handler)
+            except (ValueError, OSError):
+                pass
+    else:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, stop_evt.set)
+            except NotImplementedError:
+                pass
     try:
         await stop_evt.wait()
     finally:

@@ -166,7 +166,7 @@ def take_a11y_snapshot(page, selector=None, max_depth=None,
         'method': 'failed',
         'tree': {},
         'stats': {'total': 0, 'ignored': 0, 'interactive': 0},
-        'error': f'a11y tree 获取失败 (CDP: {cdp_err})',
+        'error': f'a11y tree 获取失败 (CDP: {cdp_error_msg})',
     }
 
 

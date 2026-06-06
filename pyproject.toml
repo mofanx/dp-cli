@@ -25,6 +25,14 @@ dependencies = [
     "requests>=2.28",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-mock>=3.11.0",
+]
+
 [project.scripts]
 dp = "dp_cli.main:main"
 
@@ -35,3 +43,46 @@ Repository = "https://github.com/mofanx/dp-cli"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dp_cli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--tb=short",
+    "--timeout=60",
+]
+markers = [
+    "unit: marks tests as unit tests (no browser required)",
+    "integration: marks tests as integration tests (browser required)",
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "network: marks tests that require network access",
+]
+
+[tool.coverage.run]
+source = ["dp_cli"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"

@@ -1,0 +1,63 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Unit Tests · Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[test]"
+
+      - name: Run unit tests with coverage
+        run: pytest -m "not integration" --cov=dp_cli --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ── 集成测试(需要真实浏览器)──────────────────────────────────────────────
+  # 当前仓库尚无 @pytest.mark.integration 用例,故暂时禁用(if: false)。
+  # 待补充集成测试后,把 `if: false` 改为
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  # 即可启用。Chrome 通过 browser-actions/setup-chrome 安装,统一 headless 运行。
+  integration:
+    name: Integration Tests (headless)
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e ".[test]"
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Run integration tests (headless)
+        run: pytest -m "integration" --timeout=120

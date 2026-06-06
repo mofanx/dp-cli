@@ -11,3 +11,10 @@ env/
 .env
 *.log
 .DS_Store
+
+# 测试 / 覆盖率产物
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/

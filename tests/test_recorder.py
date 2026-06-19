@@ -74,10 +74,10 @@ def test_dp_script_click():
 
 @pytest.mark.unit
 def test_dp_script_fill():
-    """含 dp fill 'css:#name' 'hello'。"""
+    """含 dp fill 'css:#name' hello。shlex.quote 不给简单字符串加引号。"""
     actions = [_fill()]
     result = recorder._export_dp_script(actions)
-    assert "dp fill 'css:#name' 'hello'" in result
+    assert "dp fill 'css:#name' hello" in result
 
 
 @pytest.mark.unit
@@ -120,10 +120,10 @@ def test_dp_script_select_and_check():
 
 @pytest.mark.unit
 def test_dp_script_press():
-    """press 动作的输出。"""
+    """press 动作的输出。shlex.quote 不给简单字符串加引号。"""
     actions = [{"type": "press", "key": "Tab"}]
     result = recorder._export_dp_script(actions)
-    assert "dp press 'Tab'" in result
+    assert "dp press Tab" in result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -350,29 +350,6 @@ def test_first_url():
     assert result == "https://example.com"
     
     assert recorder._first_url([]) == ""
-
-
-@pytest.mark.unit
-def test_shell_quote():
-    """基本转义行为。"""
-    assert recorder._shell_quote("hello") == "'hello'"
-    assert recorder._shell_quote("it's") == "'it'\"'\"'s'"
-
-
-@pytest.mark.unit
-def test_py_quote():
-    """基本转义行为。"""
-    assert recorder._py_quote("hello") == "'hello'"
-    assert recorder._py_quote("it's") == "\"it's\""
-
-
-@pytest.mark.unit
-def test_selenium_key_mapping():
-    """Enter/Escape/Tab → 对应 Keys.*;未知键 → repr。"""
-    assert recorder._selenium_key("Enter") == "Keys.ENTER"
-    assert recorder._selenium_key("Escape") == "Keys.ESCAPE"
-    assert recorder._selenium_key("Tab") == "Keys.TAB"
-    assert recorder._selenium_key("Unknown") == "'Unknown'"
 
 
 @pytest.mark.unit

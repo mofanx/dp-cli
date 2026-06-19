@@ -314,11 +314,16 @@ def render_a11y_plain_text(snapshot: dict, refs: dict = None) -> str:
 # ── CDP 获取函数 ──────────────────────────────────────────────────────────────
 
 
-def _get_full_tree_cdp(page, max_depth=None) -> list:
-    """通过 CDP getFullAXTree 获取完整 a11y tree"""
+def _get_full_tree_cdp(page, max_depth=None, frame_id=None) -> list:
+    """通过 CDP getFullAXTree 获取完整 a11y tree
+
+    :param frame_id: 可选，限制获取特定 frame 的 a11y tree
+    """
     kwargs = {}
     if max_depth is not None:
         kwargs['depth'] = max_depth
+    if frame_id is not None:
+        kwargs['frameId'] = frame_id
     result = page.run_cdp('Accessibility.getFullAXTree', **kwargs)
     return result.get('nodes', [])
 
@@ -329,19 +334,69 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
 
     :return: (subtree, warning) — subtree 为匹配的子树或完整树，warning 为失败提示或 None
     """
+    # ponytail: 使用 normalize_locator 保持与其他命令的一致性
+    from dp_cli.commands._utils import normalize_locator
+    normalized = normalize_locator(selector)
+
     # 1. 获取 selector 对应的 backendNodeId
     try:
         doc = page.run_cdp('DOM.getDocument')
         root_id = doc['root']['nodeId']
-        result = page.run_cdp('DOM.querySelector', nodeId=root_id, selector=selector)
-        node_id = result.get('nodeId')
+
+        if normalized.startswith('css:'):
+            css_selector = normalized[4:]
+            result = page.run_cdp('DOM.querySelector', nodeId=root_id, selector=css_selector)
+            node_id = result.get('nodeId')
+        elif normalized.startswith('xpath:'):
+            xpath_selector = normalized[6:]
+            # 使用 Runtime.evaluate 执行 document.evaluate 支持 xpath
+            # ponytail: 不使用 returnByValue，直接获取 objectId
+            js_code = f'''
+            (function() {{
+                const result = document.evaluate("{xpath_selector}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                return result.singleNodeValue;
+            }})()
+            '''
+            remote_object = page.run_cdp('Runtime.evaluate', expression=js_code, returnByValue=False)
+            node_id = None
+            if remote_object.get('result') and remote_object['result'].get('type') == 'object':
+                object_id = remote_object['result'].get('objectId')
+                if object_id:
+                    # 获取 DOM 节点
+                    node_desc = page.run_cdp('DOM.requestNode', objectId=object_id)
+                    node_id = node_desc.get('nodeId')
+        else:
+            # 无前缀，当作 CSS 选择器
+            result = page.run_cdp('DOM.querySelector', nodeId=root_id, selector=normalized)
+            node_id = result.get('nodeId')
+
         if not node_id:
             return tree, f'--selector "{selector}" 未匹配到元素，已返回完整页面快照'
 
         desc = page.run_cdp('DOM.describeNode', nodeId=node_id)
-        target_bid = desc['node']['backendNodeId']
-    except Exception:
-        return tree, f'--selector "{selector}" 查询失败，已返回完整页面快照'
+        node_info = desc['node']
+        target_bid = node_info['backendNodeId']
+        node_name = node_info.get('nodeName', '').lower()
+
+        # ponytail: iframe 特殊处理 - 获取 iframe 的 frameId 并返回该 frame 的快照
+        if node_name == 'iframe':
+            # 获取 iframe 的 frameId
+            try:
+                frame_info = page.run_cdp('DOM.describeNode', nodeId=node_id)
+                frame_id = frame_info['node'].get('frameId')
+                if frame_id:
+                    # 重新获取该 frame 的 a11y tree
+                    flat_nodes = _get_full_tree_cdp(page, max_depth=None, frame_id=frame_id)
+                    if flat_nodes:
+                        normalized = [_normalize_node(n) for n in flat_nodes]
+                        frame_tree = _build_tree(normalized)
+                        return frame_tree, f'[INFO] 已切换到 iframe frame ({frame_id}) 的快照'
+                    return tree, f'--selector "{selector}" 匹配到 iframe，但无法获取其 frame 的 a11y tree，已返回主文档快照'
+                return tree, f'--selector "{selector}" 匹配到 iframe，但该 iframe 无 frameId，已返回主文档快照'
+            except Exception as iframe_err:
+                return tree, f'--selector "{selector}" 匹配到 iframe，但获取 frame 信息失败: {str(iframe_err)}，已返回主文档快照'
+    except Exception as e:
+        return tree, f'--selector "{selector}" 查询失败: {str(e)}，已返回完整页面快照'
 
     # 2. 在 a11y tree 中查找匹配的节点
     def find_node(node, target_bid):
@@ -353,10 +408,20 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
                 return found
         return None
 
+    # 收集 a11y tree 中所有有 backendNodeId 的节点用于调试
+    all_bids = set()
+    def collect_bids(node):
+        bid = node.get('backendNodeId')
+        if bid:
+            all_bids.add(bid)
+        for child in node.get('children', []):
+            collect_bids(child)
+    collect_bids(tree)
+
     subtree = find_node(tree, target_bid)
     if subtree:
         return subtree, None
-    return tree, f'--selector "{selector}" 在 a11y tree 中未找到对应节点，已返回完整页面快照'
+    return tree, f'--selector "{selector}" 在 a11y tree 中未找到对应节点 (target backendNodeId={target_bid}, a11y tree 中共有 {len(all_bids)} 个有 backendNodeId 的节点)，已返回完整页面快照'
 
 
 # ── 数据标准化 ────────────────────────────────────────────────────────────────

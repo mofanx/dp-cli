@@ -9,6 +9,20 @@ from dp_cli.commands._utils import (
     session_option, _get_page, resolve_locator, wait_network_idle,
 )
 
+# ponytail: 提取重复的 findScrollable JS 函数
+_FIND_SCROLLABLE_JS = """
+function findScrollable(el) {
+  while (el && el !== document.body && el !== document.documentElement) {
+    const st = getComputedStyle(el);
+    const canY = /(auto|scroll|overlay)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 1;
+    const canX = /(auto|scroll|overlay)/.test(st.overflowX) && el.scrollWidth > el.clientWidth + 1;
+    if (canY || canX) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+"""
+
 
 def register(cli):
 
@@ -142,32 +156,22 @@ def register(cli):
 
             if mouse_x is not None and mouse_y is not None:
                 result = page.run_js(
-                    """
-                    function findScrollable(el) {
-                      while (el && el !== document.body && el !== document.documentElement) {
-                        const st = getComputedStyle(el);
-                        const canY = /(auto|scroll|overlay)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 1;
-                        const canX = /(auto|scroll|overlay)/.test(st.overflowX) && el.scrollWidth > el.clientWidth + 1;
-                        if (canY || canX) return el;
-                        el = el.parentElement;
-                      }
-                      return document.scrollingElement || document.documentElement;
-                    }
+                    f"""{_FIND_SCROLLABLE_JS}
                     const start = document.elementFromPoint(arguments[2], arguments[3]);
                     const target = findScrollable(start);
-                    const before = {scrollTop: target.scrollTop, scrollLeft: target.scrollLeft};
-                    if (arguments[4]) {
+                    const before = {{scrollTop: target.scrollTop, scrollLeft: target.scrollLeft}};
+                    if (arguments[4]) {{
                       target.scrollTop = 0;
-                    } else if (arguments[5]) {
+                    }} else if (arguments[5]) {{
                       target.scrollTop = target.scrollHeight;
-                    } else {
+                    }} else {{
                       target.scrollTop += arguments[1];
                       target.scrollLeft += arguments[0];
-                    }
-                    target.dispatchEvent(new Event('scroll', {bubbles: true}));
-                    return {
+                    }}
+                    target.dispatchEvent(new Event('scroll', {{bubbles: true}}));
+                    return {{
                       before,
-                      after: {scrollTop: target.scrollTop, scrollLeft: target.scrollLeft},
+                      after: {{scrollTop: target.scrollTop, scrollLeft: target.scrollLeft}},
                       scrollHeight: target.scrollHeight,
                       clientHeight: target.clientHeight,
                       scrollWidth: target.scrollWidth,
@@ -176,8 +180,8 @@ def register(cli):
                       id: target.id || '',
                       className: target.className || '',
                       mode: 'mouse'
-                    };
-                    """,
+                    }};
+                    }}""",
                     x, y, mouse_x, mouse_y, top, bottom,
                 )
                 ok({'x': x, 'y': y, 'mouse': {'x': mouse_x, 'y': mouse_y},
@@ -292,19 +296,9 @@ def register(cli):
                     return int(target.run_js('return this.scrollHeight'))
                 if use_mouse_container:
                     return int(page.run_js(
-                        """
-                        function findScrollable(el) {
-                          while (el && el !== document.body && el !== document.documentElement) {
-                            const st = getComputedStyle(el);
-                            const canY = /(auto|scroll|overlay)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 1;
-                            if (canY) return el;
-                            el = el.parentElement;
-                          }
-                          return document.scrollingElement || document.documentElement;
-                        }
+                        f"""{_FIND_SCROLLABLE_JS}
                         const target = findScrollable(document.elementFromPoint(arguments[0], arguments[1]));
-                        return target.scrollHeight;
-                        """,
+                        return target.scrollHeight;""",
                         mouse_x, mouse_y,
                     ))
                 return int(page.run_js('return document.documentElement.scrollHeight'))
@@ -329,22 +323,13 @@ def register(cli):
                     )
                 elif use_mouse_container:
                     position = page.run_js(
-                        """
-                        function findScrollable(el) {
-                          while (el && el !== document.body && el !== document.documentElement) {
-                            const st = getComputedStyle(el);
-                            const canY = /(auto|scroll|overlay)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 1;
-                            if (canY) return el;
-                            el = el.parentElement;
-                          }
-                          return document.scrollingElement || document.documentElement;
-                        }
+                        f"""{_FIND_SCROLLABLE_JS}
                         const target = findScrollable(document.elementFromPoint(arguments[0], arguments[1]));
                         const before = target.scrollTop;
                         const delta = arguments[2] > 0 ? arguments[2] : Math.max(300, Math.floor(target.clientHeight * arguments[3]));
                         target.scrollTop += delta;
-                        target.dispatchEvent(new Event('scroll', {bubbles: true}));
-                        return {
+                        target.dispatchEvent(new Event('scroll', {{bubbles: true}}));
+                        return {{
                           before,
                           after: target.scrollTop,
                           delta,
@@ -354,8 +339,7 @@ def register(cli):
                           id: target.id || '',
                           className: target.className || '',
                           mode: 'mouse'
-                        };
-                        """,
+                        }};""",
                         mouse_x, mouse_y, step, 3 if fast else 0.9,
                     )
                 else:

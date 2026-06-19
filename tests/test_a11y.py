@@ -540,3 +540,72 @@ def test_take_a11y_snapshot_total_failure():
     assert result['method'] == 'failed'
     assert 'error' in result
     assert result['tree'] == {}
+
+
+@pytest.mark.unit
+def test_find_subtree_by_selector_css_prefix():
+    """css: 前缀应该被去掉并使用 DOM.querySelector。"""
+    cdp_result = {
+        'root': {'nodeId': 1},
+        'nodeId': 100
+    }
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'nodeId': 1}},
+        'DOM.querySelector': cdp_result,
+        'DOM.describeNode': {'node': {'backendNodeId': 200, 'nodeName': 'DIV'}}
+    })
+    
+    tree = node(role='root', backendNodeId=1, children=[
+        node(role='generic', backendNodeId=200, children=[
+            node(role='button', backendNodeId=300)
+        ])
+    ])
+    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'css:#test')
+    
+    assert warning is None
+    assert result['backendNodeId'] == 200
+
+
+@pytest.mark.unit
+def test_find_subtree_by_selector_xpath_prefix():
+    """xpath: 前缀应该使用 Runtime.evaluate 执行 document.evaluate。"""
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'nodeId': 1}},
+        'Runtime.evaluate': {
+            'result': {'type': 'object', 'objectId': 'obj123'}
+        },
+        'DOM.requestNode': {'nodeId': 100},
+        'DOM.describeNode': {'node': {'backendNodeId': 200, 'nodeName': 'DIV'}}
+    })
+    
+    tree = node(role='root', backendNodeId=1, children=[
+        node(role='generic', backendNodeId=200)
+    ])
+    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'xpath://div')
+    
+    assert warning is None
+    assert result['backendNodeId'] == 200
+
+
+@pytest.mark.unit
+def test_find_subtree_by_selector_iframe_switch():
+    """匹配到 iframe 时应该切换到其 frame 的快照。"""
+    frame_id = 'TEST_FRAME_ID'
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'nodeId': 1}},
+        'DOM.querySelector': {'nodeId': 100},
+        'DOM.describeNode': {'node': {'backendNodeId': 200, 'nodeName': 'IFRAME', 'frameId': frame_id}},
+        'Accessibility.getFullAXTree': {
+            'nodes': [
+                {'nodeId': '1', 'role': {'type': 'string', 'value': 'WebArea'}, 
+                 'backendDOMNodeId': 1, 'childIds': []}
+            ]
+        }
+    })
+    
+    tree = node(role='root', backendNodeId=1)
+    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'iframe')
+    
+    assert '已切换到 iframe frame' in warning
+    assert frame_id in warning
+    assert result['role'] == 'WebArea'

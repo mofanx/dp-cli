@@ -15,7 +15,7 @@ def ok(data: Any = None, msg: str = None) -> None:
         result['message'] = msg
     if data is not None:
         result['data'] = data
-    _print(result)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
@@ -23,12 +23,8 @@ def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
     result = {'status': 'error', 'code': code, 'message': msg}
     if detail:
         result['detail'] = detail
-    _print(result)
-    sys.exit(1)
-
-
-def _print(result: dict) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    sys.exit(1)
 
 
 def format_element(ele, include_rect: bool = False) -> dict:

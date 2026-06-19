@@ -21,23 +21,50 @@ def _is_meaningful_class(cls: str) -> bool:
     return True
 
 
-def suggest_locator(tag: str, attrs: dict, text: str) -> str:
-    """为静态元素生成最优 DrissionPage 定位字符串"""
-    if attrs.get('id'):
-        return f'#{attrs["id"]}'
+def suggest_locator(tag: str, attrs: dict, text: str, attr_priority: list = None) -> str:
+    """为静态元素生成最优 DrissionPage 定位字符串
 
-    for semantic in ('data-testid', 'data-qa', 'data-cy', 'aria-label', 'name', 'placeholder'):
-        if attrs.get(semantic):
-            val = attrs[semantic]
-            return f'@{semantic}={val}'
+    :param attr_priority: 自定义属性优先级列表，如 ['data-testid', 'data-test-id', 'id']
+                          如果为 None，使用默认优先级
+    """
+    # 默认属性优先级（按测试最佳实践：测试专用属性 > id > 语义属性 > 样式属性）
+    default_priority = [
+        'data-testid',      # 测试专用，最稳定
+        'data-test',        # data-testid 变种
+        'data-test-id',     # data-testid 变种
+        'data-qa',          # QA 专用
+        'data-cy',          # Cypress 测试框架
+        'id',               # 唯一性强，但可能因重构改变
+        'aria-label',       # 可访问性属性
+        'name',             # 表单元素属性
+        'placeholder',      # 占位符
+    ]
+    # 如果用户指定了自定义优先级，使用用户指定的优先级
+    # 如果自定义优先级中没有匹配，回退到默认优先级
+    if attr_priority:
+        priority = attr_priority + [p for p in default_priority if p not in attr_priority]
+    else:
+        priority = default_priority
 
+    # 按优先级检查属性
+    for attr in priority:
+        if attr in attrs and attrs[attr]:
+            val = attrs[attr]
+            if attr == 'id':
+                return f'#{val}'
+            else:
+                return f'@{attr}={val}'
+
+    # 回退到 class
     cls = attrs.get('class', '')
     if cls:
         classes = [c for c in cls.strip().split() if _is_meaningful_class(c)]
         if classes:
             return f'.{classes[0]}'
 
+    # 回退到 text
     if text and len(text) <= 30:
         return f'text:{text}'
 
+    # 最后回退到 tag
     return f't:{tag}'

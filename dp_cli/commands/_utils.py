@@ -21,7 +21,7 @@ def normalize_url(url: str) -> str:
 
 
 def session_option(f):
-    return click.option('-s', '--session', default='default',
+    return click.option('-S', '--session', default='default',
                         help='会话名称，默认 default', show_default=True)(f)
 
 

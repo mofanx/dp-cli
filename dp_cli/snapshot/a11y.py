@@ -50,7 +50,7 @@ _REF_CONTENT_ROLES = frozenset({
 })
 
 
-def take_a11y_snapshot(page, selector=None, max_depth=None,
+def take_a11y_snapshot(page, selector=None, max_depth=None, attr_priority=None,
                        with_clickables: bool = True,
                        include_low: bool = False,
                        viewport_only: bool = False) -> dict:
@@ -80,17 +80,29 @@ def take_a11y_snapshot(page, selector=None, max_depth=None,
 
         # 如果指定 selector，找到对应子树
         selector_warning = None
+        frame_id = None
         if selector:
-            tree, selector_warning = _find_subtree_by_selector(page, tree, normalized, selector)
+            tree, selector_warning, frame_id = _find_subtree_by_selector(page, tree, normalized, selector)
 
-        stats = _compute_stats(normalized)
+        # ponytail: 如果切换到 iframe frame，需要重新获取 normalized 和 stats
+        if frame_id:
+            # 从 tree 重新构建 normalized（tree 已经是 iframe 的 tree）
+            normalized = []
+            def extract_normalized(node):
+                normalized.append(node)
+                for child in node.get('children', []):
+                    extract_normalized(child)
+            extract_normalized(tree)
+            stats = _compute_stats(normalized)
+        else:
+            stats = _compute_stats(normalized)
 
         # 为交互节点 + 可引用内容节点批量生成定位器
         need_locator = [n for n in normalized
                         if n.get('backendNodeId') and (
                             n['role'] in _INTERACTIVE_ROLES or
                             n['role'] in _REF_CONTENT_ROLES)]
-        _generate_locators_batch(page, need_locator)
+        _generate_locators_batch(page, need_locator, frame_id=frame_id, attr_priority=attr_priority)
 
         result = {
             'page': page_info,
@@ -106,36 +118,41 @@ def take_a11y_snapshot(page, selector=None, max_depth=None,
         # 注意：clickable 必须自己建 bid_map —— 它的 JS 会给元素加
         # data-dp-scan-id 临时属性，bid_map 必须在那之后再建才能包含 scan-id
         if with_clickables:
-            try:
-                from .clickable import detect_clickables
-                clk = detect_clickables(
-                    page,
-                    viewport_only=viewport_only,
-                    include_low=include_low,
-                )
-                # 收集 a11y tree 已覆盖的 backendNodeId（有 locator 的交互节点）
-                covered = {n['backendNodeId'] for n in normalized
-                           if n.get('backendNodeId')
-                           and n.get('locator')
-                           and n['role'] in _INTERACTIVE_ROLES}
-                # 过滤出 a11y 未覆盖的元素
-                extras = [e for e in clk.get('elements', [])
-                          if not (e.get('backendNodeId')
-                                  and e['backendNodeId'] in covered)]
-                # 过滤策略：如果有 rect 且 w/h < 2，跳过（已在 JS 过滤过，双保险）
-                extras = [e for e in extras
-                          if e.get('rect') and e['rect'].get('w', 0) >= 2]
-                result['clickable_extras'] = extras
-                result['clickable_meta'] = {
-                    'total_detected': clk.get('total', 0),
-                    'covered_by_a11y': clk.get('total', 0) - len(extras),
-                    'extras': len(extras),
-                    'truncated': clk.get('truncated', False),
-                    'viewport_only': viewport_only,
-                    'include_low': include_low,
-                }
-            except Exception as ce:
-                result['clickable_warning'] = f'clickable 探测失败（非致命）：{ce}'
+            # ponytail: iframe frame 下禁用 clickable 探测，因为 JS 无法在 iframe 内执行
+            if frame_id:
+                result['clickable_warning'] = f'当前在 iframe frame ({frame_id}) 内，clickable 探测已禁用（JS 无法跨 frame 执行）'
+            else:
+                try:
+                    from .clickable import detect_clickables
+                    clk = detect_clickables(
+                        page,
+                        viewport_only=viewport_only,
+                        include_low=include_low,
+                        attr_priority=attr_priority,
+                    )
+                    # 收集 a11y tree 已覆盖的 backendNodeId（有 locator 的交互节点）
+                    covered = {n['backendNodeId'] for n in normalized
+                               if n.get('backendNodeId')
+                               and n.get('locator')
+                               and n['role'] in _INTERACTIVE_ROLES}
+                    # 过滤出 a11y 未覆盖的元素（基于 backendNodeId）
+                    extras = [e for e in clk.get('elements', [])
+                              if not (e.get('backendNodeId')
+                                      and e['backendNodeId'] in covered)]
+                    # 过滤策略：如果有 rect 且 w/h < 2，跳过（已在 JS 过滤过，双保险）
+                    extras = [e for e in extras
+                              if e.get('rect') and e['rect'].get('w', 0) >= 2]
+                    result['clickable_extras'] = extras
+                    result['clickable_meta'] = {
+                        'total_detected': clk.get('total', 0),
+                        'covered_by_a11y': clk.get('total', 0) - len(extras),
+                        'extras': len(extras),
+                        'truncated': clk.get('truncated', False),
+                        'viewport_only': viewport_only,
+                        'include_low': include_low,
+                    }
+                except Exception as ce:
+                    result['clickable_warning'] = f'clickable 探测失败（非致命）：{ce}'
 
         return result
     except Exception as cdp_err:
@@ -188,7 +205,7 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     # 渲染上下文：编号计数器 + ref 映射收集
     ctx = {'counter': 0, 'refs': {} if refs is None else refs}
 
-    mode_label = 'brief' if brief else 'full'
+    mode_label = 'interactive' if brief else 'full'
     # 头部信息先占位，渲染完成后回填 ref 统计
     header_idx = len(lines)
     lines.append('')  # placeholder
@@ -371,7 +388,7 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
             node_id = result.get('nodeId')
 
         if not node_id:
-            return tree, f'--selector "{selector}" 未匹配到元素，已返回完整页面快照'
+            return tree, f'--selector "{selector}" 未匹配到元素，已返回完整页面快照', None
 
         desc = page.run_cdp('DOM.describeNode', nodeId=node_id)
         node_info = desc['node']
@@ -390,13 +407,14 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
                     if flat_nodes:
                         normalized = [_normalize_node(n) for n in flat_nodes]
                         frame_tree = _build_tree(normalized)
-                        return frame_tree, f'[INFO] 已切换到 iframe frame ({frame_id}) 的快照'
-                    return tree, f'--selector "{selector}" 匹配到 iframe，但无法获取其 frame 的 a11y tree，已返回主文档快照'
-                return tree, f'--selector "{selector}" 匹配到 iframe，但该 iframe 无 frameId，已返回主文档快照'
+                        # 返回 frame_id 以便 clickable 探测也限制在该 frame
+                        return frame_tree, f'[INFO] 已切换到 iframe frame ({frame_id}) 的快照', frame_id
+                    return tree, f'--selector "{selector}" 匹配到 iframe，但无法获取其 frame 的 a11y tree，已返回主文档快照', None
+                return tree, f'--selector "{selector}" 匹配到 iframe，但该 iframe 无 frameId，已返回主文档快照', None
             except Exception as iframe_err:
-                return tree, f'--selector "{selector}" 匹配到 iframe，但获取 frame 信息失败: {str(iframe_err)}，已返回主文档快照'
+                return tree, f'--selector "{selector}" 匹配到 iframe，但获取 frame 信息失败: {str(iframe_err)}，已返回主文档快照', None
     except Exception as e:
-        return tree, f'--selector "{selector}" 查询失败: {str(e)}，已返回完整页面快照'
+        return tree, f'--selector "{selector}" 查询失败: {str(e)}，已返回完整页面快照', None
 
     # 2. 在 a11y tree 中查找匹配的节点
     def find_node(node, target_bid):
@@ -420,8 +438,8 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
 
     subtree = find_node(tree, target_bid)
     if subtree:
-        return subtree, None
-    return tree, f'--selector "{selector}" 在 a11y tree 中未找到对应节点 (target backendNodeId={target_bid}, a11y tree 中共有 {len(all_bids)} 个有 backendNodeId 的节点)，已返回完整页面快照'
+        return subtree, None, None
+    return tree, f'--selector "{selector}" 在 a11y tree 中未找到对应节点 (target backendNodeId={target_bid}, a11y tree 中共有 {len(all_bids)} 个有 backendNodeId 的节点)，已返回完整页面快照', None
 
 
 # ── 数据标准化 ────────────────────────────────────────────────────────────────
@@ -502,11 +520,13 @@ def _compute_stats(nodes: list) -> dict:
 # ── 定位器生成 ────────────────────────────────────────────────────────────────
 
 
-def _generate_locators_batch(page, interactive_nodes: list) -> None:
+def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None, attr_priority: list = None) -> None:
     """批量为交互节点生成 DrissionPage 定位器。
 
     优化：一次 DOM.getDocument(depth=-1) 获取完整 DOM 树，
     再从内存中按 backendNodeId 查找，避免 N 次 CDP 往返。
+
+    :param frame_id: 可选，限制获取特定 frame 的 DOM 树
     """
     if not interactive_nodes:
         return
@@ -522,31 +542,176 @@ def _generate_locators_batch(page, interactive_nodes: list) -> None:
         return
 
     # 方案 1：一次性获取完整 DOM 树并建索引
-    bid_map = _build_dom_bid_map(page)
+    bid_map = _build_dom_bid_map(page, frame_id=frame_id)
 
-    if bid_map:
+    # 使用 JS 批量获取指定属性（性能优化：1 次调用 vs N 次 page.ele()）
+    # 默认情况下也启用，以获取 data-* 属性
+    use_full_attrs = not frame_id
+
+    if use_full_attrs:
+        # 优化：一次性获取所有有指定属性的元素
+        attrs_map = {}
+        try:
+            # 如果没有指定自定义优先级，使用默认优先级
+            from .utils import suggest_locator
+            default_priority = [
+                'data-testid', 'data-test', 'data-test-id',
+                'data-qa', 'data-cy', 'id', 'aria-label', 'name', 'placeholder'
+            ]
+            attrs_to_get = attr_priority if attr_priority else default_priority
+
+            # 构建选择器：获取所有有指定属性的元素
+            selectors = [f'[{attr}]' for attr in attrs_to_get]
+            combined_selector = ','.join(selectors)
+
+            # 使用 JS 一次性获取所有元素的属性
+            js = f"""
+            (function() {{
+                const result = {{}};
+                const elements = document.querySelectorAll('{combined_selector}');
+                elements.forEach(el => {{
+                    const text = el.textContent.trim().substring(0, 50);
+                    if (text && !result[text]) {{
+                        const attrs = {{}};
+                        for (const attr of {attrs_to_get}) {{
+                            if (el.hasAttribute(attr)) {{
+                                attrs[attr] = el.getAttribute(attr);
+                            }}
+                        }}
+                        if (Object.keys(attrs).length > 0) {{
+                            result[text] = attrs;
+                        }}
+                    }}
+                }});
+                return JSON.stringify(result);
+            }})()
+            """
+            result = page.run_cdp('Runtime.evaluate', expression=js, returnByValue=True)
+            if result.get('result', {}).get('value'):
+                import json
+                attrs_map = json.loads(result['result']['value'])
+        except Exception:
+            pass
+
+        # 使用批量获取的属性映射
+        for n in interactive_nodes:
+            text = (n.get('name') or '')[:50]
+            if text and text in attrs_map:
+                attrs = attrs_map[text]
+                bid = n.get('backendNodeId')
+                tag = 'div'
+                if bid and bid_map:
+                    dom_info = bid_map.get(bid)
+                    if dom_info:
+                        tag = dom_info['tag']
+                loc = suggest_locator(tag, attrs, text, attr_priority=attr_priority)
+                n['locator'] = loc
+            else:
+                # 回退到 bid_map
+                bid = n.get('backendNodeId')
+                if bid and bid_map:
+                    dom_info = bid_map.get(bid)
+                    if dom_info:
+                        loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text, attr_priority=attr_priority)
+                        n['locator'] = loc
+    elif bid_map:
         for bid, nodes in bid_to_nodes.items():
             dom_info = bid_map.get(bid)
             if dom_info:
                 text = (nodes[0].get('name') or '')[:50]
-                loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text)
+                loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text, attr_priority=attr_priority)
                 for n in nodes:
                     n['locator'] = loc
     else:
-        # fallback：逐个查询（兼容 DOM.getDocument 不可用的情况）
-        for bid, nodes in bid_to_nodes.items():
-            dom_info = _get_dom_attrs(page, bid)
-            if dom_info:
-                text = (nodes[0].get('name') or '')[:50]
-                loc = suggest_locator(dom_info['tag'], dom_info['attrs'], text)
-                for n in nodes:
-                    n['locator'] = loc
+        # iframe frame 下使用 DrissionPage
+        # ponytail: iframe frame 下使用 dp find 获取真实 DOM 属性生成 locator
+        # DrissionPage 可以在 iframe 内查找元素，利用其能力生成真正的 locator
+        for n in interactive_nodes:
+            text = (n.get('name') or '')[:50]
+            if text:
+                try:
+                    # 尝试通过文本查找元素，获取真实 DOM 属性
+                    text_locator = f'text:{text}'
+
+                    # 先尝试单个元素
+                    ele = page.ele(text_locator, timeout=0.5)
+                    if ele:
+                        # 获取元素的 tag 和 attributes
+                        tag = ele.tag.lower()
+                        attrs = {}
+
+                        # 尝试获取所有属性（DrissionPage 支持 ele.attrs）
+                        try:
+                            all_attrs = ele.attrs
+                            if all_attrs and isinstance(all_attrs, dict):
+                                attrs.update(all_attrs)
+                            else:
+                                # 回退到逐个获取
+                                ele_id = ele.attr('id')
+                                if ele_id:
+                                    attrs['id'] = ele_id
+                                ele_class = ele.attr('class')
+                                if ele_class:
+                                    attrs['class'] = ele_class
+                                for attr in ['name', 'type', 'data-id', 'data-test-id', 'aria-label']:
+                                    val = ele.attr(attr)
+                                    if val:
+                                        attrs[attr] = val
+                        except Exception:
+                            # 回退到逐个获取
+                            ele_id = ele.attr('id')
+                            if ele_id:
+                                attrs['id'] = ele_id
+                            ele_class = ele.attr('class')
+                            if ele_class:
+                                attrs['class'] = ele_class
+                            for attr in ['name', 'type', 'data-id', 'data-test-id', 'aria-label']:
+                                val = ele.attr(attr)
+                                if val:
+                                    attrs[attr] = val
+
+                        # 如果没有 id，尝试从多个匹配的元素中找有 id 的
+                        if 'id' not in attrs:
+                            try:
+                                eles = page.eles(text_locator, timeout=0.5)
+                                for e in eles:
+                                    try:
+                                        e_id = e.attr('id')
+                                        if e_id:
+                                            attrs['id'] = e_id
+                                            # 获取其他属性
+                                            e_class = e.attr('class')
+                                            if e_class:
+                                                attrs['class'] = e_class
+                                            break
+                                    except Exception:
+                                        continue
+                            except Exception:
+                                pass
+
+                        # 生成真正的 locator
+                        loc = suggest_locator(tag, attrs, text, attr_priority=attr_priority)
+                        n['locator'] = loc
+                    else:
+                        # 查找失败，使用文本匹配
+                        n['locator'] = text_locator
+                except Exception as e:
+                    # 查找失败，使用文本匹配
+                    n['locator'] = text_locator
+            else:
+                n['locator'] = None
 
 
-def _build_dom_bid_map(page) -> dict:
-    """一次性获取完整 DOM 树，返回 {backendNodeId: {tag, attrs}} 映射"""
+def _build_dom_bid_map(page, frame_id: str = None) -> dict:
+    """一次性获取完整 DOM 树，返回 {backendNodeId: {tag, attrs}} 映射
+
+    :param frame_id: 可选，限制获取特定 frame 的 DOM 树
+    """
     try:
-        doc = page.run_cdp('DOM.getDocument', depth=-1)
+        kwargs = {'depth': -1}
+        if frame_id:
+            kwargs['frameId'] = frame_id
+        doc = page.run_cdp('DOM.getDocument', **kwargs)
         bid_map = {}
         _walk_dom_node(doc.get('root', {}), bid_map)
         return bid_map
@@ -598,13 +763,17 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     """递归渲染单个 a11y 节点为文本行
 
     :param parent_text: 父节点已显示的文本，用于消除子节点冗余
-    :param brief: True 时截断内容文本（paragraph/code 等）
+    :param brief: True 时跳过内容节点（paragraph/heading 等），只显示交互元素
     :param ctx: 渲染上下文 {'counter': int, 'refs': dict}，用于分配 [N] 编号
     """
     role = node.get('role', '')
     name = node.get('name', '')
     ignored = node.get('ignored', False)
     children = node.get('children', [])
+
+    # brief 模式：跳过内容节点（paragraph/heading 等），但保留交互元素和容器
+    if brief and role in _CONTENT_ROLES:
+        return
 
     # 跳过 ignored 节点（除非 verbose），但仍然渲染子节点
     if ignored and not verbose:

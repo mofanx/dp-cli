@@ -21,7 +21,9 @@ from .utils import suggest_locator
 def detect_clickables(page,
                       viewport_only: bool = False,
                       max_elements: int = 1000,
-                      include_low: bool = False) -> dict:
+                      include_low: bool = False,
+                      frame_id: str = None,
+                      attr_priority: list = None) -> dict:
     """探测当前页面的可点击元素。
 
     流程：
@@ -33,6 +35,7 @@ def detect_clickables(page,
     :param viewport_only: True 时只返回视口内元素
     :param max_elements: 最多返回多少个
     :param include_low: True 时包含 low 置信度（cursor:pointer / class-pattern）
+    :param frame_id: 可选，限制探测特定 frame
     :return: {
         'elements': [ClickableRecord, ...],
         'total': int,
@@ -75,7 +78,7 @@ def detect_clickables(page,
     truncated = bool(raw.get('truncated', False))
 
     # 建 bid_map（必须在 JS 打标之后，才能把 data-dp-scan-id 收入 attrs）
-    bid_map = _build_bid_map_with_scan_id(page)
+    bid_map = _build_bid_map_with_scan_id(page, frame_id=frame_id)
     # 索引：scanId (str) → (backendNodeId, attrs)
     scan_to_bid = {}
     for bid, info in bid_map.items():
@@ -98,7 +101,7 @@ def detect_clickables(page,
         text = (e.get('text') or '')[:50]
         # 去掉 data-dp-scan-id 再喂给 suggest_locator（临时属性不应出现在定位器里）
         clean_attrs = {k: v for k, v in attrs.items() if k != 'data-dp-scan-id'}
-        loc = suggest_locator(e.get('tag', ''), clean_attrs, text)
+        loc = suggest_locator(e.get('tag', ''), clean_attrs, text, attr_priority=attr_priority)
 
         elements.append({
             'scanId': e.get('scanId'),
@@ -131,12 +134,17 @@ def detect_clickables(page,
     }
 
 
-def _build_bid_map_with_scan_id(page) -> dict:
+def _build_bid_map_with_scan_id(page, frame_id: str = None) -> dict:
     """与 a11y._build_dom_bid_map 等价，但这里独立实现一份，
     目的是避免循环 import，并保留同样的 shadow/iframe 穿透逻辑。
+
+    :param frame_id: 可选，限制获取特定 frame 的 DOM 树
     """
     try:
-        doc = page.run_cdp('DOM.getDocument', depth=-1, pierce=True)
+        kwargs = {'depth': -1, 'pierce': True}
+        if frame_id:
+            kwargs['frameId'] = frame_id
+        doc = page.run_cdp('DOM.getDocument', **kwargs)
         bid_map = {}
         _walk(doc.get('root', {}), bid_map)
         return bid_map

@@ -6,6 +6,7 @@ dp-cli 输出格式化模块
 import json
 import sys
 from typing import Any, Optional
+from dp_cli.snapshot.utils import suggest_locator
 
 
 def ok(data: Any = None, msg: str = None) -> None:
@@ -38,7 +39,7 @@ def format_element(ele, include_rect: bool = False) -> dict:
         'tag': ele.tag,
         'text': (ele.raw_text or '').strip()[:200],
         'attrs': attrs,
-        'loc': _suggest_locator(ele, attrs),
+        'loc': suggest_locator(ele.tag, attrs, (ele.raw_text or '').strip()[:50]),
     }
 
     if include_rect:
@@ -52,36 +53,6 @@ def format_element(ele, include_rect: bool = False) -> dict:
             pass
 
     return info
-
-
-def _suggest_locator(ele, attrs: dict) -> str:
-    """为元素生成最优 DrissionPage 定位字符串"""
-    # 优先用 id
-    if attrs.get('id'):
-        return f'#{attrs["id"]}'
-
-    # data-testid / data-qa / aria-label 等语义属性
-    for semantic in ('data-testid', 'data-qa', 'aria-label', 'name', 'placeholder'):
-        if attrs.get(semantic):
-            return f'@{semantic}={attrs[semantic]}'
-
-    # 有唯一 class
-    cls = attrs.get('class', '')
-    if cls:
-        classes = cls.strip().split()
-        if classes:
-            return f'.{classes[0]}'
-
-    # 按文本
-    try:
-        txt = (ele.raw_text or '').strip()
-        if txt and len(txt) <= 30:
-            return f'text:{txt}'
-    except Exception:
-        pass
-
-    # 最后按 tag
-    return f't:{ele.tag}'
 
 
 def format_page_info(page) -> dict:

@@ -18,28 +18,33 @@ def register(cli):
 
     @cli.command()
     @session_option
-    @click.option('--mode',
-                  type=click.Choice(['full', 'brief', 'text']),
+    @click.option('--mode', '-m',
+                  type=click.Choice(['full', 'interactive', 'brief', 'text']),
                   default='full', show_default=True, help='快照模式')
-    @click.option('--selector', default=None, help='限定快照范围的 CSS 选择器')
-    @click.option('--format', 'fmt', type=click.Choice(['json', 'text']),
+    @click.option('--interactive', '-i', is_flag=True, default=False,
+                  help='快捷方式：等价于 --mode interactive')
+    @click.option('--selector', '-s', default=None, help='限定快照范围的 CSS 选择器')
+    @click.option('--format', '-f', 'fmt', type=click.Choice(['json', 'text']),
                   default='text', show_default=True, help='输出格式')
-    @click.option('--filename', default=None, help='保存到文件路径')
+    @click.option('--filename', '-o', default=None, help='保存到文件路径')
     @click.option('--no-clickables', is_flag=True, default=False,
                   help='禁用 Vimium 风格可交互元素补充探测（默认开启）')
     @click.option('--include-low', is_flag=True, default=False,
                   help='包含 low 置信度元素（cursor:pointer / class 规则匹配，可能假阳性）')
     @click.option('--viewport-only', is_flag=True, default=False,
                   help='补充探测只看视口内元素（省 token、更快）')
-    def snapshot(session, mode, selector, fmt, filename,
-                 no_clickables, include_low, viewport_only):
+    @click.option('--locator-priority', '-p', default=None,
+                  help='自定义 locator 属性优先级（逗号分隔），如 "data-testid,data-test-id,id"')
+    def snapshot(session, mode, interactive, selector, fmt, filename,
+                 no_clickables, include_low, viewport_only, locator_priority):
         """获取页面快照（a11y tree + Vimium 风格可交互元素补充）。
 
         \b
         模式说明（默认 full）:
-          full   【默认】完整页面快照，包含所有内容和交互元素
-          brief  精简模式，保留结构+交互，截断长文本（省 token）
-          text   纯文本模式，按阅读顺序输出可见文本
+          full       【默认】完整页面快照，包含所有内容和交互元素
+          interactive【推荐】只显示交互元素，适合脚本执行
+          brief      interactive 的别名（向后兼容）
+          text       纯文本模式，按阅读顺序输出可见文本
 
         \b
         可交互元素补充探测（默认开启）:
@@ -50,12 +55,24 @@ def register(cli):
         \b
         示例:
           dp snapshot                          # 完整快照（默认含 clickable 补充）
-          dp snapshot --mode brief             # 精简模式（省 token，适合循环调用）
+          dp snapshot -i                       # 只显示交互元素（最简洁，推荐）
+          dp snapshot -m interactive           # 只显示交互元素（明确）
+          dp snapshot -m brief                 # 精简模式（interactive 别名）
           dp snapshot --viewport-only          # 只扫视口内，更快
           dp snapshot --include-low            # 启用 low 置信度（可能假阳性）
           dp snapshot --no-clickables          # 纯 a11y tree，旧版本行为
-          dp snapshot --selector ".main"       # 只获取指定区域
+          dp snapshot -s ".main"               # 只获取指定区域
+          dp snapshot -p "data-testid,data-test-id,id"  # 自定义属性优先级
         """
+        # -i 选项覆盖 mode
+        if interactive:
+            mode = 'interactive'
+
+        # 解析 locator_priority
+        attr_priority = None
+        if locator_priority:
+            attr_priority = [p.strip() for p in locator_priority.split(',') if p.strip()]
+
         page = _get_page(session)
 
         try:
@@ -64,6 +81,7 @@ def register(cli):
                 with_clickables=not no_clickables,
                 include_low=include_low,
                 viewport_only=viewport_only,
+                attr_priority=attr_priority,
             )
         except Exception as e:
             error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
@@ -71,13 +89,15 @@ def register(cli):
 
         # 收集 ref 映射（所有模式都收集，便于后续 ref:N 引用）
         refs = {}
+        # brief 是 interactive 的别名，统一处理
+        mode_effective = 'interactive' if mode == 'brief' else mode
         if fmt == 'json':
             render_a11y_text(data, refs=refs)  # 触发编号分配
             output = json.dumps({'status': 'ok', 'data': data},
                                 ensure_ascii=False, indent=2)
-        elif mode == 'text':
+        elif mode_effective == 'text':
             output = render_a11y_plain_text(data, refs=refs)
-        elif mode == 'brief':
+        elif mode_effective == 'interactive':
             output = render_a11y_text(data, brief=True, refs=refs)
         else:
             output = render_a11y_text(data, refs=refs)
@@ -102,9 +122,9 @@ def register(cli):
                        '使用 "all" 等价于 high,medium,low')
     @click.option('--max', 'max_elements', default=1000, show_default=True,
                   help='最多返回多少个元素')
-    @click.option('--format', 'fmt', type=click.Choice(['text', 'json']),
+    @click.option('--format', '-f', 'fmt', type=click.Choice(['text', 'json']),
                   default='text', show_default=True, help='输出格式')
-    @click.option('--filename', default=None, help='保存到文件路径')
+    @click.option('--filename', '-o', default=None, help='保存到文件路径')
     @click.option('--verbose', '-v', is_flag=True, default=False,
                   help='显示 detection reason 和像素尺寸（调试用）')
     def scan(session, viewport_only, confidence, max_elements, fmt, filename, verbose):
@@ -244,9 +264,9 @@ def register(cli):
     @click.argument('container')
     @click.argument('fields_json')
     @click.option('--limit', type=int, default=None, help='最多提取多少条记录', show_default=True)
-    @click.option('--output', 'output_fmt', type=click.Choice(['json', 'csv']),
+    @click.option('--output', '-o', 'output_fmt', type=click.Choice(['json', 'csv']),
                   default='json', show_default=True, help='输出格式')
-    @click.option('--filename', default=None, help='保存结果到文件')
+    @click.option('--filename', '-f', default=None, help='保存结果到文件')
     def cmd_extract(session, container, fields_json, limit, output_fmt, filename):
         """批量提取结构化数据（列表页核心工具）。
 
@@ -305,7 +325,7 @@ def register(cli):
     @click.option('--fields', default='text,loc', show_default=True,
                   help='提取字段，逗号分隔')
     @click.option('--limit', default=None, help='最多返回多少条', show_default=True)
-    @click.option('--filename', default=None, help='保存结果到 JSON 文件')
+    @click.option('--filename', '-o', default=None, help='保存结果到 JSON 文件')
     def cmd_query(session, selector, fields, limit, filename):
         """按选择器查询元素，提取内容和定位器。支持动态渲染内容。
 
@@ -457,7 +477,7 @@ def register(cli):
             first_cls = cls.strip().split()[0] if cls.strip() else ''
             if first_cls:
                 label += f'.{first_cls}'
-        loc = suggest_locator(tag, attrs, text[:50])
+        loc = suggest_locator(tag, attrs, text[:50], attr_priority=None)
         summary = {'tag': label, 'loc': loc}
         if text:
             summary['text'] = text[:max_text] + ('…' if len(text) > max_text else '')

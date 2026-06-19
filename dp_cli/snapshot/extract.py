@@ -111,7 +111,7 @@ def extract_structured(page, container: str, fields: dict,
 
 
 def query_elements(page, selector: str, fields: list,
-                   limit: int = 200) -> list:
+                   limit: int = 200, attr_priority: list = None) -> list:
     """
     query 模式：找到所有匹配 selector 的元素，批量提取指定属性/文本。
     """
@@ -131,7 +131,7 @@ def query_elements(page, selector: str, fields: list,
                     record['tag'] = ele.tag
                 elif f == 'loc':
                     record['loc'] = suggest_locator(
-                        ele.tag, ele.attrs, (ele.raw_text or '').strip()[:50]
+                        ele.tag, ele.attrs, (ele.raw_text or '').strip()[:50], attr_priority=attr_priority
                     )
                 elif f in ('css', 'css_path'):
                     try:

@@ -35,7 +35,7 @@
 
 ```bash
 # 1. 快照 → 找到职位名的 ref 编号（如 ref:21）
-dp snapshot --mode brief
+dp snapshot -i
 
 # 2. 追溯容器
 dp dom "ref:21" -d parent --depth 5
@@ -50,7 +50,7 @@ dp extract "css:.card-area" \
     "salary":"css:.job-salary",
     "company":"css:.company-location",
     "url":{"selector":"css:.job-name","attr":"href"}}' \
-  --limit 50 --output csv --filename jobs.csv
+  --limit 50 -o csv -f jobs.csv
 ```
 
 ## 分页提取

@@ -508,10 +508,11 @@ def test_find_subtree_by_selector_not_found():
     })
     
     tree = node(role='root')
-    result, warning = a11y._find_subtree_by_selector(page, tree, [], '.missing')
-    
+    result, warning, frame_id = a11y._find_subtree_by_selector(page, tree, [], '.missing')
+
     assert result == tree
     assert '未匹配到元素' in warning
+    assert frame_id is None
 
 
 @pytest.mark.unit
@@ -560,10 +561,11 @@ def test_find_subtree_by_selector_css_prefix():
             node(role='button', backendNodeId=300)
         ])
     ])
-    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'css:#test')
-    
+    result, warning, frame_id = a11y._find_subtree_by_selector(page, tree, [], 'css:#test')
+
     assert warning is None
     assert result['backendNodeId'] == 200
+    assert frame_id is None
 
 
 @pytest.mark.unit
@@ -581,10 +583,11 @@ def test_find_subtree_by_selector_xpath_prefix():
     tree = node(role='root', backendNodeId=1, children=[
         node(role='generic', backendNodeId=200)
     ])
-    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'xpath://div')
-    
+    result, warning, frame_id = a11y._find_subtree_by_selector(page, tree, [], 'xpath://div')
+
     assert warning is None
     assert result['backendNodeId'] == 200
+    assert frame_id is None
 
 
 @pytest.mark.unit
@@ -597,15 +600,62 @@ def test_find_subtree_by_selector_iframe_switch():
         'DOM.describeNode': {'node': {'backendNodeId': 200, 'nodeName': 'IFRAME', 'frameId': frame_id}},
         'Accessibility.getFullAXTree': {
             'nodes': [
-                {'nodeId': '1', 'role': {'type': 'string', 'value': 'WebArea'}, 
+                {'nodeId': '1', 'role': {'type': 'string', 'value': 'WebArea'},
                  'backendDOMNodeId': 1, 'childIds': []}
             ]
         }
     })
-    
+
     tree = node(role='root', backendNodeId=1)
-    result, warning = a11y._find_subtree_by_selector(page, tree, [], 'iframe')
-    
+    result, warning, returned_frame_id = a11y._find_subtree_by_selector(page, tree, [], 'iframe')
+
     assert '已切换到 iframe frame' in warning
     assert frame_id in warning
     assert result['role'] == 'WebArea'
+    assert returned_frame_id == frame_id
+
+
+@pytest.mark.unit
+def test_generate_locators_iframe_frame():
+    """iframe frame 下使用 page.ele 获取真实 DOM 属性生成 locator。"""
+    frame_id = 'TEST_FRAME_ID'
+
+    # 模拟有 ele 方法的 page
+    class FakeEle:
+        def __init__(self, tag, attrs):
+            self.tag = tag
+            self._attrs = attrs
+
+        def attr(self, name):
+            return self._attrs.get(name)
+
+    class FakePageWithEle(FakePage):
+        def __init__(self, ele_map=None):
+            super().__init__(cdp_map={'DOM.getDocument': {'root': {'nodeId': 1}}})
+            self._ele_map = ele_map or {}
+
+        def ele(self, locator, timeout=None):
+            return self._ele_map.get(locator)
+
+    # 模拟 iframe 内的元素
+    ele_map = {
+        'text:导入': FakeEle('button', {'id': 'import-btn', 'class': 'btn'}),
+        'text:导出': FakeEle('button', {'class': 'btn-export'}),
+    }
+
+    page = FakePageWithEle(ele_map=ele_map)
+    interactive_nodes = [
+        node(role='button', backendNodeId=100, name='导入'),
+        node(role='button', backendNodeId=101, name='导出'),
+        node(role='textbox', backendNodeId=102, name='搜索'),  # 没有对应的 ele
+    ]
+
+    # 调用 _generate_locators_batch with frame_id
+    a11y._generate_locators_batch(page, interactive_nodes, frame_id=frame_id)
+
+    # 验证生成了真正的 CSS selector（有 id 的优先使用 id）
+    assert interactive_nodes[0]['locator'] == '#import-btn' or 'import-btn' in interactive_nodes[0]['locator']
+    # 没有 id 的使用 class
+    assert interactive_nodes[1]['locator'] == '.btn-export' or 'btn-export' in interactive_nodes[1]['locator']
+    # 查找失败的回退到 text:
+    assert interactive_nodes[2]['locator'] == 'text:搜索'

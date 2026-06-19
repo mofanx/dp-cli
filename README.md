@@ -112,9 +112,12 @@ Every element gets an `[N]` ref usable in any command: `dp click "ref:5"`.
 
 ```bash
 dp snapshot                     # a11y + clickable (default); high + medium markers
-dp snapshot --viewport-only     # clickable probe limited to viewport (faster)
-dp snapshot --include-low       # also surface `?` low-confidence heuristics
-dp snapshot --no-clickables     # a11y tree only (legacy behavior)
+dp snapshot -i                  # interactive mode: only interactive elements
+dp snapshot -s ".main"          # limit to specific area
+dp snapshot -p "data-test"      # custom locator priority
+dp scan --viewport              # only elements currently in viewport
+dp scan --confidence all        # include low-confidence heuristics
+dp scan --confidence high       # only the sure-thing clickables
 ```
 
 ### `dp scan` — fast clickable-only listing
@@ -218,7 +221,7 @@ GPU or Xvfb environment.
 
 ```bash
 # 1. Discover CSS class names via noise-filtered content tree
-dp snapshot --mode content --max-text 40
+dp snapshot -i -s ".main"
 
 # 2. Verify field selectors
 dp query "css:.item-title" --fields "text,loc"
@@ -229,7 +232,7 @@ dp extract "css:.item-card" \
     "price":"css:.item-price",
     "tags":{"selector":"css:.tag","multi":true},
     "url":{"selector":"css:a","attr":"href"}}' \
-  --limit 100 --output csv --filename result.csv
+  --limit 100 -o csv -f result.csv
 ```
 
 ## Project Structure

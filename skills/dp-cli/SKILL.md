@@ -114,7 +114,7 @@ dp -s work snapshot     # 只作用于 work 会话
 
 三种模式：
 - `dp snapshot` — **full**（默认），完整内容 + clickable 补充，首次调用用这个
-- `dp snapshot --mode brief` — 精简模式，省 token，适合循环调用
+- `dp snapshot -i` — 精简模式，只显示交互元素，省 token，适合循环调用
 - `dp snapshot --mode text` — 纯文本，按阅读顺序
 
 补充探测开关：
@@ -141,7 +141,7 @@ dp scan --confidence all           # 包含 low（含启发式）
 |------|--------|
 | 理解新页面、首次调用 | `dp snapshot` |
 | 读取文章 / 列表内容 / 结构信息 | `dp snapshot` |
-| 循环操作中只看"还能点什么" | `dp scan` 或 `dp snapshot --mode brief` |
+| 循环操作中只看"还能点什么" | `dp scan` 或 `dp snapshot -i` |
 | 弹窗 / 下拉菜单出现后想找新选项 | `dp scan --viewport`（很快） |
 | 纯图标工具栏（GitHub/VSCode 式 UI） | `dp snapshot` 或 `dp scan` 都能覆盖 |
 
@@ -239,8 +239,8 @@ dp extract "css:.card" '{"title":"css:.name","url":{"selector":"css:a","attr":"h
 
 ```
 dp snapshot                → full 模式包含完整页面内容
-dp snapshot --mode brief   → 只看结构和交互，省 token
-dp snapshot --selector "css:.article-body"  → 只看指定区域
+dp snapshot -i             → 只看结构和交互，省 token
+dp snapshot -s ".article-body"  → 只看指定区域
 dp query "ref:57" --fields "text,html"      → 提取特定内容块的文本或 HTML
 ```
 
@@ -268,7 +268,7 @@ dp extract "css:.list-item" '{"title":"css:.title","desc":"css:.desc"}'
 for i in range(n):
   dp click "css:.list-item" --index {i+1}
   dp wait --loaded
-  dp snapshot --mode brief   → 获取详情（用 brief 省 token）
+  dp snapshot -i   → 获取详情（用 interactive 省 token）
   dp query "css:.detail" --fields "text"
 ```
 
@@ -428,7 +428,7 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 2. **提示用户点 Allow** — 执行 `--auto-connect` 后，主动告诉用户留意浏览器（Chrome/Edge）的 Allow 授权框
 3. **先 snapshot/scan，后操作** — 不要猜页面结构；snapshot 看全貌，scan 只看可点
 4. **用 ref:N 引用元素** — `dp click "ref:5"` 最高效，每次 snapshot/scan 后编号刷新
-5. **善用 brief 模式 / scan 省 token** — 循环操作用 `--mode brief` 或改用 `dp scan`
+5. **善用 interactive 模式 / scan 省 token** — 循环操作用 `-i` 或改用 `dp scan`
 6. **操作后再 snapshot 确认** — 验证结果而非假设成功
 7. **小量验证再批量** — `dp query ... --limit 2` 确认后再 `dp extract`
 8. **动态页面先等待** — `dp wait --loaded` / `--locator` / `--text` / `--locator-gone`

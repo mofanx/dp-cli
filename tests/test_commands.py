@@ -295,7 +295,7 @@ def test_output_error_exits(capsys):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# output.format_element / _suggest_locator / format_page_info
+# output.format_element / format_page_info
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.unit
@@ -305,20 +305,6 @@ def test_format_element_basic():
     assert info["tag"] == "a"
     assert info["text"] == "点我"
     assert info["loc"] == "#lnk"
-
-
-@pytest.mark.unit
-def test_suggest_locator_priority():
-    assert output._suggest_locator(FakeEle(), {"id": "x"}) == "#x"
-    assert output._suggest_locator(FakeEle(), {"data-testid": "t"}) == "@data-testid=t"
-    assert output._suggest_locator(FakeEle(), {"class": "c1 c2"}) == ".c1"
-
-
-@pytest.mark.unit
-def test_suggest_locator_text_and_tag():
-    assert output._suggest_locator(FakeEle(raw_text="短文本"), {}) == "text:短文本"
-    long_text = "x" * 40
-    assert output._suggest_locator(FakeEle(tag="div", raw_text=long_text), {}) == "t:div"
 
 
 @pytest.mark.unit

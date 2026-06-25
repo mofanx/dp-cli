@@ -266,7 +266,7 @@ _RECORDER_JS = r"""
   }
 
   function findScrollable(el) {
-    let cur = el && el.nodeType === 1 ? el : el.parentElement;
+    let cur = (el && el.nodeType === 1) ? el : (el && el.parentElement);
     while (cur && cur !== document.body && cur !== document.documentElement) {
       const st = getComputedStyle(cur);
       const canY = /(auto|scroll|overlay)/.test(st.overflowY) && cur.scrollHeight > cur.clientHeight + 1;
@@ -361,8 +361,6 @@ _RECORDER_JS = r"""
   document.addEventListener('change', onInput, true);
   document.addEventListener('keydown', onKeyDown, true);
   document.addEventListener('wheel', onWheel, true);
-
-  console.log('[dp-recorder] initialized, version:', VERSION);
 
   window.__dpRecorder = {
     version: VERSION,

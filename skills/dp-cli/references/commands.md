@@ -14,36 +14,39 @@
 
 | 类别 | 命令 | 说明 |
 |------|------|------|
-| 浏览器 | `open`, `close`, `close-all`, `list`, `stealth` | 启动/关闭/列出会话，反检测补丁 |
+| 浏览器 | `open`, `close`, `close-all`, `list`, `stealth`, `delete-data` | 启动/关闭/列出会话，反检测补丁 |
 | 导航 | `goto`, `reload`, `go-back`, `go-forward` | 页面跳转 |
 | 快照 | `snapshot`, `scan` | 页面结构分析（snapshot=全页，scan=仅可点）；输出带 `[N]` 编号 |
-| 提取 | `extract`, `query`, `find`, `inspect`, `dom` | 数据提取和元素查询 |
-| 交互 | `click`, `dblclick`, `fill`, `clear`, `select`, `check`, `hover`, `scroll`, `scroll-to`, `drag`, `upload` | 元素操控 |
-| 键盘 | `press`, `type` | 键盘输入 |
-| 等待 | `wait` | `--loaded` / `--locator` / `--text` / `--locator-gone` / `--url` |
+| 提取 | `extract`, `query`, `find`, `inspect`, `dom`, `count` | 数据提取和元素查询 |
+| 交互 | `click`, `dblclick`, `fill`, `clear`, `select`, `check`, `hover`, `drag`, `upload` | 元素操控 |
+| 键盘 | `press`, `type`, `scroll`, `scroll-to`, `autoscroll` | 键盘输入与滚动 |
+| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` |
 | 监听 | `listen`, `listen-stop` | 网络请求捕获 |
 | 标签页 | `tab-list`, `tab-new`, `tab-select`, `tab-close` | 多标签页管理（支持标签页绑定/分离自动化与手动浏览） |
 | 截图 | `screenshot`, `pdf` | 页面截图/PDF（支持全页截图、元素截图） |
-| JS | `eval`, `add-init-js` | 执行 JavaScript |
+| JS | `eval`, `add-init-js` | 执行 JavaScript / 持久注入脚本 |
 | HTTP | `http-get`, `http-post` | 纯 HTTP 请求（无需浏览器） |
 | 对话框 | `dialog-accept`, `dialog-dismiss` | alert/confirm/prompt 处理 |
+| 录制 | `record-start`, `record-stop`, `record-show`, `record-clear`, `record-status`, `record-export` | 操作录制与导出 |
 | 状态 | `state-save`, `state-load` | Cookie + localStorage 保存/恢复 |
 | Cookie | `cookie-list`, `cookie-get`, `cookie-set`, `cookie-delete`, `cookie-clear` | Cookie 细粒度操作 |
 | Storage | `localstorage-*`, `sessionstorage-*` | localStorage/sessionStorage 操作 |
 | 窗口 | `resize`, `maximize` | 窗口控制 |
-| 配置 | `config-set`, `delete-data` | 浏览器路径/数据目录 |
+| 配置 | `config-set` | 浏览器路径/用户数据路径 |
 
 ## snapshot 模式 & 开关
 
 | 选项 | 行为 |
 |------|------|
 | `--mode full` | 默认；完整内容 + clickable 补充 |
-| `--mode brief` | 精简（省 token），结构+交互保留 |
+| `--mode interactive` | 精简（省 token），交互元素 + 关键内容（长文本截断） |
+| `--mode brief` | `interactive` 的别名（向后兼容） |
 | `--mode text` | 纯文本按阅读顺序 |
 | `--selector CSS` | 只快照指定子树 |
 | `--no-clickables` | 关闭 Vimium 风格补充探测，纯 a11y tree |
 | `--include-low` | 启用 low 置信度（`?` 标记，含 `cursor:pointer` 启发式） |
 | `--viewport-only` | 补充探测只看视口内（省 token、更快） |
+| `--locator-priority`, `-p` | 自定义 locator 属性优先级（逗号分隔），如 `data-testid,data-test-id,id` |
 | `--format json` | JSON 原始结构输出 |
 | `--filename PATH` | 保存到文件 |
 
@@ -57,6 +60,7 @@ dp scan --confidence high,medium     # 默认
 dp scan --confidence all             # 包含 low（启发式）
 dp scan --max 500                    # 限制最多返回
 dp scan --format json                # JSON 输出
+dp scan --verbose                    # 显示 detection reason 和像素尺寸（调试用）
 ```
 
 输出元素标记：
@@ -91,7 +95,7 @@ dp scan --format json                # JSON 输出
 操作时直接用编号：`dp click "ref:21"` / `dp fill "ref:17" "电子设备"` / `dp query "ref:57"`
 
 - **full（默认）**：完整内容，零截断
-- **brief**：截断长文本，跳过正文细节，保留结构+交互，省 token
+- **interactive / brief**：交互元素 + 关键内容（paragraph/heading/code/blockquote 长文本截断至 80 字符），跳过非关键内容，省 token
 - **text**：纯文本按阅读顺序输出
 
 **每次 snapshot 后编号重新分配，页面变化后需重新 snapshot。**
@@ -161,11 +165,22 @@ dp click 'pw:xpath=//nav >> role=link[name=Docs]'
 |------|------|---------|
 | `--auto-connect` | 自动发现 Chrome 调试端口（Chrome 144+，必要时起 bridge） | **首选**；需用户在 `chrome://inspect/#remote-debugging` 勾选 Allow |
 | `--port <N>` | 连接用户用 `--remote-debugging-port=N` 启动的 Chrome | 旧版 Chrome 或用户已手动启动 |
-| `--channel beta\|dev\|canary\|chromium` | 搭配 `--auto-connect`，定位非 stable 渠道的默认 profile | 只用非 stable Chrome 时 |
+| `--channel auto\|stable\|beta\|dev\|canary\|chromium\|edge` | 搭配 `--auto-connect`，定位指定渠道的默认 profile | `auto`=嗅探 Chrome→Edge（默认）；`edge`=强制 Edge |
 | `--probe-dir <path>` | 搭配 `--auto-connect`，显式指定 user-data-dir | 自定义 profile 路径 |
 | `--stealth` | 连接后立即应用 full 反检测预设 | 目标站点有反爬/检测 |
+| `--headless` | 无头模式（仅临时浏览器） | 不需要 GUI 的服务器环境 |
+| `--proxy <url>` | 代理服务器（仅临时浏览器） | 需要代理访问目标站点 |
 | `--new` | 强制新建会话（删除同名已有会话） | 会话状态混乱时 |
 | （无连接参数） | dp 自管新启一个临时浏览器 | 仅纯公开页面、不需登录态 |
+
+## close 命令
+
+```bash
+dp close                     # 关闭会话（--port/--auto-connect 默认只断开连接）
+dp close --force             # 强制关闭浏览器进程（即使用户连接模式）
+dp close --del-data          # 同时删除用户数据目录
+dp close-all                 # 关闭所有会话
+```
 
 ## stealth 命令
 
@@ -175,9 +190,157 @@ dp stealth --preset mild             → 只改 webdriver + UA
 dp stealth --ua "Mozilla/5.0 ..."    → 自定义 User-Agent
 dp stealth --feature webdriver --feature plugins   → 精细选择
 dp stealth --langs "zh-CN,zh,en"     → 改 navigator.languages
+dp stealth --webgl-vendor "Intel Inc." --webgl-renderer "Intel Iris OpenGL Engine"
 ```
 
 full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plugins` / `languages` / `WebGL VENDOR&RENDERER` / `window.outerWidth&Height`
+
+## autoscroll 命令
+
+```
+dp autoscroll --locator "css:.item"  # 按元素数量判断，自动滚到底
+dp autoscroll                        # 按页面高度判断
+dp autoscroll --container "#feed" --idle 3  # 容器内滚动，等网络空闲
+dp autoscroll --fast --max 100       # 快速模式
+dp autoscroll --step 800 --max 50    # 每轮滚 800px
+dp autoscroll --stable 3             # 连续 3 轮无增长才停止（更耐心）
+dp autoscroll --idle-timeout 15      # 网络空闲等待超时（默认 10s）
+dp autoscroll --fast --fast-delay 0.1  # 快速模式，每轮等 0.1s
+```
+
+终止条件：连续 `--stable` 轮（默认 2）无增长 或 达到 `--max` 轮上限（默认 300）。
+
+## count 命令
+
+```
+dp count ".item"              → css（自动识别 . 开头）
+dp count "#list li"           → css（自动识别 # 开头）
+dp count "//ul/li"            → xpath（自动识别 // 开头）
+dp count "css:tr"             → 显式 css 前缀
+dp count ".item" --timeout 5  → 等待元素出现
+```
+
+## listen 命令
+
+```
+dp listen --filter "api/xxx"        # URL 过滤关键字
+dp listen --filter "api/xxx" --method POST  # 只捕获 POST
+dp listen --count 5 --timeout 10    # 最多捕获 5 个，超时 10 秒
+dp listen-stop                      # 停止并获取捕获数据
+dp listen-stop --count 3 --timeout 5  # 等待 3 个数据包
+```
+
+## HTTP 命令（无需浏览器）
+
+```
+dp http-get "https://api.example.com/data" --output data.json
+dp http-get "https://api.example.com" --headers '{"Authorization":"Bearer xxx"}'
+dp http-get "https://example.com" --proxy http://127.0.0.1:7890
+
+dp http-post "https://api.example.com/search" --data '{"keyword":"test"}'
+dp http-post "https://example.com/form" --form '{"field":"value"}'
+dp http-post "https://api.example.com" --data '{}' --headers '{"Authorization":"Bearer xxx"}'
+```
+
+| 选项 | 适用命令 | 说明 |
+|------|---------|------|
+| `--output PATH` | http-get | 响应体保存到文件 |
+| `--headers JSON` | http-get, http-post | JSON 格式请求头 |
+| `--proxy URL` | http-get, http-post | 代理地址 |
+| `--data JSON` | http-post | JSON 请求体 |
+| `--form JSON` | http-post | 表单数据 |
+| `--timeout N` | http-get, http-post | 超时秒数（默认 30） |
+
+## scroll 命令
+
+```
+dp scroll --y 300                   # 垂直滚动 300px
+dp scroll --top                     # 滚动到顶部
+dp scroll --bottom                  # 滚动到底部
+dp scroll --locator "css:.feed" --y 500  # 在指定容器内滚动
+dp scroll --locator "css:.feed" --bottom   # 容器滚到底
+dp scroll-to "ref:20"               # 滚动到元素可见
+```
+
+## screenshot 命令
+
+```
+dp screenshot                       # 截图
+dp screenshot --full-page           # 全页截图
+dp screenshot --locator "ref:5"     # 元素截图
+dp screenshot --filename page.png   # 保存路径
+dp screenshot --format jpg          # 格式 png/jpg/jpeg
+```
+
+## state-save / state-load 命令
+
+```
+dp state-save my-site.json          # 保存 Cookie + localStorage（位置参数）
+dp state-save                       # 默认文件名 state.json
+dp state-load my-site.json          # 恢复状态
+dp state-load                       # 默认文件名 state.json
+```
+
+## tab 命令
+
+```
+dp tab-list                         # 列出所有标签页（显示 [pinned] 标记）
+dp tab-new "example.com"            # 新建标签页并自动绑定
+dp tab-new "example.com" --new-window  # 新窗口中打开（自动化与手动浏览分离）
+dp tab-new "example.com" --background  # 后台打开（不绑定）
+dp tab-select example               # 按 URL 关键词绑定
+dp tab-select 1                     # 按序号绑定（从 0 开始）
+dp tab-select none                  # 解除绑定
+dp tab-close                        # 关闭绑定的标签页
+```
+
+## wait 命令完整选项
+
+```
+dp wait --loaded               # DOM 加载完成
+dp wait --idle                 # 网络空闲 2 秒（默认）
+dp wait --idle 3               # 自定义空闲时长
+dp wait --locator "#result"    # 等待元素出现
+dp wait --locator-gone ".loading"  # 等待元素消失
+dp wait --url "success"        # 等待 URL 变化
+dp wait --title "搜索结果"     # 等待标题变化
+dp wait --text "操作成功"      # 等待页面含文本
+dp wait --downloads-done       # 等待下载完成
+```
+
+## 交互命令通用选项
+
+| 选项 | 适用命令 | 说明 |
+|------|---------|------|
+| `--index N` | click, dblclick, fill, clear, select, hover | 第几个匹配元素（默认 1） |
+| `--by-js` | click, fill | 使用 JavaScript 执行（绕过遮挡） |
+| `--timeout N` | 所有交互命令 | 等待超时秒数（默认 10） |
+| `--clear` | fill | 填入前清空（默认开启） |
+| `--by-text` | select | 按文本选择（默认按 value） |
+| `--by-index N` | select | 按位置索引选择（从 1 开始） |
+| `--check/--uncheck` | check | 选中/取消选中 |
+| `--duration N` | drag | 拖拽持续时间秒数（默认 0.5） |
+| `--offset-x/--offset-y` | hover | 鼠标偏移量（像素） |
+
+## 录制命令
+
+```
+dp record-start                     # 开始录制（绑定当前标签页）
+dp record-start --append            # 追加到已有记录
+dp record-stop                      # 停止，默认输出 dp 脚本格式
+dp record-stop -f playwright        # 导出为 Playwright 脚本
+dp record-stop -f selenium          # 导出为 Selenium 脚本
+dp record-stop -f json -o actions.json  # 保存为 JSON
+dp record-show                      # 查看已录制操作
+dp record-show --raw                # 完整 JSON 格式
+dp record-show --filename rec.json  # 保存到文件
+dp record-status                    # 查看录制器状态
+dp record-clear                     # 清空录制记录
+dp record-export -f playwright-async -o test.py  # 单独导出
+```
+
+`record-stop` 格式：`dp` / `playwright` / `playwright-async` / `selenium` / `json` / `text`
+`record-export` 格式：`dp` / `playwright` / `playwright-async` / `selenium` / `json`（不含 `text`）
 
 ## 错误码速查
 
@@ -190,3 +353,8 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | `CONFLICTING_OPTIONS` | `--auto-connect` 与 `--port` 同用 | 二选一 |
 | `NAVIGATE_FAILED` | 导航失败（网络/超时/白名单） | 调 `--timeout` 或检查网络/代理 |
 | `STEALTH_FAILED` | 注入补丁失败 | 先确认页面已连接；切到空页再重试 |
+| `PW_SYNTAX` | pw: 表达式语法错 | 检查 matcher 语法 |
+| `PW_NOT_FOUND` | pw: 未匹配到元素 | 检查 role/text/selector 是否正确 |
+| `REF_NOT_FOUND` | ref:N 不存在 | 重新 snapshot 获取新编号 |
+| `NO_REFS` | 没有 ref 映射 | 先执行 `dp snapshot` |
+| `RECORD_START_FAILED` | 启动录制失败 | 确认页面已连接 |

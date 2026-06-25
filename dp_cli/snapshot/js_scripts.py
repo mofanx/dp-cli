@@ -105,6 +105,15 @@ _JS_A11Y_FALLBACK = """
             const cn = buildNode(child, depth + 1);
             if (cn) children.push(cn);
         }
+        // 穿透 open shadow DOM
+        if (el.shadowRoot) {
+            try {
+                for (const child of el.shadowRoot.children) {
+                    const cn = buildNode(child, depth + 1);
+                    if (cn) children.push(cn);
+                }
+            } catch (e) {}
+        }
 
         // 跳过无意义容器（无 role、无 name、只有一个子节点）
         if (!role && !name && children.length === 1) {
@@ -140,9 +149,12 @@ _JS_A11Y_FALLBACK = """
             const v = el.getAttribute(attr);
             if (v) return '@' + attr + '=' + v;
         }
-        const cls = el.className;
-        if (typeof cls === 'string' && cls.trim()) {
-            return '.' + cls.trim().split(/\\s+/)[0];
+        const cls = typeof el.className === 'string' ? el.className : (el.className && el.className.baseVal) || '';
+        if (cls.trim()) {
+            const parts = cls.trim().split(/\\s+/).filter(function(c) {
+                return c && !/^[a-z0-9]{6,}$/i.test(c) && !/^[_-]/.test(c);
+            });
+            if (parts.length) return '.' + parts[0];
         }
         const text = (el.textContent || '').trim();
         if (text && text.length <= 30) return 'text:' + text;

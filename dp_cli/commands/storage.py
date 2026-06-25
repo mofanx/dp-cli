@@ -210,6 +210,18 @@ def register(cli):
         except Exception as e:
             error(f'设置 sessionStorage 失败', code='STORAGE_FAILED', detail=str(e))
 
+    @cli.command('sessionstorage-delete')
+    @click.argument('key')
+    @session_option
+    def sessionstorage_delete(key, session):
+        """删除 sessionStorage 指定键。"""
+        page = _get_page(session)
+        try:
+            page.run_js(f'sessionStorage.removeItem({json.dumps(key)})', as_expr=True)
+            ok({'key': key}, msg='sessionStorage 键已删除')
+        except Exception as e:
+            error(f'删除 sessionStorage 失败', code='STORAGE_FAILED', detail=str(e))
+
     @cli.command('sessionstorage-clear')
     @session_option
     def sessionstorage_clear(session):

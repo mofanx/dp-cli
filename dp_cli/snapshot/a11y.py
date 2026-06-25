@@ -502,7 +502,19 @@ def _build_tree(flat_nodes: list) -> dict:
     roots = [n for n in flat_nodes
              if not n.get('parentId') or n['parentId'] not in node_map]
 
-    return roots[0] if roots else flat_nodes[0] if flat_nodes else {}
+    if not roots:
+        return flat_nodes[0] if flat_nodes else {}
+    if len(roots) == 1:
+        return roots[0]
+    # 多根节点（如 iframe）：用合成容器包裹，避免丢失子树
+    return {
+        'nodeId': '__root__',
+        'role': 'generic',
+        'name': '',
+        'children': roots,
+        'backendNodeId': None,
+        'locator': None,
+    }
 
 
 def _compute_stats(nodes: list) -> dict:
@@ -553,7 +565,6 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
         attrs_map = {}
         try:
             # 如果没有指定自定义优先级，使用默认优先级
-            from .utils import suggest_locator
             default_priority = [
                 'data-testid', 'data-test', 'data-test-id',
                 'data-qa', 'data-cy', 'id', 'aria-label', 'name', 'placeholder'
@@ -708,7 +719,7 @@ def _build_dom_bid_map(page, frame_id: str = None) -> dict:
     :param frame_id: 可选，限制获取特定 frame 的 DOM 树
     """
     try:
-        kwargs = {'depth': -1}
+        kwargs = {'depth': -1, 'pierce': True}
         if frame_id:
             kwargs['frameId'] = frame_id
         doc = page.run_cdp('DOM.getDocument', **kwargs)
@@ -771,8 +782,9 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     ignored = node.get('ignored', False)
     children = node.get('children', [])
 
-    # brief 模式：跳过内容节点（paragraph/heading 等），但保留交互元素和容器
-    if brief and role in _CONTENT_ROLES:
+    # brief 模式：跳过非关键内容节点（cell/listitem/caption 等），
+    # 但保留 _REF_CONTENT_ROLES（paragraph/heading/code/blockquote），由后续逻辑截断
+    if brief and role in _CONTENT_ROLES and role not in _REF_CONTENT_ROLES:
         return
 
     # 跳过 ignored 节点（除非 verbose），但仍然渲染子节点

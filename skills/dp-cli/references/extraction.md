@@ -64,9 +64,19 @@ for page in 1 2 3:
 
 ## 无限滚动提取
 
+**推荐 `autoscroll`（自动检测懒加载终止）：**
+
+```bash
+dp autoscroll --locator "css:.item"   # 按元素数量判断，自动滚到底
+dp extract "css:.item" '{"title":"css:.title"}' --filename all.csv
+```
+
+**手动滚动 + 提取：**
+
 ```bash
 for i in range(max_rounds):
   dp extract "css:.item" '{"title":"css:.title"}' --filename batch_${i}.csv
   dp scroll --y 3000
-  dp wait --loaded
+  dp wait --idle 2
+  dp count "css:.item"   # 检测是否还有新内容
 ```

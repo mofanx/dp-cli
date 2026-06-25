@@ -134,3 +134,5 @@ def register(cli):
                 co.set_user_data_path(user_path)
             co.save()
             ok(msg='配置已保存')
+        elif not copy_config:
+            click.echo('请至少指定一个选项。使用 --help 查看可用参数。')

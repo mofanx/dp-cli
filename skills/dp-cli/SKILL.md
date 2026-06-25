@@ -1,6 +1,6 @@
 ---
 name: dp-cli
-description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操作。当用户需要打开网页、点击元素、填写表单、截图、抓取列表数据、监听网络请求、操作 Cookie/Storage，或者需要连接自己已登录的浏览器进行操作时，使用这个技能。特别适合：批量提取结构化数据（商品/职位/新闻列表）、需要保留登录状态的自动化、需要穿透 shadow-root/iframe 的复杂页面操作。
+description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操作。当用户需要打开网页、点击元素、填写表单、截图、抓取列表数据、监听网络请求、操作 Cookie/Storage、录制页面操作并导出脚本、自动滚动懒加载页面，或者需要连接自己已登录的浏览器进行操作时，使用这个技能。特别适合：批量提取结构化数据（商品/职位/新闻列表）、需要保留登录状态的自动化、需要穿透 shadow-root/iframe 的复杂页面操作、无限滚动页面的自动抓取。
 ---
 
 # dp-cli
@@ -8,6 +8,33 @@ description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操�
 基于 DrissionPage 的命令行浏览器自动化工具。天然反检测、描述性定位语法、直接穿透 shadow-root/iframe。
 
 **查看所有命令和参数：`dp --help` / `dp <command> --help`**
+
+---
+
+## 命令速查表
+
+| 类别 | 命令 | 说明 |
+|------|------|------|
+| 连接 | `open` / `close` / `close-all` / `list` | 启动/关闭/列出会话 |
+| 导航 | `goto` / `reload` / `go-back` / `go-forward` | 页面跳转 |
+| 快照 | `snapshot` / `scan` | 页面结构分析（snapshot=全页，scan=仅可点） |
+| 提取 | `extract` / `query` / `find` / `inspect` / `dom` / `count` | 数据提取和元素查询 |
+| 交互 | `click` / `dblclick` / `fill` / `clear` / `select` / `check` / `hover` / `drag` / `upload` | 元素操控 |
+| 键盘 | `press` / `type` / `scroll` / `scroll-to` / `autoscroll` | 键盘输入与滚动 |
+| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` |
+| 监听 | `listen` / `listen-stop` | 网络请求捕获 |
+| 标签页 | `tab-list` / `tab-new` / `tab-select` / `tab-close` | 多标签页管理（支持绑定） |
+| 截图 | `screenshot` / `pdf` | 页面截图/PDF |
+| JS | `eval` / `add-init-js` | 执行 JavaScript |
+| HTTP | `http-get` / `http-post` | 纯 HTTP 请求（无需浏览器） |
+| 对话框 | `dialog-accept` / `dialog-dismiss` | alert/confirm/prompt 处理 |
+| 录制 | `record-start` / `record-stop` / `record-show` / `record-clear` / `record-status` / `record-export` | 操作录制与导出 |
+| 状态 | `state-save` / `state-load` | Cookie + localStorage 保存/恢复 |
+| Cookie | `cookie-list` / `cookie-get` / `cookie-set` / `cookie-delete` / `cookie-clear` | Cookie 操作 |
+| Storage | `localstorage-*` / `sessionstorage-*` | localStorage/sessionStorage 操作 |
+| 反检测 | `stealth` | 反自动化检测补丁 |
+| 窗口 | `resize` / `maximize` | 窗口控制 |
+| 配置 | `config-set` / `delete-data` | 浏览器路径/数据目录 |
 
 ---
 
@@ -21,7 +48,9 @@ dp-cli 支持两种方式连接用户自己的 Chrome/Edge。**默认首选 `--a
 
 ```bash
 # 尝试连接（首次使用会让用户做一次性配置）
-dp open --auto-connect
+dp open --auto-connect                    # auto: 先嗅探 Chrome stable → Edge stable
+dp open --auto-connect --channel edge     # 强制使用 Edge stable
+dp open --auto-connect --channel beta     # Chrome beta
 # 成功后后续命令自动复用，无需再加 --auto-connect：
 dp open <url>
 dp snapshot
@@ -57,7 +86,9 @@ dp open --port 9222
 仅以下情况使用：用户明确说不需要登录态 / 纯公开页面 / 用户明确要求临时实例。
 
 ```bash
-dp open <url>    # 不加任何 --auto-connect 或 --port
+dp open <url>                              # 临时浏览器，自动管理
+dp open <url> --headless                   # 无头模式
+dp open <url> --proxy http://127.0.0.1:7890 # 代理
 ```
 
 ### URL 自动补全
@@ -114,7 +145,7 @@ dp -s work snapshot     # 只作用于 work 会话
 
 三种模式：
 - `dp snapshot` — **full**（默认），完整内容 + clickable 补充，首次调用用这个
-- `dp snapshot -i` — 精简模式，只显示交互元素，省 token，适合循环调用
+- `dp snapshot -i` — 精简模式，交互元素 + 关键内容（长文本截断），省 token，适合循环调用
 - `dp snapshot --mode text` — 纯文本，按阅读顺序
 
 补充探测开关：
@@ -222,6 +253,34 @@ dp snapshot                → 确认操作结果（编号会刷新）
 
 **如果点击后出现弹窗（alert/confirm/prompt），用 `dp dialog-accept` 或 `dp dialog-dismiss` 处理。**
 
+**其他交互命令：**
+
+```bash
+dp dblclick "ref:5"                 # 双击
+dp clear "ref:15"                   # 清空输入框
+dp select "ref:12" admin            # 下拉框选择（默认按 value）
+dp select "ref:12" admin --by-text  # 按文本选择
+dp select "ref:12" "" --by-index 2 # 按索引选择
+dp check "ref:10"                   # 勾选 checkbox
+dp check "ref:10" --uncheck        # 取消勾选
+dp hover "ref:8"                    # 悬停（触发菜单/提示）
+dp drag "ref:3" "ref:7"             # 拖拽元素
+dp upload "ref:15" ./file.pdf       # 上传文件
+dp press Enter                      # 键盘按键（支持 Control+A 等）
+dp type "hello world"               # 输入文本到当前焦点元素
+dp scroll --y 300                   # 向下滚动 300px
+dp scroll --top                    # 滚动到顶部
+dp scroll --bottom                 # 滚动到底部
+dp scroll --locator "css:.feed" --y 500  # 在指定容器内滚动
+dp scroll-to "ref:20"              # 滚动到元素可见
+dp screenshot                      # 截图验证
+dp screenshot --full-page          # 全页截图
+dp screenshot --locator "ref:5"   # 元素截图
+dp pdf --filename page.pdf         # 保存为 PDF
+dp resize 1920 1080                # 设置窗口大小
+dp maximize                        # 最大化窗口
+```
+
 ### 场景二：批量数据提取（列表页）
 
 **优先使用批量提取，避免逐个点击的低效方式。**
@@ -250,6 +309,7 @@ dp query "ref:57" --fields "text,html"      → 提取特定内容块的文本�
 
 ```
 dp listen --filter "api/xxx"   → 开始监听（必须在触发操作之前）
+dp listen --filter "api/xxx" --method POST  → 只捕获 POST 请求
 dp click "text:加载更多"        → 触发请求
 dp listen-stop                  → 获取捕获的请求+响应体（JSON 格式）
 ```
@@ -274,13 +334,24 @@ for i in range(n):
 
 ### 场景六：无限滚动/分页加载
 
+**自动滚动到底（推荐 `autoscroll`，自动检测懒加载终止）：**
+
+```bash
+dp autoscroll --locator "css:.item"   # 按元素数量判断，自动滚到底
+dp autoscroll --container "#feed" --idle 3  # 容器内滚动，等网络空闲
+dp autoscroll --fast --max 100         # 快速模式，无反爬场景
+dp autoscroll                          # 按页面高度判断
+# autoscroll 返回 growth 信息，判断是否到底
 ```
-# 无限滚动
+
+**手动滚动 + 提取：**
+
+```
 for page in range(max_pages):
   dp extract "css:.item" '{...}' --filename page_{page}.csv
   dp scroll --y 3000
-  dp wait --loaded               → 等待新内容加载
-  dp wait --locator "css:.item:nth-child({count})"  → 或等待新元素出现
+  dp wait --idle 2               → 等待网络空闲（懒加载）
+  dp count "css:.item"           → 确认元素数量增长
 
 # 翻页
 for page in range(max_pages):
@@ -289,13 +360,24 @@ for page in range(max_pages):
   dp wait --loaded
 ```
 
+**`dp count` 用于检测懒加载是否完成：**
+```bash
+dp count ".item"        → 20
+dp scroll --bottom && dp wait --idle
+dp count ".item"        → 40
+dp scroll --bottom && dp wait --idle
+dp count ".item"        → 40  (不变，加载完毕)
+```
+
 ### 场景七：纯 API 数据获取（不需浏览器）
 
 **当目标是公开 API 且不需要浏览器渲染时，用 HTTP 模式最高效。**
 
 ```
 dp http-get "https://api.example.com/data?page=1" --output data.json
+dp http-get "https://api.example.com" --headers '{"Authorization":"Bearer xxx"}'
 dp http-post "https://api.example.com/search" --data '{"keyword":"test"}' --output result.json
+dp http-post "https://example.com/form" --form '{"field":"value"}'
 ```
 
 ### 场景八：状态保存与恢复
@@ -304,11 +386,11 @@ dp http-post "https://api.example.com/search" --data '{"keyword":"test"}' --outp
 
 ```
 # 登录后保存
-dp state-save --filename my-site.json    → 保存 Cookie + localStorage
+dp state-save my-site.json    → 保存 Cookie + localStorage（文件名是位置参数）
 
 # 下次直接恢复
 dp open --auto-connect
-dp state-load --filename my-site.json
+dp state-load my-site.json
 dp goto "https://my-site.com/dashboard"  → 已登录状态
 ```
 
@@ -319,6 +401,7 @@ dp goto "https://my-site.com/dashboard"  → 已登录状态
 ```
 dp tab-list                           → 查看所有标签页（显示 [pinned] 标记）
 dp tab-new "example.com" --new-window  → 新窗口创建标签页（自动化专用），自动绑定
+dp tab-new "example.com" --background  → 后台打开（不绑定，不影响当前操作）
 dp tab-select example                  → 按 URL 关键词绑定标签页
 dp tab-select 1                        → 按序号绑定（从 0 开始）
 dp tab-select none                     → 解除绑定，恢复默认行为
@@ -359,6 +442,33 @@ dp goto https://bot.sannysoft.com/
 - **不覆盖** TLS JA3/JA4 / IP 信誉（需要更底层方案）
 - 对 Cloudflare / Akamai / 阿里云 Anti-Bot 等重指纹检测效果有限
 
+### 场景十一：操作录制与回放
+
+**录制用户在页面上的真实操作，导出为自动化脚本。**
+
+```bash
+# 开始录制（绑定当前激活标签页）
+dp record-start
+
+# 用户在页面上操作（点击、输入、选择、滚动等都会被记录）
+# ...
+
+# 停止并查看录制结果
+dp record-stop                     # 默认输出 dp-cli 脚本格式
+dp record-stop -f playwright       # 导出为 Playwright 脚本
+dp record-stop -f selenium         # 导出为 Selenium 脚本
+dp record-stop -f json -o actions.json  # 保存为 JSON
+
+# 其他操作
+dp record-show                     # 查看已录制操作（不停止）
+dp record-show --raw               # 完整 JSON 格式
+dp record-status                   # 查看录制器状态
+dp record-clear                    # 清空录制记录
+dp record-export -f playwright-async -o test.py  # 单独导出
+```
+
+**支持导出格式：** `dp`（dp-cli 脚本）/ `playwright` / `playwright-async` / `selenium` / `json` / `text`（`text` 仅 `record-stop` 支持，`record-export` 不含 `text`）
+
 ---
 
 ## 元素定位进阶
@@ -392,12 +502,27 @@ dp inspect "ref:5" --include-rect    → 位置、尺寸
 dp inspect "ref:5" --include-style   → 计算样式（display/visibility/color等）
 ```
 
+### 用 `dp find` 查找元素
+
+```
+dp find "ref:5"                      → 查找单个元素（返回 tag/text/attrs）
+dp find "css:a" --all               → 查找所有匹配元素
+dp find "css:.btn" --timeout 5      → 带超时等待
+```
+
 ### 用 `dp eval` 执行自定义 JS（最后手段）
 
 ```
 dp eval "document.title"
 dp eval "return document.querySelectorAll('.item').length"
 dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
+```
+
+### 用 `dp add-init-js` 注入持久脚本
+
+```
+dp add-init-js "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+# 脚本在每个新页面加载前执行，适合环境修改/反检测
 ```
 
 ---
@@ -431,12 +556,12 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 5. **善用 interactive 模式 / scan 省 token** — 循环操作用 `-i` 或改用 `dp scan`
 6. **操作后再 snapshot 确认** — 验证结果而非假设成功
 7. **小量验证再批量** — `dp query ... --limit 2` 确认后再 `dp extract`
-8. **动态页面先等待** — `dp wait --loaded` / `--locator` / `--text` / `--locator-gone`
-9. **严禁编造数据** — 所有数据必须从页面实际提取
+8. **动态页面先等待** — `dp wait --loaded` / `--idle` / `--locator` / `--text` / `--locator-gone`
+9. **严禁编造数据** — 所有数据必须从页面实际提取；加密内容标记 `[无法解密]`
 10. **优先批量提取** — 列表页优先 `dp extract`，避免逐个点击
-11. **注意反爬机制** — 加密数据如实说明 `[无法解密]`，不得猜测；遇可疑网站先 `dp stealth`
-12. **善用 dom 辅助定位** — `dp dom "ref:N" -d parent` 找容器比猜 CSS 更准
-13. **截图验证** — 操作结果不确定时用 `dp screenshot` 确认视觉效果
+11. **遇反爬先 stealth** — `dp stealth` 或 `dp open --auto-connect --stealth`
+12. **善用 dom/count 辅助** — `dp dom "ref:N" -d parent` 找容器；`dp count` 检测懒加载
+13. **autoscroll 省心** — 无限滚动用 `dp autoscroll`，自动检测终止
 
 ---
 
@@ -462,5 +587,6 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 - **iframe 内容** → DrissionPage 天然穿透 iframe，用 `dp snapshot` 直接可见
 - **定位不准** → `dp dom "ref:N" -d parent --depth 3` 查看上下文 → 用 `css` 字段获取精确路径
 - **需要 JS 兜底** → `dp eval "..."` 执行自定义 JavaScript
-- **会话状态混乱** → `dp close` 清理当前会话；`dp list` 查看所有会话；`dp close-all` 清空
+- **懒加载不终止** → `dp autoscroll --locator "css:.item" --stable 3` 更耐心等待
+- **会话状态混乱** → `dp close` 清理当前会话；`dp list` 查看所有会话；`dp close-all` 清空；`dp open --new` 强制新建
 - **具体命令用法** → `dp <command> --help`

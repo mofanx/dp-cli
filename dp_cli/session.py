@@ -290,9 +290,50 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
     return page
 
 
+# 进程内浏览器缓存：dp batch/exec 单进程顺序执行多条命令时复用 attach
+# 结果，消除每条命令重新建立 CDP websocket 的开销。普通 CLI 每个进程
+# 只调用一次 get_browser，缓存写入后即退出，无行为变化。
+_PAGE_CACHE: dict = {}
+
+
+def _evict_browser_cache(session_name: str = None) -> None:
+    """清除浏览器缓存项；session_name 为 None 时清空全部。"""
+    if session_name is None:
+        _PAGE_CACHE.clear()
+    else:
+        _PAGE_CACHE.pop(session_name, None)
+
+
 def get_browser(session_name: str = 'default', headless: bool = False,
                 browser_path: str = None, user_data_dir: str = None,
                 proxy: str = None, port: int = None):
+    """获取或创建浏览器实例（含进程内缓存）。
+
+    无显式建立参数（port/browser_path/user_data_dir/proxy/headless）的
+    调用先查缓存，命中则用 CDP 探活后直接复用；显式建立参数（如
+    open --port/--user-data-dir）始终真实建立连接并刷新缓存。
+    """
+    explicit = port or browser_path or user_data_dir or proxy or headless
+    if not explicit:
+        cached = _PAGE_CACHE.get(session_name)
+        if cached is not None:
+            try:
+                cached.tab_ids  # CDP Target.getTargets 探活，成本远小于 attach
+                return cached
+            except Exception:
+                _PAGE_CACHE.pop(session_name, None)
+
+    page = _connect_browser(session_name, headless=headless,
+                            browser_path=browser_path,
+                            user_data_dir=user_data_dir,
+                            proxy=proxy, port=port)
+    _PAGE_CACHE[session_name] = page
+    return page
+
+
+def _connect_browser(session_name: str = 'default', headless: bool = False,
+                     browser_path: str = None, user_data_dir: str = None,
+                     proxy: str = None, port: int = None):
     """
     获取或创建浏览器实例。
 
@@ -445,6 +486,7 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
     from DrissionPage._configs.chromium_options import ChromiumOptions
 
     sess = load_session(session_name)
+    _evict_browser_cache(session_name)
     if not sess:
         return False
     port = sess.get('port')

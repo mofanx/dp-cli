@@ -17,7 +17,9 @@ def session_dir(tmp_path, monkeypatch):
     """把模块级 _SESSION_DIR 重定向到临时目录,隔离真实用户目录。"""
     d = tmp_path / "sessions"
     monkeypatch.setattr(session, "_SESSION_DIR", d)
-    return d
+    session._evict_browser_cache()  # _PAGE_CACHE 是进程级全局，需同步隔离
+    yield d
+    session._evict_browser_cache()
 
 
 def _fake_co_factory():

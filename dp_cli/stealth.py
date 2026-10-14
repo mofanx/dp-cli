@@ -260,6 +260,214 @@ DEFAULT_UA_PLATFORM_VER = '6.5.0'
 DEFAULT_UA_FULL_VER = '147.0.0.0'
 
 
+# ===== 指纹自检（stealth --check）=====
+
+_JS_COLLECT = r"""
+// 只读采集页面指纹相关信号；每个字段独立 try/catch，永不抛异常。
+const r = {};
+const safe = (fn) => { try { return fn(); } catch (e) { return 'ERR:' + String(e && e.message || e); } };
+r.webdriver = safe(() => navigator.webdriver);
+r.userAgent = safe(() => navigator.userAgent);
+r.platform = safe(() => navigator.platform);
+r.vendor = safe(() => navigator.vendor);
+r.userAgentData = safe(() => navigator.userAgentData ? {
+    brands: navigator.userAgentData.brands,
+    mobile: navigator.userAgentData.mobile,
+    platform: navigator.userAgentData.platform,
+} : null);
+r.languages = safe(() => navigator.languages);
+r.plugins = safe(() => navigator.plugins ? navigator.plugins.length : null);
+r.mimeTypes = safe(() => navigator.mimeTypes ? navigator.mimeTypes.length : null);
+r.hardwareConcurrency = safe(() => navigator.hardwareConcurrency);
+r.deviceMemory = safe(() => navigator.deviceMemory);
+r.maxTouchPoints = safe(() => navigator.maxTouchPoints);
+r.timezone = safe(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+r.offsetMins = safe(() => new Date().getTimezoneOffset());
+r.outerDims = safe(() => [window.outerWidth, window.outerHeight]);
+r.innerDims = safe(() => [window.innerWidth, window.innerHeight]);
+r.hasChromeObj = safe(() => !!window.chrome && !!window.chrome.runtime);
+r.notificationPermission = safe(() => typeof Notification !== 'undefined' ? Notification.permission : null);
+r.connection = safe(() => navigator.connection ? {
+    effectiveType: navigator.connection.effectiveType,
+    rtt: navigator.connection.rtt,
+    downlink: navigator.connection.downlink,
+} : null);
+r.webgl = safe(() => {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) return null;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return {
+        vendor: ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+        renderer: ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    };
+});
+r.stealthMarker = safe(() => window.__stealth__ || null);
+return r;
+"""
+
+
+def _ua_os(ua: str | None) -> str | None:
+    """从 UA 字符串解析操作系统族。"""
+    if not isinstance(ua, str):
+        return None
+    if 'Android' in ua:
+        return 'Android'
+    if 'iPhone' in ua or 'iPad' in ua:
+        return 'iOS'
+    if 'Windows' in ua:
+        return 'Windows'
+    if 'Macintosh' in ua:
+        return 'macOS'
+    if 'Linux' in ua or 'X11' in ua:
+        return 'Linux'
+    return None
+
+
+def stealth_check(page) -> dict:
+    """采集当前页指纹信号并做一致性交叉检查，输出只读报告（不打补丁）。
+
+    每项检查: {'check', 'status': ok|warn|fail, 'value', 'note'}
+    返回: {'checks': [...], 'summary': {'ok','warn','fail'}, 'stealth_marker'}
+    """
+    raw = page.run_js(_JS_COLLECT)
+    if not isinstance(raw, dict):
+        raw = {}
+
+    checks = []
+
+    def add(name, status, value=None, note=None):
+        c = {'check': name, 'status': status}
+        if value is not None:
+            c['value'] = value
+        if note:
+            c['note'] = note
+        checks.append(c)
+
+    # navigator.webdriver
+    wd = raw.get('webdriver')
+    add('webdriver', 'fail' if wd is True else 'ok', wd,
+        'navigator.webdriver===true 是最强自动化信号' if wd is True else None)
+
+    # UA
+    ua = raw.get('userAgent')
+    if isinstance(ua, str) and 'HeadlessChrome' in ua:
+        add('user-agent', 'fail', ua, 'UA 含 HeadlessChrome')
+    elif isinstance(ua, str) and ua.startswith('ERR:'):
+        add('user-agent', 'warn', ua)
+    else:
+        add('user-agent', 'ok', ua)
+
+    # UA ↔ navigator.platform / userAgentData.platform 一致性
+    ua_os = _ua_os(ua)
+    ua_data = raw.get('userAgentData') if isinstance(raw.get('userAgentData'), dict) else None
+    nav_plat = raw.get('platform')
+    notes = []
+    if ua_data:
+        ud_plat = ua_data.get('platform')
+        _MAP = {'Linux': {'Linux', 'X11'}, 'Windows': {'Windows', 'Win32'},
+                'macOS': {'macOS', 'MacIntel'}, 'Android': {'Android', 'Linux'},
+                'iOS': {'iOS', 'iPhone', 'iPad'}}
+        if ua_os and ud_plat not in _MAP.get(ua_os, {ua_os}):
+            add('ua-platform-consistency', 'fail',
+                {'ua_os': ua_os, 'uaData_platform': ud_plat},
+                'UA 与 userAgentData.platform 矛盾')
+        elif ua_os and isinstance(nav_plat, str) and ua_os == 'Linux' \
+                and nav_plat not in ('Linux x86_64', 'Linux aarch64', 'Linux armv8l'):
+            add('ua-platform-consistency', 'warn',
+                {'ua_os': ua_os, 'navigator.platform': nav_plat},
+                'navigator.platform 与 UA OS 不一致')
+        else:
+            add('ua-platform-consistency', 'ok',
+                {'ua_os': ua_os, 'uaData_platform': ud_plat})
+    elif isinstance(ua, str) and 'Chrome' in ua and ua_data is None:
+        add('ua-platform-consistency', 'warn',
+            {'ua_os': ua_os},
+            'UA 声称 Chrome 但 navigator.userAgentData 缺失（低版本或被移除）')
+    else:
+        add('ua-platform-consistency', 'ok', {'ua_os': ua_os})
+
+    # languages
+    langs = raw.get('languages')
+    if not langs:
+        add('languages', 'warn', langs, 'navigator.languages 为空')
+    else:
+        add('languages', 'ok', langs)
+
+    # plugins / mimeTypes
+    n_plugins = raw.get('plugins')
+    add('plugins', 'warn' if n_plugins == 0 else 'ok', n_plugins,
+        'plugins 为空' if n_plugins == 0 else None)
+
+    # WebGL
+    webgl = raw.get('webgl')
+    if isinstance(webgl, dict):
+        renderer = str(webgl.get('renderer') or '')
+        if 'SwiftShader' in renderer or 'llvmpipe' in renderer:
+            add('webgl', 'warn', webgl, '渲染器暴露软件光栅（SwiftShader/llvmpipe），典型 headless/VPS 信号')
+        else:
+            add('webgl', 'ok', webgl)
+    elif webgl is None:
+        add('webgl', 'warn', None, 'WebGL 不可用')
+    else:
+        add('webgl', 'warn', webgl)
+
+    # window 尺寸
+    outer = raw.get('outerDims')
+    if isinstance(outer, list) and outer[0] == 0:
+        add('window-dims', 'fail', outer, 'outerWidth/outerHeight=0，headless 信号')
+    else:
+        add('window-dims', 'ok', outer)
+
+    # window.chrome
+    add('chrome-obj', 'ok' if raw.get('hasChromeObj') else 'warn',
+        raw.get('hasChromeObj'),
+        None if raw.get('hasChromeObj') else 'window.chrome(.runtime) 缺失')
+
+    # Notification.permission
+    perm = raw.get('notificationPermission')
+    add('notification-permission', 'warn' if perm == 'denied' else 'ok', perm,
+        'denied 是 headless 默认值的信号' if perm == 'denied' else None)
+
+    # 硬件
+    hw = raw.get('hardwareConcurrency')
+    dm = raw.get('deviceMemory')
+    add('hardware',
+        'warn' if (isinstance(hw, int) and hw <= 4) or (isinstance(dm, (int, float)) and dm <= 4) else 'ok',
+        {'cores': hw, 'memory': dm},
+        '低核数/低内存是 VPS/容器常见信号' if (isinstance(hw, int) and hw <= 4) else None)
+
+    # 时区
+    tz = raw.get('timezone')
+    add('timezone', 'ok' if tz else 'warn', tz, None if tz else '无法读取时区')
+
+    # stealth marker
+    marker = raw.get('stealthMarker')
+    if isinstance(marker, dict) and marker.get('errors'):
+        add('stealth-marker', 'warn', marker,
+            f"stealth 补丁存在执行错误: {list(marker['errors'])}")
+    elif marker:
+        add('stealth-marker', 'ok', marker.get('applied'))
+    else:
+        add('stealth-marker', 'ok', None, '未检测到 __stealth__ 标记（本会话未打补丁或已导航前注入失败）')
+
+    summary = {'ok': sum(1 for c in checks if c['status'] == 'ok'),
+               'warn': sum(1 for c in checks if c['status'] == 'warn'),
+               'fail': sum(1 for c in checks if c['status'] == 'fail')}
+    return {
+        'checks': checks,
+        'summary': summary,
+        'raw': {
+            'timezoneOffsetMins': raw.get('offsetMins'),
+            'connection': raw.get('connection'),
+            'maxTouchPoints': raw.get('maxTouchPoints'),
+            'mimeTypes': raw.get('mimeTypes'),
+            'vendor': raw.get('vendor'),
+            'innerDims': raw.get('innerDims'),
+        },
+    }
+
+
 def build_init_script(
     features: set,
     langs: list[str] | None = None,

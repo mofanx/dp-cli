@@ -11,15 +11,17 @@ from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import session_option, _get_page
 
 
-def _emit_response(page, output):
+def _emit_response(url, resp, output):
     """构造 http-get/http-post 的输出。
+
+    :param url: 最终 URL（重定向后与请求 URL 可能不同）
+    :param resp: requests/curl_cffi Response，可为 None
 
     --output 指定时把原始响应字节写入文件（兼容二进制），
     否则把 body 内联到结果（JSON 优先，文本截断 3000 字）。
     """
-    resp = page.response
     result = {
-        'url': page.url,
+        'url': url,
         'status_code': resp.status_code if resp is not None else None,
     }
     if output:
@@ -40,6 +42,72 @@ def _emit_response(page, output):
         except Exception:
             result['body'] = '<binary>'
     return result
+
+
+def _cffi_request(url, method, headers, proxy, timeout, impersonate,
+                  data=None, form=None):
+    """curl_cffi 后端：模拟浏览器 TLS/JA3/HTTP2 指纹发请求。
+
+    :return: (final_url, response)；curl_cffi 缺失时抛 ImportError
+    """
+    from curl_cffi import requests as cffi
+    kwargs = {'headers': headers, 'timeout': timeout,
+              'impersonate': impersonate or 'chrome'}
+    if proxy:
+        kwargs['proxies'] = {'http': proxy, 'https': proxy}
+    if method == 'POST':
+        if data is not None:
+            kwargs['json'] = data
+        elif form is not None:
+            kwargs['data'] = form
+    resp = getattr(cffi, method.lower())(url, **kwargs)
+    return str(resp.url), resp
+
+
+def _requests_request(url, method, headers, proxy, timeout,
+                      data=None, form=None):
+    """DrissionPage SessionPage（requests）后端。"""
+    from DrissionPage import SessionPage
+    from DrissionPage._configs.session_options import SessionOptions
+
+    so = SessionOptions()
+    if proxy:
+        so.set_proxies(http=proxy, https=proxy)
+    if headers:
+        so.set_headers(headers)
+    page = SessionPage(session_or_options=so)
+    kwargs = {'timeout': timeout}
+    if method == 'POST':
+        if data is not None:
+            kwargs['json'] = data
+        elif form is not None:
+            kwargs['data'] = form
+    getattr(page, method.lower())(url, **kwargs)
+    return page.url, page.response
+
+
+def _http_send(url, method, headers, proxy, timeout, impersonate,
+               data=None, form=None):
+    """http-get/http-post 统一发送。--impersonate 指定时优先 curl_cffi
+    （真实浏览器 TLS 指纹）；缺包则降级 requests 后端并附 warning。
+
+    :return: (result_url, response, warnings)
+    """
+    warnings = []
+    if impersonate:
+        try:
+            final_url, resp = _cffi_request(
+                url, method, headers, proxy, timeout, impersonate,
+                data=data, form=form)
+            return final_url, resp, warnings
+        except ImportError:
+            warnings.append(
+                'curl_cffi 未安装，--impersonate 已降级为 requests 后端'
+                '（TLS 指纹为 Python 默认值）。安装: pip install dp-cli[tls]')
+            debug('curl_cffi 不可用，降级 requests 后端')
+    final_url, resp = _requests_request(
+        url, method, headers, proxy, timeout, data=data, form=form)
+    return final_url, resp, warnings
 
 
 def _hdr_list(headers) -> list:
@@ -126,8 +194,10 @@ def register(cli):
     @session_option
     @click.option('--count', default=1, help='等待数据包数量', show_default=True)
     @click.option('--timeout', default=10, help='等待数据超时秒数', show_default=True)
-    def listen_stop(session, count, timeout):
-        """停止监听并获取捕获的网络请求数据。"""
+    @click.option('--output', default=None,
+                  help='把数据包结构化 JSON 写入文件（默认内联到 data.packets）')
+    def listen_stop(session, count, timeout, output):
+        """停止监听并获取捕获的网络请求数据（含请求头/postData/响应体）。"""
         page = _get_page(session)
         try:
             # finally 中 stop：wait 超时/出错也必须停止监听，否则监听器残留
@@ -140,12 +210,29 @@ def register(cli):
                 pkts = packets if isinstance(packets, list) else [packets]
                 for pkt in pkts:
                     try:
+                        req = getattr(pkt, 'request', None)
                         item = {
                             'url': pkt.url,
                             'method': pkt.method,
                             'status': pkt.response.status if pkt.response else None,
                             'type': pkt.resourceType,
                         }
+                        # 逆向取证关键字段：请求头与 postData（签名入参分析）
+                        try:
+                            if req is not None:
+                                item['request_headers'] = dict(
+                                    getattr(req, 'headers', None) or {})
+                                pd = getattr(req, 'postData', None)
+                                if pd is not None:
+                                    item['postData'] = pd
+                        except Exception:
+                            pass
+                        try:
+                            if pkt.response:
+                                item['response_headers'] = dict(
+                                    getattr(pkt.response, 'headers', None) or {})
+                        except Exception:
+                            pass
                         try:
                             item['response_body'] = pkt.response.body
                         except Exception as e:
@@ -153,7 +240,14 @@ def register(cli):
                         results.append(item)
                     except Exception:
                         continue
-            ok({'packets': results, 'count': len(results)})
+            data = {'packets': results, 'count': len(results)}
+            if output:
+                Path(output).write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2),
+                    encoding='utf-8')
+                ok({'saved_to': output, 'count': len(results)})
+            else:
+                ok(data)
         except Exception as e:
             error(f'获取监听数据失败', code='LISTEN_FAILED', detail=str(e))
 
@@ -306,7 +400,10 @@ def register(cli):
     @click.option('--proxy', default=None, help='代理地址')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
     @click.option('--output', default=None, help='响应体保存路径')
-    def http_get(url, headers, proxy, timeout, output):
+    @click.option('--impersonate', default=None,
+                  help='模拟浏览器 TLS 指纹（需 curl_cffi，如 chrome131 / '
+                       'safari18_0；chrome=最新版）。缺包时降级 requests 并告警')
+    def http_get(url, headers, proxy, timeout, output, impersonate):
         """发送 HTTP GET 请求（不启动浏览器，高效爬虫模式）。
 
         \b
@@ -314,20 +411,16 @@ def register(cli):
           dp http-get https://api.example.com/users
           dp http-get https://example.com --output page.html
           dp http-get https://api.example.com --headers '{"Authorization":"Bearer xxx"}'
+          dp http-get https://example.com --impersonate chrome131
         """
         try:
-            from DrissionPage import SessionPage
-            from DrissionPage._configs.session_options import SessionOptions
-
-            so = SessionOptions()
-            if proxy:
-                so.set_proxies(http=proxy, https=proxy)
-            if headers:
-                so.set_headers(json.loads(headers))
-
-            page = SessionPage(session_or_options=so)
-            page.get(url, timeout=timeout)
-            ok(_emit_response(page, output))
+            hdrs = json.loads(headers) if headers else None
+            final_url, resp, warnings = _http_send(
+                url, 'GET', hdrs, proxy, timeout, impersonate)
+            result = _emit_response(final_url, resp, output)
+            if warnings:
+                result['warnings'] = warnings
+            ok(result)
         except Exception as e:
             error(f'HTTP GET 失败', code='HTTP_FAILED', detail=str(e))
 
@@ -339,33 +432,27 @@ def register(cli):
     @click.option('--proxy', default=None, help='代理地址')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
     @click.option('--output', default=None, help='响应体保存路径')
-    def http_post(url, data, form, headers, proxy, timeout, output):
+    @click.option('--impersonate', default=None,
+                  help='模拟浏览器 TLS 指纹（需 curl_cffi，如 chrome131）。'
+                       '缺包时降级 requests 并告警')
+    def http_post(url, data, form, headers, proxy, timeout, output, impersonate):
         """发送 HTTP POST 请求（不启动浏览器）。
 
         \b
         示例:
           dp http-post https://api.example.com/login --data '{"user":"admin","pass":"123"}'
           dp http-post https://example.com/form --form '{"field":"value"}'
+          dp http-post https://api.example.com --impersonate chrome131 --data '{}'
         """
         try:
-            from DrissionPage import SessionPage
-            from DrissionPage._configs.session_options import SessionOptions
-
-            so = SessionOptions()
-            if proxy:
-                so.set_proxies(http=proxy, https=proxy)
-            if headers:
-                so.set_headers(json.loads(headers))
-
-            page = SessionPage(session_or_options=so)
-
-            kwargs = {'timeout': timeout}
-            if data:
-                kwargs['json'] = json.loads(data)
-            elif form:
-                kwargs['data'] = json.loads(form)
-
-            page.post(url, **kwargs)
-            ok(_emit_response(page, output))
+            hdrs = json.loads(headers) if headers else None
+            final_url, resp, warnings = _http_send(
+                url, 'POST', hdrs, proxy, timeout, impersonate,
+                data=json.loads(data) if data else None,
+                form=json.loads(form) if form else None)
+            result = _emit_response(final_url, resp, output)
+            if warnings:
+                result['warnings'] = warnings
+            ok(result)
         except Exception as e:
             error(f'HTTP POST 失败', code='HTTP_FAILED', detail=str(e))

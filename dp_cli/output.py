@@ -106,6 +106,13 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'PERF_FAILED':          (EXIT_RUNTIME, '性能指标获取失败'),
     'TRACE_FAILED':         (EXIT_RUNTIME, 'trace 采集/写盘失败'),
     'SCREENCAST_FAILED':    (EXIT_RUNTIME, 'screencast 帧录制失败'),
+    'STEALTH_CHECK_FAILED': (EXIT_RUNTIME, 'stealth 指纹自检失败'),
+    'PERMISSIONS_FAILED':   (EXIT_RUNTIME, '浏览器权限操作失败'),
+    'CLIPBOARD_FAILED':     (EXIT_RUNTIME, '剪贴板读写失败'),
+    'MEDIA_FAILED':         (EXIT_RUNTIME, '媒体模拟设置失败'),
+    'BYPASS_CSP_FAILED':    (EXIT_RUNTIME, 'CSP 绕过设置失败'),
+    'THROTTLE_FAILED':      (EXIT_RUNTIME, '网络/CPU 节流设置失败'),
+    'FILE_CHOOSER_FAILED':  (EXIT_RUNTIME, '文件选择对话框处理失败'),
 }
 
 

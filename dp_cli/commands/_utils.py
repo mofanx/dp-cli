@@ -121,6 +121,13 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             _apply_intercept(target, intercept_cfg)
         except Exception as e:
             debug('intercept 重放失败', e)
+    browser_cdp_cfg = sess.get('browser_cdp')
+    if browser_cdp_cfg:
+        try:
+            from dp_cli.commands.browser import _apply_browser_cdp
+            _apply_browser_cdp(target, browser_cdp_cfg)
+        except Exception as e:
+            debug('browser_cdp 重放失败', e)
 
     return target
 

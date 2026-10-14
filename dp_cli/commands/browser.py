@@ -1,6 +1,15 @@
 # -*- coding:utf-8 -*-
-"""浏览器生命周期命令: open / goto / reload / go-back / go-forward / close / close-all / list / delete-data / stealth"""
+"""浏览器生命周期与 CDP 原生能力命令:
+
+open / goto / reload / go-back / go-forward / close / close-all / list /
+delete-data / stealth / permissions / clipboard-get / clipboard-set /
+media / bypass-csp / throttle / file-chooser
+
+media / bypass-csp / throttle 的配置写入 session['browser_cdp']，
+由 _get_page 每条命令重放（每个 dp 进程是独立 CDP session，必须重放）。
+"""
 from pathlib import Path
+from time import perf_counter, sleep as _sleep
 
 import click
 
@@ -9,9 +18,96 @@ from dp_cli.session import (get_browser, close_browser, list_sessions,
                             discover_port_from_profile,
                             default_user_data_dir_for_channel,
                             sniff_auto_user_data_dir)
-from dp_cli.output import ok, error, format_page_info
-from dp_cli.commands._utils import session_option, _get_page, normalize_url
-from dp_cli.stealth import apply_stealth, PRESETS, DEFAULT_UA
+from dp_cli.output import ok, error, format_page_info, debug
+from dp_cli.commands._utils import (session_option, _get_page, normalize_url,
+                                    resolve_locator)
+from dp_cli.stealth import apply_stealth, stealth_check, PRESETS, DEFAULT_UA
+
+
+# permissions 命令支持的权限名（CDP Browser.grantPermissions 的 descriptor name）
+PERMISSION_NAMES = {
+    'geolocation', 'notifications', 'clipboard-read', 'clipboard-write',
+    'midi', 'midi-sysex', 'camera', 'microphone', 'background-sync',
+    'persistent-storage', 'local-fonts', 'idle-detection', 'sensors',
+    'accelerometer', 'gyroscope', 'magnetometer', 'accessibility-events',
+    'audio-capture', 'video-capture', 'payment-handler', 'clipboard-sanitized-write',
+}
+
+# throttle 网络预设：latency(ms), downloadThroughput(B/s), uploadThroughput(B/s)
+THROTTLE_PROFILES = {
+    'offline':  {'offline': True,  'latency': 0,   'downloadThroughput': 0,      'uploadThroughput': 0},
+    'slow-3g':  {'offline': False, 'latency': 400, 'downloadThroughput': 50 * 1024,   'uploadThroughput': 50 * 1024},
+    'fast-3g':  {'offline': False, 'latency': 150, 'downloadThroughput': 200 * 1024,  'uploadThroughput': 96 * 1024},
+    '4g':       {'offline': False, 'latency': 60,  'downloadThroughput': 4 * 1024 * 1024, 'uploadThroughput': 3 * 1024 * 1024},
+}
+
+
+def _origin_from_url(url: str) -> str | None:
+    """从 URL 提取 origin（scheme://host[:port]）；非 http(s) 返回 None。"""
+    from urllib.parse import urlsplit
+    try:
+        p = urlsplit(url or '')
+    except Exception:
+        return None
+    if p.scheme not in ('http', 'https') or not p.netloc:
+        return None
+    return f'{p.scheme}://{p.netloc}'
+
+
+def _cdp_eval(page, expression: str):
+    """Runtime.evaluate + awaitPromise + returnByValue，返回 JS 值。
+
+    页面级 CDP session 可调 Browser.* / Emulation.* / Page.* 域方法。
+    JS 侧抛异常时抛 RuntimeError（exceptionDetails）。
+    """
+    res = page.run_cdp('Runtime.evaluate', expression=expression,
+                       awaitPromise=True, returnByValue=True)
+    if isinstance(res, dict) and res.get('exceptionDetails'):
+        ed = res['exceptionDetails']
+        txt = ((ed.get('exception') or {}).get('description')
+               or ed.get('text') or 'JS 异常')
+        raise RuntimeError(txt)
+    if isinstance(res, dict):
+        return (res.get('result') or {}).get('value')
+    return None
+
+
+def _apply_browser_cdp(page, cfg: dict) -> None:
+    """重放 media / bypass_csp / throttle 会话级 CDP 设置。
+
+    :param cfg: sess['browser_cdp'] ——
+        {'media': {'media': str, 'features': {name: value}},
+         'bypass_csp': bool,
+         'throttle': {'network': {...} | None, 'cpu': int}}
+    """
+    media = cfg.get('media')
+    if media is not None:
+        kwargs = {}
+        if media.get('media'):
+            kwargs['media'] = media['media']
+        feats = media.get('features')
+        if feats:
+            kwargs['features'] = [{'name': k, 'value': v} for k, v in feats.items()]
+        page.run_cdp('Emulation.setEmulatedMedia', **kwargs)
+
+    if cfg.get('bypass_csp'):
+        try:
+            page.run_cdp('Page.enable')
+        except Exception as e:
+            debug('bypass-csp 重放 Page.enable 失败', e)
+        page.run_cdp('Page.setBypassCSP', enabled=True)
+
+    throttle = cfg.get('throttle') or {}
+    net = throttle.get('network')
+    if net:
+        try:
+            page.run_cdp('Network.enable')
+        except Exception as e:
+            debug('throttle 重放 Network.enable 失败', e)
+        page.run_cdp('Network.emulateNetworkConditions', **net)
+    cpu = throttle.get('cpu')
+    if cpu:
+        page.run_cdp('Emulation.setCPUThrottlingRate', rate=cpu)
 
 
 def register(cli):
@@ -283,7 +379,11 @@ def register(cli):
                                      'permissions', 'plugins', 'languages',
                                      'webgl', 'window_dims']),
                   help='精细指定要启用的单个特性（可多次）。指定后覆盖 --preset')
-    def cmd_stealth(session, preset, ua, langs, webgl_vendor, webgl_renderer, feature):
+    @click.option('--check', is_flag=True,
+                  help='只读指纹一致性自检：采集 webdriver/UA/platform/timezone/WebGL '
+                       '等信号并输出报告，不打补丁')
+    def cmd_stealth(session, preset, ua, langs, webgl_vendor, webgl_renderer, feature,
+                    check):
         """对当前会话施加反自动化检测补丁。
 
         \b
@@ -307,6 +407,13 @@ def register(cli):
           - 高级指纹检测（Canvas/Audio/字体）本命令不覆盖，需真实 GPU/Xvfb 环境
         """
         page = _get_page(session)
+        if check:
+            try:
+                ok(stealth_check(page))
+            except Exception as e:
+                error('stealth 自检失败', code='STEALTH_CHECK_FAILED',
+                      detail=str(e))
+            return
         features = set(feature) if feature else PRESETS[preset]
         langs_list = [s.strip() for s in langs.split(',')] if langs else None
         try:
@@ -334,3 +441,341 @@ def register(cli):
             ok(info, msg=f'stealth 已启用（{len(features)} 个特性）')
         except Exception as e:
             error(f'应用 stealth 失败', code='STEALTH_FAILED', detail=str(e))
+
+    @cli.command('permissions')
+    @session_option
+    @click.option('--grant', 'grants', multiple=True,
+                  help='授权权限名（可多次/逗号分隔），如 geolocation,notifications；'
+                       '--list 查看全部支持名')
+    @click.option('--origin', default=None,
+                  help='授权作用的 origin（默认取当前页面 URL 的 origin）')
+    @click.option('--reset', is_flag=True, help='重置全部已授权限')
+    @click.option('--list', 'list_names', is_flag=True, help='列出支持的权限名')
+    def cmd_permissions(session, grants, origin, reset, list_names):
+        """浏览器权限授权（CDP Browser.grantPermissions / resetPermissions）。
+
+        \b
+        示例:
+          dp permissions --list
+          dp permissions --grant geolocation,notifications
+          dp permissions --grant clipboard-read --origin https://example.com
+          dp permissions --reset
+        """
+        if list_names:
+            ok({'permissions': sorted(PERMISSION_NAMES)})
+            return
+        names = []
+        for g in grants:
+            names.extend(s.strip() for s in g.split(',') if s.strip())
+        if not reset and not names:
+            error('未指定操作：用 --grant <名> 授权或 --reset 重置',
+                  code='INVALID_ARGS')
+            return
+        unknown = [n for n in names if n not in PERMISSION_NAMES]
+        if unknown:
+            error(f'未知权限名: {", ".join(unknown)}；用 --list 查看支持的权限',
+                  code='INVALID_ARGS')
+            return
+        page = _get_page(session)
+        try:
+            if reset:
+                page.run_cdp('Browser.resetPermissions')
+                ok({'reset': True}, msg='已重置全部权限')
+                return
+            if origin is None:
+                origin = _origin_from_url(getattr(page, 'url', ''))
+                if not origin:
+                    error('当前页非 http(s)，无法推导 origin，请用 --origin 指定',
+                          code='INVALID_ARGS')
+                    return
+            page.run_cdp('Browser.grantPermissions',
+                         origin=origin, permissions=names)
+            ok({'origin': origin, 'granted': names},
+               msg=f'已授权 {len(names)} 项权限（origin={origin}）')
+        except Exception as e:
+            error('权限操作失败', code='PERMISSIONS_FAILED', detail=str(e))
+
+    def _grant_clipboard_perm(page, perm: str):
+        """尽力授予剪贴板权限；失败仅 debug 记录（部分站点仍可用）。"""
+        origin = _origin_from_url(getattr(page, 'url', ''))
+        try:
+            kwargs = {'permission': {'name': perm},
+                      'setting': 'granted'}
+            if origin:
+                kwargs['origin'] = origin
+            page.run_cdp('Browser.setPermission', **kwargs)
+        except Exception as e:
+            debug(f'Browser.setPermission({perm}) 失败（继续尝试 JS API）', e)
+
+    @cli.command('clipboard-get')
+    @session_option
+    def clipboard_get(session):
+        """读取系统剪贴板文本（navigator.clipboard.readText + 权限授予）。
+
+        \b
+        示例:
+          dp clipboard-get
+        """
+        page = _get_page(session)
+        try:
+            _grant_clipboard_perm(page, 'clipboard-read')
+            text = _cdp_eval(page, 'navigator.clipboard.readText()')
+            ok({'text': text})
+        except Exception as e:
+            error('读取剪贴板失败', code='CLIPBOARD_FAILED', detail=str(e))
+
+    @cli.command('clipboard-set')
+    @click.argument('text')
+    @session_option
+    def clipboard_set(text, session):
+        """写入系统剪贴板文本（navigator.clipboard.writeText + 权限授予）。
+
+        \b
+        示例:
+          dp clipboard-set "hello world"
+        """
+        import json as _json
+        page = _get_page(session)
+        try:
+            _grant_clipboard_perm(page, 'clipboard-write')
+            _cdp_eval(page,
+                      f'navigator.clipboard.writeText({_json.dumps(text)})')
+            ok({'text': text}, msg='已写入剪贴板')
+        except Exception as e:
+            error('写入剪贴板失败', code='CLIPBOARD_FAILED', detail=str(e))
+
+    @cli.command('media')
+    @session_option
+    @click.option('--color-scheme', type=click.Choice(['dark', 'light', 'no-preference']),
+                  default=None, help='prefers-color-scheme 媒体特性')
+    @click.option('--type', 'media_type',
+                  type=click.Choice(['screen', 'print']), default=None,
+                  help='模拟媒体类型（如 print 可用来预览打印样式）')
+    @click.option('--reduced-motion', is_flag=True,
+                  help='开启 prefers-reduced-motion')
+    @click.option('--off', is_flag=True, help='清除媒体模拟')
+    def cmd_media(session, color_scheme, media_type, reduced_motion, off):
+        """CSS 媒体模拟（CDP Emulation.setEmulatedMedia），写入会话自动重放。
+
+        \b
+        示例:
+          dp media --color-scheme dark
+          dp media --type print
+          dp media --color-scheme dark --reduced-motion
+          dp media --off
+        """
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        cdp_cfg = dict(sess.get('browser_cdp') or {})
+        try:
+            if off:
+                page.run_cdp('Emulation.setEmulatedMedia', media='', features=[])
+                cdp_cfg.pop('media', None)
+            else:
+                feats = dict((cdp_cfg.get('media') or {}).get('features') or {})
+                if color_scheme:
+                    feats['prefers-color-scheme'] = color_scheme
+                if reduced_motion:
+                    feats['prefers-reduced-motion'] = 'reduce'
+                media_cfg = {
+                    'media': media_type if media_type is not None
+                             else (cdp_cfg.get('media') or {}).get('media'),
+                    'features': feats,
+                }
+                if not media_cfg['media'] and not feats:
+                    ok({'media': None}, msg='当前无媒体模拟')
+                    return
+                _apply_browser_cdp(page, {'media': media_cfg})
+                cdp_cfg['media'] = media_cfg
+            if cdp_cfg:
+                sess['browser_cdp'] = cdp_cfg
+            else:
+                sess.pop('browser_cdp', None)
+            save_session(session, sess)
+            ok({'media': cdp_cfg.get('media')},
+               msg='媒体模拟已清除' if off else '媒体模拟已应用')
+        except Exception as e:
+            error('媒体模拟失败', code='MEDIA_FAILED', detail=str(e))
+
+    @cli.command('bypass-csp')
+    @session_option
+    @click.option('--off', is_flag=True, help='关闭 CSP 绕过')
+    def cmd_bypass_csp(session, off):
+        """绕过页面 Content-Security-Policy（CDP Page.setBypassCSP），写入会话重放。
+
+        \b
+        示例:
+          dp bypass-csp          # 开启
+          dp bypass-csp --off    # 关闭
+        """
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        cdp_cfg = dict(sess.get('browser_cdp') or {})
+        try:
+            page.run_cdp('Page.setBypassCSP', enabled=not off)
+            cdp_cfg['bypass_csp'] = not off
+            if not off:
+                sess['browser_cdp'] = cdp_cfg
+            else:
+                cdp_cfg.pop('bypass_csp', None)
+                if cdp_cfg:
+                    sess['browser_cdp'] = cdp_cfg
+                else:
+                    sess.pop('browser_cdp', None)
+            save_session(session, sess)
+            ok({'bypass_csp': not off},
+               msg='CSP 绕过已开启' if not off else 'CSP 绕过已关闭')
+        except Exception as e:
+            error('CSP 绕过设置失败', code='BYPASS_CSP_FAILED', detail=str(e))
+
+    @cli.command('throttle')
+    @session_option
+    @click.option('--profile', 'profile',
+                  type=click.Choice(sorted(THROTTLE_PROFILES)), default=None,
+                  help='网络预设：offline / slow-3g / fast-3g / 4g')
+    @click.option('--latency', type=int, default=None, help='自定义延迟 ms')
+    @click.option('--down', type=int, default=None, help='自定义下行带宽 kbps')
+    @click.option('--up', type=int, default=None, help='自定义上行带宽 kbps')
+    @click.option('--cpu', type=int, default=None,
+                  help='CPU 降速倍数（如 4 = 4x slower；1 恢复）')
+    @click.option('--off', is_flag=True, help='关闭全部节流')
+    def cmd_throttle(session, profile, latency, down, up, cpu, off):
+        """网络/CPU 节流（Network.emulateNetworkConditions + CPUThrottlingRate）。
+
+        设置写入会话，后续 dp 命令自动重放。
+
+        \b
+        示例:
+          dp throttle --profile slow-3g
+          dp throttle --latency 200 --down 1024 --up 512
+          dp throttle --cpu 4
+          dp throttle --off
+        """
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        cdp_cfg = dict(sess.get('browser_cdp') or {})
+        th = dict(cdp_cfg.get('throttle') or {})
+        try:
+            if off:
+                page.run_cdp('Network.emulateNetworkConditions',
+                             offline=False, latency=0,
+                             downloadThroughput=-1, uploadThroughput=-1)
+                page.run_cdp('Emulation.setCPUThrottlingRate', rate=1)
+                th = {}
+            else:
+                custom = latency is not None or down is not None or up is not None
+                if profile and custom:
+                    error('--profile 与 --latency/--down/--up 互斥',
+                          code='INVALID_ARGS')
+                    return
+                if profile:
+                    th['network'] = dict(THROTTLE_PROFILES[profile])
+                elif custom:
+                    th['network'] = {
+                        'offline': False,
+                        'latency': latency or 0,
+                        'downloadThroughput': (down * 1024 // 8) if down else -1,
+                        'uploadThroughput': (up * 1024 // 8) if up else -1,
+                    }
+                if cpu is not None:
+                    if cpu < 1:
+                        error('--cpu 必须 >= 1', code='INVALID_ARGS')
+                        return
+                    th['cpu'] = cpu
+                if not th:
+                    ok({'throttle': None}, msg='当前无节流设置')
+                    return
+                _apply_browser_cdp(page, {'throttle': th})
+            if th:
+                cdp_cfg['throttle'] = th
+                sess['browser_cdp'] = cdp_cfg
+            else:
+                cdp_cfg.pop('throttle', None)
+                if cdp_cfg:
+                    sess['browser_cdp'] = cdp_cfg
+                else:
+                    sess.pop('browser_cdp', None)
+            save_session(session, sess)
+            ok({'throttle': th or None},
+               msg='节流已关闭' if off else '节流已应用并写入会话')
+        except Exception as e:
+            error('节流设置失败', code='THROTTLE_FAILED', detail=str(e))
+
+    @cli.command('file-chooser')
+    @click.argument('files', nargs=-1, required=True)
+    @session_option
+    @click.option('--locator', 'loc', required=True,
+                  help='触发文件选择的元素定位器（点击后弹出文件对话框）')
+    @click.option('--timeout', default=10, show_default=True,
+                  help='等待文件对话框打开的秒数')
+    def cmd_file_chooser(files, session, loc, timeout):
+        """拦截文件选择对话框并喂入文件（Page.setInterceptFileChooserDialog）。
+
+        用于 click 触发系统文件对话框的场景（非 input[type=file] 直传，
+        那种用 dp upload）。流程：开启拦截 → 点击元素 → 等
+        Page.fileChooserOpened → DOM.setFileInputFiles。
+
+        \b
+        示例:
+          dp file-chooser ~/pic.png --locator "css:.upload-btn"
+          dp file-chooser a.png b.png --locator "ref:12"   # multiple 输入
+        """
+        paths = []
+        for f in files:
+            p = Path(f).expanduser()
+            if not p.is_file():
+                error(f'文件不存在: {f}', code='FILE_NOT_FOUND')
+                return
+            paths.append(str(p))
+
+        page = _get_page(session)
+        driver = getattr(page, 'driver', None)
+        if driver is None or not hasattr(driver, 'set_callback'):
+            error('当前页面对象不支持 CDP 事件回调', code='FILE_CHOOSER_FAILED')
+            return
+
+        opened: dict = {}
+
+        def _on_opened(**kw):
+            opened.update(kw)
+
+        try:
+            page.run_cdp('Page.enable')
+            driver.set_callback('Page.fileChooserOpened', _on_opened)
+            page.run_cdp('Page.setInterceptFileChooserDialog', enabled=True)
+
+            real_loc = resolve_locator(loc, session, page)
+            ele = page.ele(real_loc)
+            if ele is None or ele.__class__.__name__ == 'NoneElement':
+                error(f'元素未找到: {loc}', code='ELEMENT_NOT_FOUND')
+                return
+            ele.click()
+
+            end = perf_counter() + timeout
+            while perf_counter() < end and 'backendNodeId' not in opened:
+                _sleep(0.1)
+            if 'backendNodeId' not in opened:
+                error('文件对话框未打开（点击未触发文件选择）',
+                      code='FILE_CHOOSER_FAILED')
+                return
+            if opened.get('mode') == 'selectSingle' and len(paths) > 1:
+                debug('对话框为单选模式，仅使用第一个文件')
+                paths = paths[:1]
+            page.run_cdp('DOM.setFileInputFiles', files=paths,
+                         backendNodeId=opened['backendNodeId'])
+            ok({'files': paths, 'mode': opened.get('mode')},
+               msg='已填入文件')
+        except SystemExit:
+            raise
+        except Exception as e:
+            error('文件选择处理失败', code='FILE_CHOOSER_FAILED',
+                  detail=str(e))
+        finally:
+            try:
+                page.run_cdp('Page.setInterceptFileChooserDialog', enabled=False)
+            except Exception as e:
+                debug('关闭文件对话框拦截失败', e)
+            try:
+                driver.set_callback('Page.fileChooserOpened', None)
+            except Exception as e:
+                debug('清除 fileChooserOpened 回调失败', e)

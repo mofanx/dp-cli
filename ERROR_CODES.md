@@ -91,6 +91,10 @@
 | `RECORD_*_FAILED`（START/STOP/STATUS/SHOW/EXPORT/CLEAR） | 录制相关失败 |
 | `EMULATE_FAILED` / `DOWNLOAD_FAILED` / `INTERCEPT_FAILED` | 环境模拟/下载/拦截失败 |
 | `PERF_FAILED` / `TRACE_FAILED` / `SCREENCAST_FAILED` | 性能指标/trace/screencast 失败 |
+| `STEALTH_CHECK_FAILED` | stealth --check 指纹自检执行失败 |
+| `PERMISSIONS_FAILED` / `CLIPBOARD_FAILED` | 权限授权/剪贴板读写失败 |
+| `MEDIA_FAILED` / `BYPASS_CSP_FAILED` / `THROTTLE_FAILED` | 媒体模拟/CSP 绕过/节流设置失败 |
+| `FILE_CHOOSER_FAILED` | 文件选择对话框拦截/填文件失败 |
 
 ## 兼容性说明
 

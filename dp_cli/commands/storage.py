@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """存储管理命令: cookie-* / localstorage-* / sessionstorage-*"""
 import json
+from pathlib import Path
 
 import click
 
@@ -154,6 +155,75 @@ def register(cli):
             ok(msg='所有 Cookie 已清除')
         except Exception as e:
             error(f'清除 Cookie 失败', code='COOKIE_FAILED', detail=str(e))
+
+    @cli.command('cookie-export')
+    @session_option
+    @click.option('--domain', default=None, help='只导出指定域名（含子域）的 Cookie')
+    @click.option('--format', 'fmt', type=click.Choice(['netscape', 'json']),
+                  default='netscape', show_default=True,
+                  help='导出格式：netscape 可被 curl/requests/curl_cffi 直接复用')
+    @click.option('--output', default=None,
+                  help='写入文件路径（默认内联到 data.content）')
+    def cookie_export(session, domain, fmt, output):
+        """导出 Cookie（默认 Netscape 格式，curl/requests/curl_cffi 可直接加载）。
+
+        典型逆向闭环：浏览器过盾（dp open + stealth）→ 本命令导出
+        cf_clearance 等凭据 → dp http-get --impersonate 高速续爬。
+
+        \b
+        示例:
+          dp cookie-export --output cookies.txt
+          dp cookie-export --domain example.com --format json
+          curl -b cookies.txt https://example.com  # 直接复用
+        """
+        page = _get_page(session)
+        try:
+            fd = None
+            if domain:
+                fd = domain.lower().strip('.')
+                if '.' not in fd and not _is_local_or_ip(fd):
+                    error(f'--domain 非法: {domain}（请使用完整域名，如 example.com）',
+                          code='INVALID_ARGS')
+            cookies = page.cookies(all_domains=True, all_info=True)
+            items = []
+            for c in cookies:
+                cd = (c.get('domain') or '').lower().strip('.')
+                if fd and not (cd == fd or cd.endswith('.' + fd)
+                               or fd.endswith('.' + cd)):
+                    continue
+                items.append(c)
+            if fmt == 'json':
+                content = json.dumps(items, ensure_ascii=False, indent=2)
+            else:
+                lines = ['# Netscape HTTP Cookie File',
+                         '# 由 dp-cli 导出，可直接用于 curl -b / requests / curl_cffi']
+                for c in items:
+                    dom = c.get('domain') or ''
+                    secure = 'TRUE' if c.get('secure') else 'FALSE'
+                    exp = c.get('expires') or 0
+                    try:
+                        exp = int(float(exp))
+                    except (TypeError, ValueError):
+                        exp = 0
+                    if exp <= 0:
+                        exp = 0  # 会话 cookie → 0
+                    lines.append('\t'.join([
+                        dom,
+                        'TRUE' if dom.startswith('.') else 'FALSE',
+                        c.get('path') or '/',
+                        secure,
+                        str(exp),
+                        c.get('name') or '',
+                        c.get('value') or '',
+                    ]))
+                content = '\n'.join(lines) + '\n'
+            if output:
+                Path(output).write_text(content, encoding='utf-8')
+                ok({'saved_to': output, 'count': len(items)})
+            else:
+                ok({'content': content, 'count': len(items)})
+        except Exception as e:
+            error(f'导出 Cookie 失败', code='COOKIE_FAILED', detail=str(e))
 
     # ── LocalStorage ────────────────────────────
 

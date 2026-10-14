@@ -34,7 +34,13 @@ def _apply_emulate(page, cfg: dict) -> None:
         # mobile 默认 True 保持既有行为；--no-mobile 可显式关闭（桌面视口）
         mobile = bool(cfg.get('mobile', True))
         page.run_cdp('Emulation.setDeviceMetricsOverride',
-                     width=w, height=h, deviceScaleFactor=1, mobile=mobile)
+                     width=w, height=h,
+                     deviceScaleFactor=cfg.get('dpr', 1), mobile=mobile)
+    if 'touch' in cfg:
+        # 显式 False 也要下发 disable——否则先移动后桌面设备切换时
+        # touch override 残留，出现桌面 UA + maxTouchPoints>0 的矛盾指纹
+        page.run_cdp('Emulation.setTouchEmulationEnabled',
+                     enabled=bool(cfg['touch']), maxTouchPoints=5)
     tz = cfg.get('timezone')
     if tz:
         page.run_cdp('Emulation.setTimezoneOverride', timezoneId=tz)
@@ -121,6 +127,7 @@ def _clear_emulate(page) -> None:
     for cmd, kwargs in (
         ('Emulation.clearDeviceMetricsOverride', {}),
         ('Emulation.clearGeolocationOverride', {}),
+        ('Emulation.setTouchEmulationEnabled', {'enabled': False}),
         ('Emulation.setTimezoneOverride', {'timezoneId': ''}),
         ('Emulation.setLocaleOverride', {'locale': ''}),
         ('Emulation.setUserAgentOverride', {'userAgent': ''}),
@@ -131,10 +138,55 @@ def _clear_emulate(page) -> None:
             debug(f'清除 {cmd} 失败', e)
 
 
+# 设备预设：viewport + dpr + mobile + touch + UA 一键组合。
+# UA 用 Chrome 147 基线，与 stealth.DEFAULT_UA 版本对齐。
+DEVICE_PRESETS = {
+    'iphone-15': {
+        'viewport': (393, 852), 'dpr': 3, 'mobile': True, 'touch': True,
+        'ua': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+              'AppleWebKit/605.1.15 (KHTML, like Gecko) '
+              'CriOS/147.0.0.0 Mobile/15E148 Safari/604.1',
+    },
+    'iphone-se': {
+        'viewport': (375, 667), 'dpr': 2, 'mobile': True, 'touch': True,
+        'ua': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+              'AppleWebKit/605.1.15 (KHTML, like Gecko) '
+              'CriOS/147.0.0.0 Mobile/15E148 Safari/604.1',
+    },
+    'pixel-8': {
+        'viewport': (412, 915), 'dpr': 2.625, 'mobile': True, 'touch': True,
+        'ua': 'Mozilla/5.0 (Linux; Android 15; Pixel 8) '
+              'AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/147.0.0.0 Mobile Safari/537.36',
+    },
+    'galaxy-s24': {
+        'viewport': (360, 780), 'dpr': 3, 'mobile': True, 'touch': True,
+        'ua': 'Mozilla/5.0 (Linux; Android 15; SM-S928B) '
+              'AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/147.0.0.0 Mobile Safari/537.36',
+    },
+    'ipad': {
+        'viewport': (820, 1180), 'dpr': 2, 'mobile': True, 'touch': True,
+        'ua': 'Mozilla/5.0 (iPad; CPU OS 18_5 like Mac OS X) '
+              'AppleWebKit/605.1.15 (KHTML, like Gecko) '
+              'CriOS/147.0.0.0 Mobile/15E148 Safari/604.1',
+    },
+    'desktop-chrome': {
+        'viewport': (1920, 1080), 'dpr': 1, 'mobile': False, 'touch': False,
+        'ua': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+              '(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
+    },
+}
+
+
 def register(cli):
 
     @cli.command('emulate')
     @session_option
+    @click.option('--device', type=click.Choice(sorted(DEVICE_PRESETS)),
+                  default=None,
+                  help='设备预设（viewport+dpr+mobile+UA 一键组合）：'
+                       + ', '.join(sorted(DEVICE_PRESETS)))
     @click.option('--viewport', default=None,
                   help='视口尺寸，如 375x812（默认启用 mobile metrics，可 --no-mobile 关闭）')
     @click.option('--mobile/--no-mobile', default=None,
@@ -144,13 +196,16 @@ def register(cli):
     @click.option('--timezone', default=None, help='时区 ID，如 Asia/Shanghai')
     @click.option('--geolocation', default=None, help='纬度,经度[,精度米]，如 39.9042,116.4074')
     @click.option('--reset', is_flag=True, help='清除全部 emulate 覆盖')
-    def emulate(session, viewport, mobile, ua, locale, timezone, geolocation, reset):
-        """模拟设备环境（viewport/UA/locale/时区/地理位置）。
+    def emulate(session, device, viewport, mobile, ua, locale, timezone,
+                geolocation, reset):
+        """模拟设备环境（设备预设/viewport/UA/locale/时区/地理位置）。
 
         设置写入会话，后续 dp 命令自动重放；--reset 清除。
 
         \b
         示例:
+          dp emulate --device iphone-15      # 设备预设一键组合
+          dp emulate --device desktop-chrome
           dp emulate --viewport 375x812 --ua "Mozilla/5.0 (iPhone...)"
           dp emulate --viewport 1920x1080 --no-mobile   # 桌面视口
           dp emulate --locale zh-CN --timezone Asia/Shanghai
@@ -169,6 +224,10 @@ def register(cli):
 
             cfg = dict(sess.get('emulate') or {})
             applied = {}
+            if device:
+                for k, v in DEVICE_PRESETS[device].items():
+                    cfg[k] = list(v) if isinstance(v, tuple) else v
+                applied['device'] = device
             if viewport:
                 parts = viewport.lower().split('x')
                 if len(parts) != 2 or not all(p.isdigit() for p in parts):

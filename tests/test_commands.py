@@ -799,12 +799,8 @@ def test_emit_response_none_response_with_output(tmp_path):
     """_emit_response：response=None + --output 不崩溃，写空文件。"""
     import dp_cli.commands.network as net_mod
 
-    class P:
-        url = 'https://x'
-        response = None
-
     out_file = tmp_path / 'empty.bin'
-    result = net_mod._emit_response(P(), str(out_file))
+    result = net_mod._emit_response('https://x', None, str(out_file))
     assert result['status_code'] is None
     assert result['saved_to'] == str(out_file)
     assert out_file.read_bytes() == b''
@@ -815,11 +811,7 @@ def test_emit_response_none_response_inline():
     """_emit_response：response=None 且无 --output → body=None，不崩。"""
     import dp_cli.commands.network as net_mod
 
-    class P:
-        url = 'https://x'
-        response = None
-
-    result = net_mod._emit_response(P(), None)
+    result = net_mod._emit_response('https://x', None, None)
     assert result['status_code'] is None
     assert result['body'] is None
 
@@ -2007,3 +1999,227 @@ def test_cookie_list_domain_localhost_and_ip(runner, monkeypatch):
     r = runner.invoke(cli, ['cookie-list', '--domain', 'com'])
     assert r.exit_code == 2
     assert json.loads(r.output)['code'] == 'INVALID_ARGS'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t2 逆向闭环三件套：cookie-export / --impersonate / listen-stop --output
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_cookie_export_netscape(runner, monkeypatch, tmp_path):
+    """cookie-export：Netscape 格式字段序/标志位/会话 cookie expires=0。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'sid', 'value': 'abc', 'domain': '.example.com',
+                 'path': '/', 'secure': True, 'expires': 1893456000.0},
+                {'name': 'sess', 'value': 'x', 'domain': 'example.com',
+                 'path': '/', 'secure': False, 'expires': -1},
+                {'name': 'other', 'value': 'y', 'domain': '.other.com',
+                 'path': '/', 'secure': False, 'expires': 0},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    out_file = tmp_path / 'cookies.txt'
+    r = runner.invoke(cli, ['cookie-export', '--domain', 'example.com',
+                            '--output', str(out_file)])
+    assert r.exit_code == 0, r.output
+    lines = out_file.read_text().splitlines()
+    assert lines[0].startswith('# Netscape HTTP Cookie File')
+    rows = [l.split('\t') for l in lines if not l.startswith('#')]
+    assert len(rows) == 2  # --domain 过滤掉 .other.com
+    assert rows[0] == ['.example.com', 'TRUE', '/', 'TRUE',
+                       '1893456000', 'sid', 'abc']
+    # 会话 cookie expires<=0 → 0；裸域 includeSubdomains=FALSE
+    assert rows[1] == ['example.com', 'FALSE', '/', 'FALSE',
+                       '0', 'sess', 'x']
+
+
+@pytest.mark.unit
+def test_cookie_export_json_inline(runner, monkeypatch):
+    """cookie-export --format json：结构化数组内联到 data.content。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [{'name': 'a', 'value': '1', 'domain': 'example.com'}]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['cookie-export', '--format', 'json'])
+    assert r.exit_code == 0
+    out = json.loads(r.output)
+    assert out['data']['count'] == 1
+    assert json.loads(out['data']['content'])[0]['name'] == 'a'
+
+
+@pytest.mark.unit
+def test_http_get_impersonate_falls_back_without_curl_cffi(runner, monkeypatch):
+    """--impersonate 但 curl_cffi 缺失：降级 requests 后端并附 warnings。"""
+    import sys
+    import DrissionPage
+    from dp_cli.main import cli
+
+    # 确保 curl_cffi 不可导入（即便环境碰巧装了也强制缺失路径）
+    monkeypatch.setitem(sys.modules, 'curl_cffi', None)
+
+    class Resp:
+        status_code = 200
+        content = b'{}'
+        text = '{}'
+
+        def json(self):
+            return {}
+
+    class SP:
+        def __init__(self, session_or_options=None):
+            self.url = ''
+            self.response = None
+
+        def get(self, url, timeout=None):
+            self.url = url
+            self.response = Resp()
+
+    monkeypatch.setattr(DrissionPage, 'SessionPage', SP)
+    r = runner.invoke(cli, ['http-get', 'https://api.example.com',
+                            '--impersonate', 'chrome131'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['status'] == 'ok'
+    assert out['data']['status_code'] == 200
+    assert any('curl_cffi' in w for w in out['data'].get('warnings', []))
+
+
+@pytest.mark.unit
+def test_http_get_impersonate_uses_curl_cffi(runner, monkeypatch):
+    """--impersonate 走 curl_cffi 后端，impersonate 参数透传。"""
+    import sys
+    import types
+    from dp_cli.main import cli
+
+    captured = {}
+
+    class Resp:
+        status_code = 200
+        url = 'https://api.example.com/'
+        content = b'{"ok":true}'
+        text = '{"ok":true}'
+
+        def json(self):
+            return {'ok': True}
+
+    fake_req = types.SimpleNamespace(
+        get=lambda url, **kw: (captured.update(url=url, kw=kw), Resp())[1],
+        post=lambda url, **kw: (captured.update(url=url, kw=kw), Resp())[1],
+    )
+    fake_mod = types.ModuleType('curl_cffi')
+    fake_mod.requests = fake_req
+    monkeypatch.setitem(sys.modules, 'curl_cffi', fake_mod)
+    monkeypatch.setitem(sys.modules, 'curl_cffi.requests', fake_req)
+
+    r = runner.invoke(cli, ['http-get', 'https://api.example.com',
+                            '--impersonate', 'chrome131',
+                            '--headers', '{"X-A":"1"}', '--proxy', 'http://p:1'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['status_code'] == 200
+    assert 'warnings' not in out['data']
+    assert captured['kw']['impersonate'] == 'chrome131'
+    assert captured['kw']['headers'] == {'X-A': '1'}
+    assert captured['kw']['proxies'] == {'http': 'http://p:1',
+                                         'https': 'http://p:1'}
+
+
+@pytest.mark.unit
+def test_listen_stop_output_writes_json(runner, monkeypatch, tmp_path):
+    """listen-stop --output：数据包结构化 JSON 写文件（含请求头/postData）。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    class _Req:
+        headers = {'Content-Type': 'application/json'}
+        postData = '{"token":"sig"}'
+
+    class _Resp:
+        status = 200
+        headers = {'Content-Type': 'application/json'}
+
+        @property
+        def body(self):
+            return '{"code":0}'
+
+    class _Pkt:
+        url = 'https://api.example.com/login'
+        method = 'POST'
+        resourceType = 'XHR'
+        request = _Req()
+        response = _Resp()
+
+    class _Listen:
+        def wait(self, count, timeout, fit_count):
+            return [_Pkt()]
+
+        def stop(self):
+            pass
+
+    class P:
+        listen = _Listen()
+
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: P())
+    out_file = tmp_path / 'packets.json'
+    r = runner.invoke(cli, ['listen-stop', '--output', str(out_file)])
+    assert r.exit_code == 0, r.output
+    saved = json.loads(out_file.read_text())
+    pkt = saved['packets'][0]
+    assert pkt['url'] == 'https://api.example.com/login'
+    assert pkt['postData'] == '{"token":"sig"}'
+    assert pkt['request_headers']['Content-Type'] == 'application/json'
+    assert pkt['response_body'] == '{"code":0}'
+
+
+@pytest.mark.unit
+def test_emulate_device_switch_clears_touch(runner, monkeypatch):
+    """iphone-15 → desktop-chrome 切换：touch 残留必须显式清除。
+
+    修复前 desktop-chrome 预设无 touch 键，merge 后 cfg['touch']=True
+    残留 → 桌面 UA + maxTouchPoints=5 的矛盾指纹。
+    """
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    sess = {'emulate': dict(em.DEVICE_PRESETS['iphone-15'])}
+    saved = {}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+
+    result = runner.invoke(cli, ['emulate', '--device', 'desktop-chrome'])
+    assert result.exit_code == 0, result.output
+    # touch=False 必须显式下发 disable 且写入会话
+    touch_calls = [c for c in page.calls
+                   if c[0] == 'Emulation.setTouchEmulationEnabled']
+    assert touch_calls and touch_calls[-1][1]['enabled'] is False
+    assert saved['emulate']['touch'] is False
+    assert saved['emulate']['mobile'] is False
+
+
+@pytest.mark.unit
+def test_emulate_reset_clears_touch_override(runner, monkeypatch):
+    """--reset：除已有 5 类清除外，还需关闭 touch 模拟。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session',
+                        lambda s: {'emulate': dict(em.DEVICE_PRESETS['iphone-15'])})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: None)
+    result = runner.invoke(cli, ['emulate', '--reset'])
+    assert result.exit_code == 0
+    touch_calls = [c for c in page.calls
+                   if c[0] == 'Emulation.setTouchEmulationEnabled']
+    assert touch_calls and touch_calls[-1][1]['enabled'] is False

@@ -26,10 +26,32 @@ def register(cli):
         """
         page = _get_page(session)
         try:
-            cookies = page.cookies(all_domains=True).as_dict()
+            # all_info=True 保留 domain/path 等完整字段，供 --domain/--url 过滤
+            cookies = page.cookies(all_domains=True, all_info=True)
+            # --url：取 host 做 cookie domain 匹配（.example.com 匹配 sub.example.com）
+            host = None
+            if url:
+                host = url.split('://', 1)[-1].split('/')[0].split(':')[0].lower()
             cookie_list_data = []
-            for name, value in cookies.items():
-                cookie_list_data.append({'name': name, 'value': value})
+            for c in cookies:
+                c_domain = (c.get('domain') or '')
+                if domain:
+                    # 域级匹配（标签边界）：example.com 命中 .example.com /
+                    # sub.example.com 的 cookie，不命中 notexample.com
+                    # （子串匹配会误中）
+                    fd = domain.lower().lstrip('.')
+                    cd = c_domain.lower().lstrip('.')
+                    if not (cd == fd or cd.endswith('.' + fd)
+                            or fd.endswith('.' + cd)):
+                        continue
+                if host:
+                    d = c_domain.lstrip('.')
+                    if not (host == d or host.endswith('.' + d)):
+                        continue
+                cookie_list_data.append({'name': c.get('name'),
+                                         'value': c.get('value'),
+                                         'domain': c_domain,
+                                         'path': c.get('path', '/')})
             ok({'cookies': cookie_list_data, 'count': len(cookie_list_data)})
         except Exception as e:
             error(f'获取 Cookie 失败', code='COOKIE_FAILED', detail=str(e))

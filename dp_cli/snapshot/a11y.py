@@ -13,6 +13,8 @@ a11y tree — 浏览器原生无障碍树获取与渲染
   5. render_a11y_text() 渲染为可读文本
   6. CDP 失败时降级到 JS fallback
 """
+import json
+
 from .utils import suggest_locator
 
 # 交互角色列表：需要生成定位器的角色
@@ -368,9 +370,11 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
             xpath_selector = normalized[6:]
             # 使用 Runtime.evaluate 执行 document.evaluate 支持 xpath
             # ponytail: 不使用 returnByValue，直接获取 objectId
+            # xpath 经 json.dumps 转义——xpath 常含双引号（如 //div[@class="x"]），
+            # 直接拼进 JS 字符串会语法错误，甚至有注入风险
             js_code = f'''
             (function() {{
-                const result = document.evaluate("{xpath_selector}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                const result = document.evaluate({json.dumps(xpath_selector)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                 return result.singleNodeValue;
             }})()
             '''
@@ -397,10 +401,9 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
 
         # ponytail: iframe 特殊处理 - 获取 iframe 的 frameId 并返回该 frame 的快照
         if node_name == 'iframe':
-            # 获取 iframe 的 frameId
+            # 上面的 describeNode 结果已含 frameId，无需重复 CDP 调用
             try:
-                frame_info = page.run_cdp('DOM.describeNode', nodeId=node_id)
-                frame_id = frame_info['node'].get('frameId')
+                frame_id = node_info.get('frameId')
                 if frame_id:
                     # 重新获取该 frame 的 a11y tree
                     flat_nodes = _get_full_tree_cdp(page, max_depth=None, frame_id=frame_id)
@@ -576,15 +579,16 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
             combined_selector = ','.join(selectors)
 
             # 使用 JS 一次性获取所有元素的属性
+            # selector 与 attr 列表经 json.dumps 转义，避免引号破坏 JS / 注入
             js = f"""
             (function() {{
                 const result = {{}};
-                const elements = document.querySelectorAll('{combined_selector}');
+                const elements = document.querySelectorAll({json.dumps(combined_selector)});
                 elements.forEach(el => {{
                     const text = el.textContent.trim().substring(0, 50);
                     if (text && !result[text]) {{
                         const attrs = {{}};
-                        for (const attr of {attrs_to_get}) {{
+                        for (const attr of {json.dumps(attrs_to_get)}) {{
                             if (el.hasAttribute(attr)) {{
                                 attrs[attr] = el.getAttribute(attr);
                             }}
@@ -599,7 +603,6 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
             """
             result = page.run_cdp('Runtime.evaluate', expression=js, returnByValue=True)
             if result.get('result', {}).get('value'):
-                import json
                 attrs_map = json.loads(result['result']['value'])
         except Exception:
             pass
@@ -774,7 +777,8 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     """递归渲染单个 a11y 节点为文本行
 
     :param parent_text: 父节点已显示的文本，用于消除子节点冗余
-    :param brief: True 时跳过内容节点（paragraph/heading 等），只显示交互元素
+    :param brief: True 时跳过独立文本节点并截断内容节点长文本（>80 字），
+                  保留结构 + 交互元素概览，省 token
     :param ctx: 渲染上下文 {'counter': int, 'refs': dict}，用于分配 [N] 编号
     """
     role = node.get('role', '')
@@ -783,10 +787,13 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     children = node.get('children', [])
 
     # brief 模式：跳过非关键内容节点（cell/listitem/caption 等），
-    # 但保留 _REF_CONTENT_ROLES（paragraph/heading/code/blockquote），由后续逻辑截断
+    # 但保留 _REF_CONTENT_ROLES（paragraph/heading/code/blockquote），由后续逻辑截断；
+    # 跳过时仍递归子节点，避免丢失嵌套的交互元素
     if brief and role in _CONTENT_ROLES and role not in _REF_CONTENT_ROLES:
+        for child in children:
+            _render_node(child, lines, depth, verbose=verbose,
+                         parent_text=parent_text, brief=brief, ctx=ctx)
         return
-
     # 跳过 ignored 节点（除非 verbose），但仍然渲染子节点
     if ignored and not verbose:
         for child in children:

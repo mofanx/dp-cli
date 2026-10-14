@@ -34,13 +34,17 @@ def register(cli):
 
         \b
         支持的按键: Enter, Tab, Escape, Space, Backspace,
-                   ArrowUp/Down/Left/Right, F1-F12,
-                   Control+A, Shift+Enter, Alt+F4 等组合键。
+                   ArrowUp/Down/Left/Right, F1-F12, Home, End,
+                   PageUp/PageDown, Insert, Delete 等。
+        组合键: Control+A, Shift+Enter, Alt+F4,
+               支持多修饰键如 Control+Shift+Delete。
 
         \b
         示例:
           dp press Enter
           dp press "Control+A"
+          dp press "Control+Shift+Delete"
+          dp press F5
           dp press Escape
         """
         page = _get_page(session)
@@ -52,20 +56,46 @@ def register(cli):
                 'arrowup': '\ue013', 'arrowdown': '\ue015',
                 'arrowleft': '\ue012', 'arrowright': '\ue014',
             }
-            k = key.lower()
+            mod_map = {'control': Keys.CTRL, 'ctrl': Keys.CTRL,
+                       'shift': Keys.SHIFT, 'alt': Keys.ALT,
+                       'meta': Keys.META, 'cmd': Keys.COMMAND,
+                       'command': Keys.COMMAND}
+            # 常见键名别名 → Keys 枚举名（枚举用下划线风格，如 PAGE_UP；
+            # 映射失败会回退为字面输入，带修饰键时会误触浏览器快捷键，
+            # 所以别名必须覆盖常用名）
+            key_alias = {
+                'pageup': 'PAGE_UP', 'pgup': 'PAGE_UP',
+                'pagedown': 'PAGE_DOWN', 'pgdn': 'PAGE_DOWN',
+                'del': 'DEL', 'esc': 'ESCAPE', 'win': 'META',
+            }
+
+            def _key_token(name):
+                """键名 → Keys 枚举/特殊键码；未知键按字面输入。"""
+                low = name.strip().lower()
+                if low in key_map:
+                    return key_map[low]
+                attr = key_alias.get(
+                    low, low.upper().replace('-', '_').replace(' ', '_'))
+                k = getattr(Keys, attr, None)
+                return k if k is not None else name.strip()
+
             if '+' in key:
-                parts = key.split('+')
-                modifier = parts[0].lower()
-                main_key = parts[1]
-                mod_map = {'control': Keys.CTRL, 'ctrl': Keys.CTRL,
-                           'shift': Keys.SHIFT, 'alt': Keys.ALT}
-                if modifier in mod_map:
-                    page.actions.key_down(mod_map[modifier]).type(main_key).key_up(mod_map[modifier])
+                # 前缀修饰键逐个出栈，支持 Control+Shift+Delete 多修饰组合
+                parts = [p for p in key.split('+') if p.strip()]
+                mods = []
+                while len(parts) > 1 and parts[0].strip().lower() in mod_map:
+                    mods.append(mod_map[parts.pop(0).strip().lower()])
+                if mods and parts:
+                    act = page.actions
+                    for m in mods:
+                        act = act.key_down(m)
+                    act = act.type(_key_token('+'.join(parts)))
+                    for m in reversed(mods):
+                        act = act.key_up(m)
                 else:
                     page.actions.type(key)
             else:
-                actual_key = key_map.get(k, key)
-                page.actions.type(actual_key)
+                page.actions.type(_key_token(key))
             ok({'key': key}, msg='按键成功')
         except Exception as e:
             error(f'按键失败: {key}', code='KEY_FAILED', detail=str(e))

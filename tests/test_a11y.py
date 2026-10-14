@@ -659,3 +659,87 @@ def test_generate_locators_iframe_frame():
     assert interactive_nodes[1]['locator'] == '.btn-export' or 'btn-export' in interactive_nodes[1]['locator']
     # 查找失败的回退到 text:
     assert interactive_nodes[2]['locator'] == 'text:搜索'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t3 增强回归：JS 转义 / iframe describeNode 去重
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_find_subtree_xpath_quotes_escaped():
+    """xpath 含双引号（如 //div[@class="x"]）时必须转义后再拼进 JS，
+    否则 Runtime.evaluate 语法错误；断言传入的 expression 已被 json 转义。"""
+    exprs = []
+
+    def rt(**kw):
+        exprs.append(kw.get('expression', ''))
+        return {'result': {'type': 'object', 'objectId': 'obj1'}}
+
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'nodeId': 1}},
+        'Runtime.evaluate': rt,
+        'DOM.requestNode': {'nodeId': 100},
+        'DOM.describeNode': {'node': {'backendNodeId': 200, 'nodeName': 'DIV'}},
+    })
+    tree = node(role='root', backendNodeId=1, children=[
+        node(role='generic', backendNodeId=200)
+    ])
+    result, warning, frame_id = a11y._find_subtree_by_selector(
+        page, tree, [], 'xpath://div[@class="x"]')
+
+    assert exprs, 'Runtime.evaluate 未被调用'
+    # xpath 应作为 JSON 字符串字面量出现（双引号被 \" 转义）
+    assert '//div[@class=\\"x\\"]' in exprs[0]
+    assert warning is None
+    assert result['backendNodeId'] == 200
+
+
+@pytest.mark.unit
+def test_find_subtree_iframe_describe_node_once():
+    """iframe 分支复用首次 describeNode 的 frameId，整个流程只调 1 次。"""
+    calls = []
+
+    def describe(**kw):
+        calls.append(kw)
+        return {'node': {'backendNodeId': 200, 'nodeName': 'IFRAME',
+                         'frameId': 'F1'}}
+
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'nodeId': 1}},
+        'DOM.querySelector': {'nodeId': 100},
+        'DOM.describeNode': describe,
+        'Accessibility.getFullAXTree': {
+            'nodes': [{'nodeId': '1', 'role': {'value': 'WebArea'},
+                       'backendDOMNodeId': 1, 'childIds': []}]
+        },
+    })
+    tree = node(role='root', backendNodeId=1)
+    result, warning, frame_id = a11y._find_subtree_by_selector(
+        page, tree, [], 'iframe')
+
+    assert frame_id == 'F1'
+    assert '已切换到 iframe frame' in warning
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_generate_locators_escapes_attr_selector():
+    """attr_priority 含引号时，拼进 JS 的 selector / attr 列表必须经
+    json.dumps 转义，不产生非法 JS 或注入。"""
+    exprs = []
+
+    def rt(**kw):
+        exprs.append(kw.get('expression', ''))
+        return {'result': {'value': '{}'}}
+
+    page = FakePage(cdp_map={
+        'DOM.getDocument': {'root': {'backendNodeId': 1, 'nodeName': 'DIV',
+                                     'attributes': [], 'children': []}},
+        'Runtime.evaluate': rt,
+    })
+    nodes = [node(role='button', backendNodeId=1, name='x')]
+    a11y._generate_locators_batch(page, nodes, attr_priority=["data-fo'o"])
+
+    assert exprs, 'Runtime.evaluate 未被调用'
+    # 属性名以 JSON 字符串形式出现（双引号包裹，单引号原样保留）
+    assert '"[data-fo\'o]"' in exprs[0]
+    assert '["data-fo\'o"]' in exprs[0]

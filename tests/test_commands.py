@@ -387,3 +387,503 @@ def test_click_command_no_session_errors(runner, monkeypatch):
     out = json.loads(result.output)
     assert out["status"] == "error"
     assert out["code"] == "SESSION_NOT_FOUND"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t3 增强回归：storage / network / keyboard / record
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_cookie_list_domain_filter(runner, monkeypatch):
+    """cookie-list --domain 按域名过滤（旧版忽略该参数）。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            assert all_domains and all_info
+            return [
+                {'name': 'a', 'value': '1', 'domain': '.example.com', 'path': '/'},
+                {'name': 'b', 'value': '2', 'domain': '.other.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--domain', 'example.com'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['status'] == 'ok'
+    assert [c['name'] for c in out['data']['cookies']] == ['a']
+    assert out['data']['count'] == 1
+
+
+@pytest.mark.unit
+def test_cookie_list_url_filter(runner, monkeypatch):
+    """cookie-list --url 按 URL host 匹配 cookie 域名（含子域）。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1', 'domain': '.example.com', 'path': '/'},
+                {'name': 'b', 'value': '2', 'domain': '.other.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--url', 'https://sub.example.com/p'])
+    out = json.loads(result.output)
+    assert [c['name'] for c in out['data']['cookies']] == ['a']
+
+
+@pytest.mark.unit
+def test_sessionstorage_delete(runner, monkeypatch):
+    """sessionstorage-delete 命令存在且调用 removeItem。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    calls = []
+
+    class P:
+        def run_js(self, script, *a, **k):
+            calls.append(script)
+            return None
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['sessionstorage-delete', 'mykey'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['status'] == 'ok'
+    assert 'sessionStorage.removeItem("mykey")' in calls[0]
+
+
+@pytest.mark.unit
+def test_listen_stop_always_stops(runner, monkeypatch):
+    """listen-stop：wait 抛异常时也必须执行 listen.stop()（旧版会残留监听）。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    class _Listen:
+        def __init__(self):
+            self.stopped = False
+
+        def wait(self, count, timeout, fit_count):
+            raise TimeoutError('no packet')
+
+        def stop(self):
+            self.stopped = True
+
+    class P:
+        def __init__(self):
+            self.listen = _Listen()
+
+    page = P()
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['listen-stop'])
+    assert result.exit_code == 1
+    assert json.loads(result.output)['code'] == 'LISTEN_FAILED'
+    assert page.listen.stopped
+
+
+@pytest.mark.unit
+def test_http_get_output_saves_json_response(runner, monkeypatch, tmp_path):
+    """http-get --output：JSON 响应也应写入文件（旧版只在非 JSON 时保存）。"""
+    import DrissionPage
+    from dp_cli.main import cli
+
+    class Resp:
+        status_code = 200
+        content = b'{"x":1}'
+        text = '{"x":1}'
+
+        def json(self):
+            return {'x': 1}
+
+    class SP:
+        def __init__(self, session_or_options=None):
+            self.url = ''
+            self.response = None
+
+        def get(self, url, timeout=None):
+            self.url = url
+            self.response = Resp()
+
+    monkeypatch.setattr(DrissionPage, 'SessionPage', SP)
+    out_file = tmp_path / 'resp.json'
+    result = runner.invoke(
+        cli, ['http-get', 'https://api.example.com', '--output', str(out_file)])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['status'] == 'ok'
+    assert out['data']['saved_to'] == str(out_file)
+    assert out_file.read_bytes() == b'{"x":1}'
+
+
+@pytest.mark.unit
+def test_http_post_output_option(runner, monkeypatch, tmp_path):
+    """http-post --output：与 http-get 对称，支持保存响应体。"""
+    import DrissionPage
+    from dp_cli.main import cli
+
+    class Resp:
+        status_code = 200
+        content = b'ok-body'
+        text = 'ok-body'
+
+        def json(self):
+            raise ValueError('not json')
+
+    class SP:
+        def __init__(self, session_or_options=None):
+            self.url = ''
+            self.response = None
+
+        def post(self, url, **kw):
+            self.url = url
+            self.response = Resp()
+
+    monkeypatch.setattr(DrissionPage, 'SessionPage', SP)
+    out_file = tmp_path / 'resp.txt'
+    result = runner.invoke(
+        cli, ['http-post', 'https://api.example.com',
+              '--data', '{"a":1}', '--output', str(out_file)])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['data']['saved_to'] == str(out_file)
+    assert out_file.read_bytes() == b'ok-body'
+
+
+@pytest.mark.unit
+def test_press_function_key(runner, monkeypatch):
+    """press F5 映射到 Keys.F5，而不是字面输入 'F5'。"""
+    import dp_cli.commands.keyboard as kb_mod
+    from DrissionPage._functions.keys import Keys
+    from dp_cli.main import cli
+
+    class _Actions:
+        def __init__(self):
+            self.calls = []
+
+        def key_down(self, k):
+            self.calls.append(('down', k))
+            return self
+
+        def key_up(self, k):
+            self.calls.append(('up', k))
+            return self
+
+        def type(self, t):
+            self.calls.append(('type', t))
+            return self
+
+    class P:
+        def __init__(self):
+            self.actions = _Actions()
+
+    page = P()
+    monkeypatch.setattr(kb_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['press', 'F5'])
+    assert result.exit_code == 0
+    assert page.actions.calls == [('type', Keys.F5)]
+
+
+@pytest.mark.unit
+def test_press_multi_modifier(runner, monkeypatch):
+    """press Control+Shift+Delete：多修饰键依次 key_down、反向 key_up。"""
+    import dp_cli.commands.keyboard as kb_mod
+    from DrissionPage._functions.keys import Keys
+    from dp_cli.main import cli
+
+    class _Actions:
+        def __init__(self):
+            self.calls = []
+
+        def key_down(self, k):
+            self.calls.append(('down', k))
+            return self
+
+        def key_up(self, k):
+            self.calls.append(('up', k))
+            return self
+
+        def type(self, t):
+            self.calls.append(('type', t))
+            return self
+
+    class P:
+        def __init__(self):
+            self.actions = _Actions()
+
+    page = P()
+    monkeypatch.setattr(kb_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['press', 'Control+Shift+Delete'])
+    assert result.exit_code == 0
+    assert page.actions.calls == [
+        ('down', Keys.CTRL), ('down', Keys.SHIFT),
+        ('type', '\ue017'),
+        ('up', Keys.SHIFT), ('up', Keys.CTRL),
+    ]
+
+
+@pytest.mark.unit
+def test_press_single_modifier_unchanged(runner, monkeypatch):
+    """press Control+A 行为保持兼容。"""
+    import dp_cli.commands.keyboard as kb_mod
+    from DrissionPage._functions.keys import Keys
+    from dp_cli.main import cli
+
+    class _Actions:
+        def __init__(self):
+            self.calls = []
+
+        def key_down(self, k):
+            self.calls.append(('down', k))
+            return self
+
+        def key_up(self, k):
+            self.calls.append(('up', k))
+            return self
+
+        def type(self, t):
+            self.calls.append(('type', t))
+            return self
+
+    class P:
+        def __init__(self):
+            self.actions = _Actions()
+
+    page = P()
+    monkeypatch.setattr(kb_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['press', 'Control+A'])
+    assert result.exit_code == 0
+    assert page.actions.calls == [
+        ('down', Keys.CTRL), ('type', 'A'), ('up', Keys.CTRL),
+    ]
+
+
+@pytest.mark.unit
+def test_record_active_tab_direct_get_tab(monkeypatch):
+    """_get_active_page_for_record 直接 get_tab(targetId)，
+    不再对每个 target 遍历全部 tab（旧版 O(targets×tabs) 次调用）。"""
+    import dp_cli.session as sess_mod
+    import dp_cli.commands.record as rec
+
+    get_tab_calls = []
+
+    class _Tab:
+        def __init__(self, tid):
+            self.tab_id = tid
+
+    class B:
+        latest_tab = None
+
+        def run_cdp(self, m, **kw):
+            assert m == 'Target.getTargets'
+            return {'targetInfos': [
+                {'attached': True, 'type': 'page', 'targetId': 'T1'},
+                {'attached': False, 'type': 'page', 'targetId': 'T0'},
+                {'attached': True, 'type': 'page', 'targetId': 'T2'},
+            ]}
+
+        def get_tab(self, tid):
+            get_tab_calls.append(tid)
+            return _Tab(tid)
+
+    monkeypatch.setattr(sess_mod, 'get_browser', lambda s: B())
+    tab = rec._get_active_page_for_record('default')
+    assert tab.tab_id == 'T1'
+    assert get_tab_calls == ['T1']
+
+
+@pytest.mark.unit
+def test_record_start_none_url_no_crash(runner, monkeypatch):
+    """record-start：tab.url 为 None 时不再 TypeError（旧版 [:40] 崩溃）。"""
+    import dp_cli.session as sess_mod
+    import dp_cli.commands.record as rec
+    from dp_cli.main import cli
+
+    class _Tab:
+        tab_id = 'T1'
+        url = None
+        title = None
+
+    class B:
+        latest_tab = None
+
+        def run_cdp(self, m, **kw):
+            return {'targetInfos': [
+                {'attached': True, 'type': 'page', 'targetId': 'T1'}]}
+
+        def get_tab(self, tid):
+            return _Tab()
+
+    monkeypatch.setattr(sess_mod, 'get_browser', lambda s: B())
+    monkeypatch.setattr(rec, 'load_session', lambda s: {})
+    monkeypatch.setattr(rec, 'save_session', lambda s, d: None)
+    monkeypatch.setattr(rec, 'clear_recorded_actions', lambda p: None)
+    monkeypatch.setattr(rec, 'inject_recorder', lambda p: {'injected': True})
+    result = runner.invoke(cli, ['record-start'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['status'] == 'ok'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t4 复核缺陷回归：PageUp/PageDown 键名映射、_emit_response None 响应、
+# cookie-list 域级匹配边界
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _RecActions:
+    """记录 actions 链式调用的假对象。"""
+
+    def __init__(self):
+        self.calls = []
+
+    def key_down(self, k):
+        self.calls.append(('down', k))
+        return self
+
+    def key_up(self, k):
+        self.calls.append(('up', k))
+        return self
+
+    def type(self, t):
+        self.calls.append(('type', t))
+        return self
+
+
+class _ActionsPage:
+    def __init__(self):
+        self.actions = _RecActions()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize('key_name,attr', [
+    ('PageUp', 'PAGE_UP'), ('PageDown', 'PAGE_DOWN'),
+    ('pgup', 'PAGE_UP'), ('pgdn', 'PAGE_DOWN'),
+    ('page-up', 'PAGE_UP'), ('page-down', 'PAGE_DOWN'),
+    ('Home', 'HOME'), ('End', 'END'), ('Insert', 'INSERT'),
+])
+def test_press_special_key_names(runner, monkeypatch, key_name, attr):
+    """press PageUp/PageDown/Home/End 等映射到 Keys 枚举，
+    不再回退为字面文本输入。"""
+    import dp_cli.commands.keyboard as kb_mod
+    from DrissionPage._functions.keys import Keys
+    from dp_cli.main import cli
+
+    page = _ActionsPage()
+    monkeypatch.setattr(kb_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['press', key_name])
+    assert result.exit_code == 0
+    assert page.actions.calls == [('type', getattr(Keys, attr))]
+
+
+@pytest.mark.unit
+def test_press_control_pageup_no_literal(runner, monkeypatch):
+    """Control+PageUp：主键必须是 Keys.PAGE_UP 而非字面 'PageUp'——
+    旧版映射失败会带 Ctrl 输入文本，误触 Ctrl+P 等浏览器快捷键。"""
+    import dp_cli.commands.keyboard as kb_mod
+    from DrissionPage._functions.keys import Keys
+    from dp_cli.main import cli
+
+    page = _ActionsPage()
+    monkeypatch.setattr(kb_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['press', 'Control+PageUp'])
+    assert result.exit_code == 0
+    assert page.actions.calls == [
+        ('down', Keys.CTRL), ('type', Keys.PAGE_UP), ('up', Keys.CTRL),
+    ]
+
+
+@pytest.mark.unit
+def test_emit_response_none_response_with_output(tmp_path):
+    """_emit_response：response=None + --output 不崩溃，写空文件。"""
+    import dp_cli.commands.network as net_mod
+
+    class P:
+        url = 'https://x'
+        response = None
+
+    out_file = tmp_path / 'empty.bin'
+    result = net_mod._emit_response(P(), str(out_file))
+    assert result['status_code'] is None
+    assert result['saved_to'] == str(out_file)
+    assert out_file.read_bytes() == b''
+
+
+@pytest.mark.unit
+def test_emit_response_none_response_inline():
+    """_emit_response：response=None 且无 --output → body=None，不崩。"""
+    import dp_cli.commands.network as net_mod
+
+    class P:
+        url = 'https://x'
+        response = None
+
+    result = net_mod._emit_response(P(), None)
+    assert result['status_code'] is None
+    assert result['body'] is None
+
+
+@pytest.mark.unit
+def test_cookie_list_domain_boundary_match(runner, monkeypatch):
+    """cookie-list --domain：域级边界匹配，notexample.com 不被
+    example.com 误中（旧版子串匹配缺陷）。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1', 'domain': '.example.com', 'path': '/'},
+                {'name': 'b', 'value': '2', 'domain': 'sub.example.com', 'path': '/'},
+                {'name': 'c', 'value': '3', 'domain': '.notexample.com', 'path': '/'},
+                {'name': 'd', 'value': '4', 'domain': '.ample.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--domain', 'example.com'])
+    out = json.loads(result.output)
+    names = [c['name'] for c in out['data']['cookies']]
+    assert names == ['a', 'b']
+
+
+@pytest.mark.unit
+def test_cookie_list_domain_subfilter(runner, monkeypatch):
+    """cookie-list --domain sub.example.com：命中父域 cookie
+    （.example.com 对该子域生效），仍不命中无关域。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1', 'domain': '.example.com', 'path': '/'},
+                {'name': 'b', 'value': '2', 'domain': 'sub.example.com', 'path': '/'},
+                {'name': 'c', 'value': '3', 'domain': '.other.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--domain', 'sub.example.com'])
+    out = json.loads(result.output)
+    names = [c['name'] for c in out['data']['cookies']]
+    assert names == ['a', 'b']
+
+
+@pytest.mark.unit
+def test_cookie_list_url_notexample_rejected(runner, monkeypatch):
+    """cookie-list --url https://notexample.com：不命中 .example.com cookie。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1', 'domain': '.example.com', 'path': '/'},
+                {'name': 'c', 'value': '3', 'domain': '.notexample.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--url', 'https://notexample.com/'])
+    out = json.loads(result.output)
+    names = [c['name'] for c in out['data']['cookies']]
+    assert names == ['c']

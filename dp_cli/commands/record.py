@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """操作录制命令: record-start / record-stop / record-show / record-clear"""
+import sys
 from pathlib import Path
 
 import click
@@ -16,38 +17,27 @@ def _get_active_page_for_record(session):
     """获取浏览器当前激活的标签页用于录制（忽略 session 中的 active_tab 绑定）"""
     from dp_cli.session import get_browser
     page = get_browser(session)
-    
-    # 使用 CDP 找到当前真正激活的标签页
+
+    # 使用 CDP 找到当前真正激活的标签页，直接按 targetId 取 tab
+    # （DrissionPage 的 tab_id 即 CDP targetId，无需为每个 target 遍历全部 tab）
     try:
         result = page.run_cdp('Target.getTargets')
         for target in result.get('targetInfos', []):
             if target.get('attached') and target.get('type') == 'page':
-                target_id = target.get('targetId')
-                # 通过 targetId 获取对应的 tab
-                for tab in [page.get_tab(tid) for tid in _get_all_tab_ids(page)]:
-                    if tab and tab.tab_id == target_id:
-                        return tab
+                try:
+                    tab = page.get_tab(target.get('targetId'))
+                except Exception:
+                    continue
+                if tab:
+                    return tab
     except Exception as e:
-        print(f'[record] Failed to get active tab via CDP: {e}', file=__import__('sys').stderr)
-    
+        print(f'[record] Failed to get active tab via CDP: {e}', file=sys.stderr)
+
     # 回退到 latest_tab
     try:
         return page.latest_tab or page
     except Exception:
         return page
-
-
-def _get_all_tab_ids(page):
-    """获取所有标签页的 ID 列表"""
-    try:
-        # 使用 CDP 获取所有目标
-        result = page.run_cdp('Target.getTargets')
-        return [
-            t.get('targetId') for t in result.get('targetInfos', [])
-            if t.get('type') == 'page'
-        ]
-    except Exception:
-        return []
 
 
 def _get_recording_page(session):
@@ -98,7 +88,8 @@ def register(cli):
             save_session(session, sess)
             data = dict(status or {})
             data['tab'] = _page_info(page)
-            msg = (f'操作录制已开始，已绑定标签页: {data["tab"]["url"][:40]}...\n'
+            tab_url = (data['tab']['url'] or '')[:40]
+            msg = (f'操作录制已开始，已绑定标签页: {tab_url}...\n'
                    f'  提示: 如果绑定不正确，请先执行 "dp tab-select <序号>" 选择正确标签，再录制')
             ok(data, msg=msg)
         except Exception as e:

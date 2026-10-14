@@ -8,6 +8,18 @@ from dp_cli.output import ok, error
 from dp_cli.commands._utils import session_option, _get_page
 
 
+def _is_local_or_ip(host: str) -> bool:
+    """无点号的合法主机名白名单：localhost 或 IP 字面量（IPv4/IPv6）。"""
+    if host == 'localhost':
+        return True
+    try:
+        import ipaddress
+        ipaddress.ip_address(host.strip('[]'))
+        return True
+    except ValueError:
+        return False
+
+
 def register(cli):
 
     # ── Cookie ──────────────────────────────────
@@ -26,12 +38,27 @@ def register(cli):
         """
         page = _get_page(session)
         try:
+            # --domain 先校验：拒绝裸顶级后缀（如 com/org，会导致命中全站 cookie）；
+            # localhost / IP 字面量（IPv4/IPv6）是无点号的合法主机名，放行
+            fd = None
+            if domain:
+                fd = domain.lower().strip('.')
+                if '.' not in fd and not _is_local_or_ip(fd):
+                    error(f'--domain 非法: {domain}（请使用完整域名，如 example.com）',
+                          code='INVALID_ARGS')
             # all_info=True 保留 domain/path 等完整字段，供 --domain/--url 过滤
             cookies = page.cookies(all_domains=True, all_info=True)
             # --url：取 host 做 cookie domain 匹配（.example.com 匹配 sub.example.com）
+            # urlsplit 正确处理 userinfo/端口/IPv6（[::1]:9222）等形态；
+            # 无 scheme 的裸 host 补 '//' 前缀使其被识别为 netloc
             host = None
             if url:
-                host = url.split('://', 1)[-1].split('/')[0].split(':')[0].lower()
+                try:
+                    from urllib.parse import urlsplit
+                    u = url if '://' in url else '//' + url
+                    host = (urlsplit(u).hostname or '').lower() or None
+                except ValueError:
+                    host = None
             cookie_list_data = []
             for c in cookies:
                 c_domain = (c.get('domain') or '')
@@ -39,8 +66,7 @@ def register(cli):
                     # 域级匹配（标签边界）：example.com 命中 .example.com /
                     # sub.example.com 的 cookie，不命中 notexample.com
                     # （子串匹配会误中）
-                    fd = domain.lower().lstrip('.')
-                    cd = c_domain.lower().lstrip('.')
+                    cd = c_domain.lower().strip('.')
                     if not (cd == fd or cd.endswith('.' + fd)
                             or fd.endswith('.' + cd)):
                         continue
@@ -51,7 +77,11 @@ def register(cli):
                 cookie_list_data.append({'name': c.get('name'),
                                          'value': c.get('value'),
                                          'domain': c_domain,
-                                         'path': c.get('path', '/')})
+                                         'path': c.get('path', '/'),
+                                         'secure': c.get('secure', False),
+                                         'httpOnly': c.get('httpOnly', False),
+                                         'sameSite': c.get('sameSite'),
+                                         'expires': c.get('expires')})
             ok({'cookies': cookie_list_data, 'count': len(cookie_list_data)})
         except Exception as e:
             error(f'获取 Cookie 失败', code='COOKIE_FAILED', detail=str(e))

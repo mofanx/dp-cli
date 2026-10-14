@@ -363,12 +363,12 @@ def test_click_command_success(runner, monkeypatch):
 
 @pytest.mark.unit
 def test_click_command_element_not_found(runner, monkeypatch):
-    """click 命令:元素未找到 → error 退出码 1。"""
+    """click 命令:元素未找到 → error 退出码 4（not_found 分级）。"""
     from dp_cli.main import cli
     monkeypatch.setattr(_utils, "get_browser", lambda s: FakePage(ele=None))
     monkeypatch.setattr(_utils, "load_session", lambda s: {})
     result = runner.invoke(cli, ["click", "text:不存在"])
-    assert result.exit_code == 1
+    assert result.exit_code == 4
     out = json.loads(result.output)
     assert out["status"] == "error"
     assert out["code"] == "ELEMENT_NOT_FOUND"
@@ -383,7 +383,7 @@ def test_click_command_no_session_errors(runner, monkeypatch):
         raise ConnectionError("no browser")
     monkeypatch.setattr(_utils, "get_browser", boom)
     result = runner.invoke(cli, ["click", "text:x"])
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     out = json.loads(result.output)
     assert out["status"] == "error"
     assert out["code"] == "SESSION_NOT_FOUND"
@@ -887,3 +887,1123 @@ def test_cookie_list_url_notexample_rejected(runner, monkeypatch):
     out = json.loads(result.output)
     names = [c['name'] for c in out['data']['cookies']]
     assert names == ['c']
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p0b 增强：console/error 捕获、dialog 应答、cookie-list 残余边界
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _FakeDriver:
+    """模拟 DrissionPage driver 的 CDP 回调注册接口。"""
+
+    def __init__(self):
+        self.callbacks = {}
+
+    def set_callback(self, event, cb):
+        self.callbacks[event] = cb
+
+
+class _ConsolePage:
+    def __init__(self, msgs=None):
+        self.driver = _FakeDriver()
+        self.cdp_calls = []
+        if msgs is not None:
+            self._dp_console_msgs = msgs
+
+    def run_cdp(self, method, **kwargs):
+        self.cdp_calls.append(method)
+        return {}
+
+
+@pytest.mark.unit
+def test_console_listen_registers_cdp_callbacks(runner, monkeypatch):
+    """console-listen：开启 Runtime/Log 域并注册三类回调。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['console-listen'])
+    assert result.exit_code == 0, result.output
+    assert 'Runtime.enable' in page.cdp_calls
+    assert 'Log.enable' in page.cdp_calls
+    assert hasattr(page, '_dp_console_msgs')
+    cbs = page.driver.callbacks
+    assert callable(cbs['Runtime.consoleAPICalled'])
+    assert callable(cbs['Runtime.exceptionThrown'])
+    assert callable(cbs['Log.entryAdded'])
+
+
+@pytest.mark.unit
+def test_console_callbacks_capture_messages(runner, monkeypatch):
+    """console-listen 注册的回调应把 console/exception/log 事件写入队列。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    runner.invoke(cli, ['console-listen'])
+    cbs = page.driver.callbacks
+    cbs['Runtime.consoleAPICalled'](
+        type='error', args=[{'value': 'boom'}], timestamp=111)
+    cbs['Runtime.exceptionThrown'](
+        exceptionDetails={'exception': {'description': 'uncaught'}},
+        timestamp=222)
+    cbs['Log.entryAdded'](
+        entry={'level': 'warning', 'text': '404 not found',
+               'source': 'network'},
+        timestamp=333)
+    msgs = list(page._dp_console_msgs)
+    assert msgs[0]['level'] == 'error'
+    assert msgs[0]['text'] == 'boom'
+    assert msgs[0]['source'] == 'console'
+    assert msgs[1]['level'] == 'error'
+    assert msgs[1]['source'] == 'exception'
+    assert 'uncaught' in msgs[1]['text']
+    assert msgs[2]['level'] == 'warning'
+    assert msgs[2]['source'] == 'network'
+
+
+@pytest.mark.unit
+def test_console_dump_returns_and_cleans(runner, monkeypatch):
+    """console-dump：返回捕获事件、清空队列并移除回调。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage(
+        msgs=[{'level': 'error', 'text': 'boom',
+               'source': 'console', 'timestamp': 1}])
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['console-dump'])
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)
+    assert out['status'] == 'ok'
+    assert out['data']['count'] == 1
+    assert out['data']['messages'][0]['text'] == 'boom'
+    assert page._dp_console_msgs == []
+    assert page.driver.callbacks['Runtime.consoleAPICalled'] is None
+    assert page.driver.callbacks['Runtime.exceptionThrown'] is None
+    assert page.driver.callbacks['Log.entryAdded'] is None
+
+
+@pytest.mark.unit
+def test_console_dump_keep(runner, monkeypatch):
+    """console-dump --keep：保留事件与回调。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    runner.invoke(cli, ['console-listen'])
+    page._dp_console_msgs.append(
+        {'level': 'info', 'text': 'keep-me',
+         'source': 'console', 'timestamp': 1})
+    result = runner.invoke(cli, ['console-dump', '--keep'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)
+    assert out['data']['count'] == 1
+    assert len(page._dp_console_msgs) == 1
+    assert page.driver.callbacks['Runtime.consoleAPICalled'] is not None
+
+
+@pytest.mark.unit
+def test_console_dump_empty(runner, monkeypatch):
+    """console-dump 在未 listen 的页面上返回空列表而非报错。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['console-dump'])
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)
+    assert out['data']['count'] == 0
+
+
+@pytest.mark.unit
+def test_dialog_accept_calls_handle_alert(runner, monkeypatch):
+    """dialog-accept 传入文本时以 accept=True + send 调用 handle_alert。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    class P:
+        def __init__(self):
+            self.calls = []
+
+        def handle_alert(self, accept=True, send=None,
+                         timeout=None, next_one=False):
+            self.calls.append((accept, send, timeout, next_one))
+            return 'alert text'
+
+    page = P()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['dialog-accept', 'hello'])
+    assert result.exit_code == 0, result.output
+    assert page.calls == [(True, 'hello', None, False)]
+
+
+@pytest.mark.unit
+def test_dialog_dismiss_calls_handle_alert(runner, monkeypatch):
+    """dialog-dismiss 以 accept=False 调用 handle_alert。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    class P:
+        def __init__(self):
+            self.calls = []
+
+        def handle_alert(self, accept=True, send=None,
+                         timeout=None, next_one=False):
+            self.calls.append((accept, send, timeout, next_one))
+            return 'dismissed'
+
+    page = P()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['dialog-dismiss'])
+    assert result.exit_code == 0, result.output
+    assert page.calls == [(False, None, None, False)]
+
+
+@pytest.mark.unit
+def test_cookie_list_url_strips_userinfo(runner, monkeypatch):
+    """cookie-list --url 含 userinfo 时应剥离凭据再匹配 host。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1',
+                 'domain': '.example.com', 'path': '/'},
+                {'name': 'b', 'value': '2',
+                 'domain': '.evil.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(
+        cli, ['cookie-list', '--url',
+              'https://user:pass@sub.example.com/path'])
+    out = json.loads(result.output)
+    names = [c['name'] for c in out['data']['cookies']]
+    assert names == ['a']
+
+
+@pytest.mark.unit
+def test_cookie_list_domain_bare_suffix_rejected(runner, monkeypatch):
+    """cookie-list --domain 裸顶级后缀（如 com）应被拒绝，避免命中全站。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):  # pragma: no cover
+            return []
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--domain', 'com'])
+    assert result.exit_code == 2
+    out = json.loads(result.output)
+    assert out['status'] == 'error'
+    assert out['code'] == 'INVALID_ARGS'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p0c 工程合规回归：退出码分级 / debug 日志通道 / cookie 扩展字段
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_exit_code_tiers():
+    """错误码 → 退出码分级：用法=2/连接=3/未找到=4/超时=5，
+    未注册码与通用运行时失败保持 1（向后兼容）。"""
+    from dp_cli.output import _exit_code_for
+    assert _exit_code_for('INVALID_ARGS') == 2
+    assert _exit_code_for('PW_SYNTAX') == 2
+    assert _exit_code_for('SESSION_NOT_FOUND') == 3
+    assert _exit_code_for('HTTP_FAILED') == 3
+    assert _exit_code_for('ELEMENT_NOT_FOUND') == 4
+    assert _exit_code_for('NO_REFS') == 4
+    assert _exit_code_for('WAIT_TIMEOUT') == 5
+    assert _exit_code_for('LISTEN_FAILED') == 1
+    assert _exit_code_for('SOME_UNREGISTERED_CODE') == 1
+
+
+@pytest.mark.unit
+def test_error_json_contract_unchanged(capsys):
+    """error() 的 JSON 契约不变：status/code/message/detail 字段照旧。"""
+    import pytest as _pytest
+    from dp_cli.output import error
+    with _pytest.raises(SystemExit) as exc_info:
+        error('msg', code='ELEMENT_NOT_FOUND', detail='d')
+    assert exc_info.value.code == 4
+    out = json.loads(capsys.readouterr().out)
+    assert out == {'status': 'error', 'code': 'ELEMENT_NOT_FOUND',
+                   'message': 'msg', 'detail': 'd'}
+
+
+@pytest.mark.unit
+def test_debug_channel_gated(capsys):
+    """debug() 默认静默；启用后输出到 stderr，不污染 stdout。"""
+    from dp_cli import logs
+    logs.set_debug(False)
+    logs.debug('hidden', ValueError('x'))
+    captured = capsys.readouterr()
+    assert captured.err == '' and captured.out == ''
+
+    try:
+        logs.set_debug(True)
+        logs.debug('visible msg', ValueError('boom'))
+        captured = capsys.readouterr()
+        assert '[dp:debug] visible msg: ValueError: boom' in captured.err
+        assert captured.out == ''
+    finally:
+        logs.set_debug(False)
+
+
+@pytest.mark.unit
+def test_verbose_flag_enables_debug(runner):
+    """CLI 全局 -v/--verbose 开关启用 debug 通道。"""
+    from dp_cli import logs
+    from dp_cli.main import cli
+    logs.set_debug(False)
+    try:
+        result = runner.invoke(cli, ['-v'])
+        assert result.exit_code == 0
+        assert logs.is_debug()
+    finally:
+        logs.set_debug(False)
+
+
+@pytest.mark.unit
+def test_cookie_list_extended_fields(runner, monkeypatch):
+    """cookie-list 输出应包含 secure/httpOnly/sameSite/expires 字段。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [{'name': 'sid', 'value': '1', 'domain': '.example.com',
+                     'path': '/', 'secure': True, 'httpOnly': True,
+                     'sameSite': 'Lax', 'expires': 1893456000.0}]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list'])
+    assert result.exit_code == 0
+    c = json.loads(result.output)['data']['cookies'][0]
+    assert c['secure'] is True
+    assert c['httpOnly'] is True
+    assert c['sameSite'] == 'Lax'
+    assert c['expires'] == 1893456000.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p1b 自动化能力回归：emulate / download / intercept
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _CdpPage:
+    """记录 run_cdp 调用的假页面。"""
+    def __init__(self):
+        self.calls = []
+        self.url = 'https://x'
+
+    def run_cdp(self, cmd, **kw):
+        self.calls.append((cmd, kw))
+        return {}
+
+    def run_js(self, js, **kw):
+        return 'UA-CURRENT'
+
+
+@pytest.mark.unit
+def test_emulate_all_overrides(runner, monkeypatch):
+    """emulate 全参数：5 类 CDP override 全部下发，配置写入会话。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    saved = {}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+
+    result = runner.invoke(cli, [
+        'emulate', '--viewport', '375x812', '--ua', 'MyUA',
+        '--locale', 'zh-CN', '--timezone', 'Asia/Shanghai',
+        '--geolocation', '39.9,116.4,50'])
+    assert result.exit_code == 0, result.output
+    cmds = [c[0] for c in page.calls]
+    assert 'Emulation.setDeviceMetricsOverride' in cmds
+    assert 'Emulation.setTimezoneOverride' in cmds
+    assert 'Emulation.setLocaleOverride' in cmds
+    assert 'Emulation.setUserAgentOverride' in cmds
+    assert 'Emulation.setGeolocationOverride' in cmds
+    metrics = dict(page.calls)['Emulation.setDeviceMetricsOverride']
+    assert metrics['width'] == 375 and metrics['height'] == 812
+    geo = dict(page.calls)['Emulation.setGeolocationOverride']
+    assert geo['latitude'] == 39.9 and geo['longitude'] == 116.4 and geo['accuracy'] == 50.0
+    ua = dict(page.calls)['Emulation.setUserAgentOverride']
+    assert ua['userAgent'] == 'MyUA' and ua['acceptLanguage'] == 'zh-CN'
+    assert saved['emulate']['viewport'] == (375, 812)
+
+
+@pytest.mark.unit
+def test_emulate_locale_only_fetches_current_ua(runner, monkeypatch):
+    """仅 --locale：setUserAgentOverride 需带 userAgent，用 navigator.userAgent 回填。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: None)
+    result = runner.invoke(cli, ['emulate', '--locale', 'ja-JP'])
+    assert result.exit_code == 0
+    ua = dict(page.calls)['Emulation.setUserAgentOverride']
+    assert ua['userAgent'] == 'UA-CURRENT' and ua['acceptLanguage'] == 'ja-JP'
+
+
+@pytest.mark.unit
+def test_emulate_invalid_args(runner, monkeypatch):
+    """非法 viewport/geolocation → INVALID_ARGS（退出码 2）。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    monkeypatch.setattr(em, '_get_page', lambda s: _CdpPage())
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    r1 = runner.invoke(cli, ['emulate', '--viewport', 'abc'])
+    assert r1.exit_code == 2
+    assert json.loads(r1.output)['code'] == 'INVALID_ARGS'
+    r2 = runner.invoke(cli, ['emulate', '--geolocation', 'x,y'])
+    assert r2.exit_code == 2
+
+
+@pytest.mark.unit
+def test_emulate_reset(runner, monkeypatch):
+    """--reset：清除全部 override 并移除会话配置。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    saved = {}
+    sess = {'emulate': {'viewport': (1, 1)}}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+    result = runner.invoke(cli, ['emulate', '--reset'])
+    assert result.exit_code == 0
+    cmds = [c[0] for c in page.calls]
+    assert 'Emulation.clearDeviceMetricsOverride' in cmds
+    assert 'Emulation.clearGeolocationOverride' in cmds
+    assert 'emulate' not in saved
+
+
+@pytest.mark.unit
+def test_intercept_block_and_header(runner, monkeypatch):
+    """intercept --block/--header：Network domain 三次调用 + 会话持久化。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    saved = {}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+    result = runner.invoke(cli, [
+        'intercept', '--block', '*.png', '--block', '*ads*',
+        '--header', 'X-Token=abc'])
+    assert result.exit_code == 0
+    kw = dict(page.calls)
+    assert kw['Network.setBlockedURLs']['urls'] == ['*.png', '*ads*']
+    assert kw['Network.setExtraHTTPHeaders']['headers'] == {'X-Token': 'abc'}
+    assert saved['intercept']['block'] == ['*.png', '*ads*']
+
+
+@pytest.mark.unit
+def test_intercept_off_clears(runner, monkeypatch):
+    """intercept --off：下发空配置并从会话移除。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    saved = {}
+    sess = {'intercept': {'block': ['*.png'], 'headers': {'A': 'b'}}}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+    result = runner.invoke(cli, ['intercept', '--off'])
+    assert result.exit_code == 0
+    kw = dict(page.calls)
+    assert kw['Network.setBlockedURLs']['urls'] == []
+    assert kw['Network.setExtraHTTPHeaders']['headers'] == {}
+    assert 'intercept' not in saved
+
+
+@pytest.mark.unit
+def test_intercept_header_bad_format(runner, monkeypatch):
+    """--header 缺 = → INVALID_ARGS。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    monkeypatch.setattr(em, '_get_page', lambda s: _CdpPage())
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['intercept', '--header', 'novalue'])
+    assert r.exit_code == 2
+
+
+@pytest.mark.unit
+def test_download_sets_path_and_reports_empty(runner, monkeypatch, tmp_path):
+    """download --dir：调用 set.download_path；无任务时给 note 提示。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    calls = []
+    mgr = SimpleNamespace(missions={})
+    page = SimpleNamespace(
+        browser=SimpleNamespace(_dl_mgr=mgr),
+        download_path=str(tmp_path),
+        set=SimpleNamespace(
+            download_path=lambda p: calls.append(p),
+            when_download_file_exists=lambda m: calls.append(('exists', m)),
+        ),
+    )
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['download', '--dir', str(tmp_path),
+                               '--timeout', '0', '--exists', 'overwrite'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)['data']
+    assert calls == [str(tmp_path), ('exists', 'overwrite')]
+    assert out['missions'] == []
+    assert '未检测到下载任务' in out['note']
+
+
+@pytest.mark.unit
+def test_download_completed_mission(runner, monkeypatch, tmp_path):
+    """download：已完成的 mission 正常汇总输出。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    m = SimpleNamespace(name='f.zip', url='https://x/f.zip', state='completed',
+                        is_done=True, final_path='/tmp/f.zip', folder=None)
+    mgr = SimpleNamespace(missions={'g1': m})
+    page = SimpleNamespace(
+        browser=SimpleNamespace(_dl_mgr=mgr),
+        download_path='.',
+        set=SimpleNamespace(download_path=lambda p: None,
+                            when_download_file_exists=lambda x: None),
+    )
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['download', '--timeout', '0'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)['data']
+    assert out['missions'][0]['name'] == 'f.zip'
+    assert out['missions'][0]['state'] == 'completed'
+
+
+@pytest.mark.unit
+def test_get_page_replays_session_overrides(monkeypatch):
+    """_get_page 对会话中的 emulate/intercept 配置自动重放到目标页。"""
+    from dp_cli.commands import _utils
+    from dp_cli.main import cli  # noqa
+
+    page = _CdpPage()
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {
+        'emulate': {'viewport': [100, 200], 'timezone': 'UTC'},
+        'intercept': {'block': ['*.png'], 'headers': {'A': 'b'}},
+    })
+    target = _utils._get_page('s')
+    cmds = [c[0] for c in target.calls]
+    assert 'Emulation.setDeviceMetricsOverride' in cmds
+    assert 'Emulation.setTimezoneOverride' in cmds
+    assert 'Network.setBlockedURLs' in cmds
+    assert 'Network.setExtraHTTPHeaders' in cmds
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p2b 观测能力回归：perf / trace / screencast
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _TracePage(_CdpPage):
+    """带 driver.set_callback 的假页面，Tracing.end 时触发 tracingComplete。"""
+    def __init__(self):
+        super().__init__()
+        self.cbs = {}
+        self.driver = self
+
+    def set_callback(self, name, fn):
+        if fn is None:
+            self.cbs.pop(name, None)
+        else:
+            self.cbs[name] = fn
+
+    def run_cdp(self, cmd, **kw):
+        self.calls.append((cmd, kw))
+        if cmd == 'Performance.getMetrics':
+            return {'metrics': [
+                {'name': 'JSHeapUsedSize', 'value': 1024},
+                {'name': 'Nodes', 'value': 500},
+                {'name': 'SomeOtherMetric', 'value': 1},
+            ]}
+        if cmd == 'Tracing.start':
+            cb = self.cbs.get('Tracing.dataCollected')
+            if cb:
+                cb(value=[{'name': 'e1'}, {'name': 'e2'}])
+        if cmd == 'Tracing.end':
+            cb = self.cbs.get('Tracing.tracingComplete')
+            if cb:
+                cb()
+        return {}
+
+
+@pytest.mark.unit
+def test_perf_aggregates_metrics_and_timing(runner, monkeypatch):
+    """perf：默认只输出关键 metrics 子集 + Navigation Timing 聚合。"""
+    import dp_cli.commands.observe as ob
+    from dp_cli.main import cli
+
+    page = _TracePage()
+    nav = {'url': 'https://x', 'ttfb_ms': 12.5, 'duration_ms': 345.6}
+    monkeypatch.setattr(ob, '_get_page', lambda s: page)
+    page.run_js = lambda js, **kw: json.dumps(nav)
+    result = runner.invoke(cli, ['perf'])
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)['data']
+    assert out['metrics'] == {'JSHeapUsedSize': 1024, 'Nodes': 500}
+    assert out['navigation_timing']['ttfb_ms'] == 12.5
+
+
+@pytest.mark.unit
+def test_perf_raw_keeps_all(runner, monkeypatch):
+    """perf --raw：保留全部 metrics。"""
+    import dp_cli.commands.observe as ob
+    from dp_cli.main import cli
+
+    page = _TracePage()
+    monkeypatch.setattr(ob, '_get_page', lambda s: page)
+    page.run_js = lambda js, **kw: '{}'
+    result = runner.invoke(cli, ['perf', '--raw'])
+    out = json.loads(result.output)['data']
+    assert 'SomeOtherMetric' in out['metrics']
+
+
+@pytest.mark.unit
+def test_perf_failure(runner, monkeypatch):
+    """getMetrics 抛错 → PERF_FAILED（exit 1）。"""
+    import dp_cli.commands.observe as ob
+    from dp_cli.main import cli
+
+    page = _TracePage()
+    def boom(cmd, **kw):
+        if cmd == 'Performance.getMetrics':
+            raise RuntimeError('cdp down')
+        return {}
+    page.run_cdp = boom
+    monkeypatch.setattr(ob, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['perf'])
+    assert result.exit_code == 1
+    assert json.loads(result.output)['code'] == 'PERF_FAILED'
+
+
+@pytest.mark.unit
+def test_trace_collects_and_writes(runner, monkeypatch, tmp_path):
+    """trace：Tracing.start→end，dataCollected 事件写入 output JSON，
+    且回调在 finally 中被清理。"""
+    import dp_cli.commands.observe as ob
+    from dp_cli.main import cli
+
+    page = _TracePage()
+    monkeypatch.setattr(ob, '_get_page', lambda s: page)
+    out = tmp_path / 't.json'
+    result = runner.invoke(cli, ['trace', '--duration', '0',
+                               '--output', str(out)])
+    assert result.exit_code == 0, result.output
+    data = json.loads(out.read_text())
+    assert data['traceEvents'] == [{'name': 'e1'}, {'name': 'e2'}]
+    # 回调已清理
+    assert 'Tracing.dataCollected' not in page.cbs
+
+
+@pytest.mark.unit
+def test_screencast_frugal_imgs(runner, monkeypatch, tmp_path):
+    """screencast：走 frugal_imgs 模式 start/stop，返回帧目录。"""
+    import dp_cli.commands.observe as ob
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    calls = []
+    sc = SimpleNamespace(
+        set_mode=lambda: SimpleNamespace(
+            frugal_imgs_mode=lambda: calls.append('mode')),
+        start=lambda p: calls.append(('start', p)),
+        stop=lambda: calls.append('stop') or str(tmp_path),
+    )
+    page = SimpleNamespace(screencast=sc)
+    monkeypatch.setattr(ob, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['screencast', '--dir', str(tmp_path),
+                               '--duration', '0'])
+    assert result.exit_code == 0, result.output
+    assert calls[0] == 'mode' and calls[1] == ('start', str(tmp_path))
+    out = json.loads(result.output)['data']
+    assert out['frames'] == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p2c 遗留修复回归：emulate --no-mobile / console falsy / IPv6 host / 无 _dl_mgr
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_emulate_no_mobile(runner, monkeypatch):
+    """emulate --viewport --no-mobile：setDeviceMetricsOverride mobile=False。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    saved = {}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+
+    result = runner.invoke(
+        cli, ['emulate', '--viewport', '1920x1080', '--no-mobile'])
+    assert result.exit_code == 0, result.output
+    metrics = dict(page.calls)['Emulation.setDeviceMetricsOverride']
+    assert metrics['mobile'] is False
+    assert saved['emulate']['mobile'] is False
+
+
+@pytest.mark.unit
+def test_emulate_mobile_default_true(runner, monkeypatch):
+    """emulate --viewport 未指定 --mobile：默认 mobile=True（保持既有行为）。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: None)
+
+    result = runner.invoke(cli, ['emulate', '--viewport', '375x812'])
+    assert result.exit_code == 0, result.output
+    metrics = dict(page.calls)['Emulation.setDeviceMetricsOverride']
+    assert metrics['mobile'] is True
+
+
+@pytest.mark.unit
+def test_console_callback_falsy_values(runner, monkeypatch):
+    """console 回调：value 为 0/False/'' 时按原值记录而非落为 description。"""
+    import dp_cli.commands.page as page_mod
+    from dp_cli.main import cli
+
+    page = _ConsolePage()
+    monkeypatch.setattr(page_mod, '_get_page', lambda s: page)
+    runner.invoke(cli, ['console-listen'])
+    cb = page.driver.callbacks['Runtime.consoleAPICalled']
+    cb(type='log', args=[{'value': 0}, {'value': False}, {'value': ''}],
+       timestamp=1)
+    msgs = list(page._dp_console_msgs)
+    assert msgs[0]['text'] == '0 False ' or msgs[0]['text'].startswith('0 False')
+
+
+
+
+@pytest.mark.unit
+def test_cookie_list_url_ipv6(runner, monkeypatch):
+    """cookie-list --url 支持 IPv6 host（[::1] 形式），不再截出 '['。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [
+                {'name': 'a', 'value': '1', 'domain': '::1', 'path': '/'},
+                {'name': 'b', 'value': '2', 'domain': '.example.com', 'path': '/'},
+            ]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    result = runner.invoke(cli, ['cookie-list', '--url', 'http://[::1]:9222/p'])
+    out = json.loads(result.output)
+    names = [c['name'] for c in out['data']['cookies']]
+    assert names == ['a']
+
+
+@pytest.mark.unit
+def test_download_no_dl_mgr_graceful(runner, monkeypatch):
+    """download：DrissionPage 无 _dl_mgr 私有属性时给 note 而非 AttributeError。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    page = SimpleNamespace(
+        browser=SimpleNamespace(),  # 无 _dl_mgr
+        download_path='.',
+        set=SimpleNamespace(download_path=lambda p: None,
+                            when_download_file_exists=lambda x: None),
+    )
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['download', '--timeout', '0'])
+    assert result.exit_code == 0, result.output
+    out = json.loads(result.output)['data']
+    assert out['missions'] == []
+    assert '_dl_mgr' in out['note']
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# p2a 网络与作用域增强：har-dump / intercept mock / --frame
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _EvtDriver:
+    """set_callback 注册时立即回放预置事件的假 driver。"""
+
+    def __init__(self, events=None):
+        self.callbacks = {}
+        self._events = events or {}
+
+    def set_callback(self, event, cb):
+        self.callbacks[event] = cb
+        if cb and event in self._events:
+            for kw in self._events[event]:
+                cb(**kw)
+
+
+class _HarPage:
+    """har-dump 用假页面：记录 run_cdp，driver 回放预置 Network 事件。"""
+
+    def __init__(self, events=None):
+        self.driver = _EvtDriver(events)
+        self.calls = []
+        self.url = 'https://x.local/'
+
+    def run_cdp(self, cmd, **kw):
+        self.calls.append((cmd, kw))
+        if cmd == 'Network.getResponseBody':
+            return {'body': 'RESP-OK', 'base64Encoded': False}
+        return {}
+
+
+_HAR_EVENTS = {
+    'Network.requestWillBeSent': [{
+        'requestId': 'r1',
+        'wallTime': 1700000000.0,
+        'timestamp': 100.0,
+        'request': {'url': 'https://x.local/api/user', 'method': 'POST',
+                    'headers': {'Content-Type': 'application/json'},
+                    'postData': '{"a":1}'},
+    }],
+    'Network.responseReceived': [{
+        'requestId': 'r1',
+        'timestamp': 100.1,
+        'response': {'status': 200, 'statusText': 'OK',
+                     'protocol': 'h2', 'mimeType': 'application/json',
+                     'headers': {'Content-Type': 'application/json'},
+                     'timing': {'sendStart': 1.0, 'sendEnd': 2.0,
+                                'receiveHeadersEnd': 10.0}},
+    }],
+    'Network.loadingFinished': [{
+        'requestId': 'r1', 'encodedDataLength': 1234, 'timestamp': 100.3,
+    }],
+}
+
+
+@pytest.mark.unit
+def test_har_dump_aggregates_entries(runner, monkeypatch):
+    """har-dump：Network 事件聚合为 HAR 1.2 entries + timings。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    page = _HarPage(_HAR_EVENTS)
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['har-dump', '--seconds', '0.05'])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)['data']
+    har = data['har']
+    assert har['log']['version'] == '1.2'
+    assert data['entries'] == 1
+    e = har['log']['entries'][0]
+    assert e['request']['method'] == 'POST'
+    assert e['request']['url'] == 'https://x.local/api/user'
+    assert e['request']['postData']['text'] == '{"a":1}'
+    assert e['response']['status'] == 200
+    assert e['response']['content']['mimeType'] == 'application/json'
+    assert e['response']['content']['size'] == 1234
+    assert e['timings']['send'] == pytest.approx(1.0)
+    assert e['timings']['wait'] == pytest.approx(8.0)
+    assert e['timings']['receive'] == pytest.approx(200.0)
+    assert e['startedDateTime'].endswith('Z')
+    # 内部临时字段不泄漏到 HAR
+    assert '_timing' not in e and '_resp_ts' not in e
+
+
+@pytest.mark.unit
+def test_har_dump_body_and_output(runner, monkeypatch, tmp_path):
+    """har-dump --body 补抓响应体；--output 写文件。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    page = _HarPage(_HAR_EVENTS)
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    out_file = tmp_path / 'trace.har'
+    result = runner.invoke(
+        cli, ['har-dump', '--seconds', '0.05', '--body',
+              '--output', str(out_file)])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)['data']
+    assert data['saved_to'] == str(out_file)
+    har = json.loads(out_file.read_text(encoding='utf-8'))
+    e = har['log']['entries'][0]
+    assert e['response']['content']['text'] == 'RESP-OK'
+    assert e['response']['content'].get('encoding') != 'base64'
+
+
+@pytest.mark.unit
+def test_har_dump_url_filter(runner, monkeypatch):
+    """har-dump --filter：不匹配的 URL 不进入 entries。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    page = _HarPage(_HAR_EVENTS)
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    result = runner.invoke(
+        cli, ['har-dump', '--seconds', '0.05', '--filter', 'other'])
+    assert result.exit_code == 0
+    assert json.loads(result.output)['data']['entries'] == 0
+
+
+@pytest.mark.unit
+def test_intercept_mock_rule_and_fetch_enable(runner, monkeypatch):
+    """intercept --mock：规则追加到 mocks、Fetch.enable 下发、回调注册。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    page.driver = _EvtDriver()
+    saved = {}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+    result = runner.invoke(cli, [
+        'intercept', '--mock', '*api/user*', '--mock-status', '201',
+        '--mock-body', '{"id":1}', '--mock-header', 'X-Mock=yes'])
+    assert result.exit_code == 0, result.output
+    kw = dict(page.calls)
+    patterns = kw['Fetch.enable']['patterns']
+    assert patterns == [{'urlPattern': '*api/user*',
+                         'requestStage': 'Request'}]
+    rule = saved['intercept']['mocks'][0]
+    assert rule['pattern'] == '*api/user*'
+    assert rule['status'] == 201
+    assert rule['body'] == '{"id":1}'
+    assert rule['headers'] == {'X-Mock': 'yes'}
+    assert callable(page.driver.callbacks['Fetch.requestPaused'])
+
+
+@pytest.mark.unit
+def test_intercept_mock_extras_without_mock(runner, monkeypatch):
+    """--mock-body/--mock-status/--mock-header 无 --mock → INVALID_ARGS。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    monkeypatch.setattr(em, '_get_page', lambda s: _CdpPage())
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    for args in (['--mock-body', 'x'], ['--mock-status', '404'],
+                 ['--mock-header', 'A=b']):
+        r = runner.invoke(cli, ['intercept'] + args)
+        assert r.exit_code == 2, args
+        assert json.loads(r.output)['code'] == 'INVALID_ARGS'
+
+
+@pytest.mark.unit
+def test_intercept_mock_clear(runner, monkeypatch):
+    """--mock-clear 清空 mocks 并 Fetch.disable。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+
+    page = _CdpPage()
+    page.driver = _EvtDriver()
+    saved = {}
+    sess = {'intercept': {'block': [], 'headers': {},
+                          'mocks': [{'pattern': '*a*', 'status': 200,
+                                     'body': 'x', 'headers': {}}]}}
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr(em, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(em, 'save_session', lambda s, d: saved.update(d))
+    result = runner.invoke(cli, ['intercept', '--mock-clear'])
+    assert result.exit_code == 0
+    assert saved['intercept']['mocks'] == []
+    cmds = [c[0] for c in page.calls]
+    assert 'Fetch.disable' in cmds
+
+
+@pytest.mark.unit
+def test_mock_handler_fulfill_and_continue(runner):
+    """_make_mock_handler：URL 匹配 → fulfillRequest（b64 body+status+headers）；
+    不匹配 → continueRequest。"""
+    import base64 as b64
+    import dp_cli.commands.emulate as em
+
+    page = _CdpPage()
+    mocks = [{'pattern': '*api/user*', 'status': 201,
+              'body': '{"ok":true}', 'headers': {'X-Mock': 'yes'}}]
+    handler = em._make_mock_handler(page, mocks)
+
+    handler(requestId='r1',
+            request={'url': 'https://x/api/user/1', 'method': 'GET'})
+    handler(requestId='r2',
+            request={'url': 'https://x/static/a.png', 'method': 'GET'})
+
+    cmds = {kw['requestId']: (cmd, kw) for cmd, kw in page.calls}
+    f_cmd, f_kw = cmds['r1']
+    assert f_cmd == 'Fetch.fulfillRequest'
+    assert f_kw['responseCode'] == 201
+    assert b64.b64decode(f_kw['body']).decode() == '{"ok":true}'
+    assert f_kw['responseHeaders'] == [{'name': 'X-Mock', 'value': 'yes'}]
+    c_cmd, _ = cmds['r2']
+    assert c_cmd == 'Fetch.continueRequest'
+
+
+# ── --frame 作用域 ──
+
+class _FakeFrame:
+    """ChromiumFrame 假对象：ele/eles 记录定位器并返回预置元素。"""
+
+    _type = 'ChromiumFrame'
+
+    def __init__(self, ele=None, eles=None):
+        self._ele = ele
+        self._eles = eles or []
+        self.ele_calls = []
+
+    def ele(self, locator, **kw):
+        self.ele_calls.append(locator)
+        return self._ele if self._ele is not None else FakeNoneEle()
+
+    def eles(self, locator, **kw):
+        self.ele_calls.append(locator)
+        return self._eles
+
+
+class _FramePage(FakePage):
+    """带 get_frame 的假页面。"""
+
+    def __init__(self, frame=None, **kw):
+        super().__init__(**kw)
+        self._frame = frame
+        self.frame_calls = []
+
+    def get_frame(self, loc, timeout=None):
+        self.frame_calls.append(loc)
+        return self._frame
+
+
+@pytest.mark.unit
+def test_click_frame_uses_frame_context(runner, monkeypatch):
+    """click --frame：元素查找发生在 frame 上下文而非主页面。"""
+    import dp_cli.commands.element as em
+    from dp_cli.main import cli
+
+    ele = FakeEle()
+    frame = _FakeFrame(ele=ele)
+    page = _FramePage(frame=frame)
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(
+        cli, ['click', 'css:.btn', '--frame', 'css:iframe'])
+    assert result.exit_code == 0, result.output
+    assert page.frame_calls == ['css:iframe']
+    assert frame.ele_calls == ['css:.btn']
+    assert 'click' in ele._clicked
+
+
+@pytest.mark.unit
+def test_frame_not_found_errors(runner, monkeypatch):
+    """--frame 定位不到 iframe → ELEMENT_NOT_FOUND（exit 4）。"""
+    import dp_cli.commands.element as em
+    from dp_cli.main import cli
+
+    page = _FramePage(frame=None)
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(
+        cli, ['click', 'css:.btn', '--frame', 'css:iframe'])
+    assert result.exit_code == 4
+    assert json.loads(result.output)['code'] == 'ELEMENT_NOT_FOUND'
+
+
+@pytest.mark.unit
+def test_assert_count_in_frame(runner, monkeypatch):
+    """assert-count --frame：在 frame 上下文内计数。"""
+    import dp_cli.commands.assert_cmd as am
+    from dp_cli.main import cli
+
+    frame = _FakeFrame(eles=[FakeEle(), FakeEle()])
+    page = _FramePage(frame=frame)
+    monkeypatch.setattr(am, '_get_page', lambda s: page)
+    result = runner.invoke(
+        cli, ['assert-count', 'css:.item', '2', '--frame', 'css:iframe'])
+    assert result.exit_code == 0, result.output
+    assert frame.ele_calls == ['css:.item']
+
+
+@pytest.mark.unit
+def test_frame_ctx_none_passthrough(runner, monkeypatch):
+    """frame_ctx 无 frame 时透传 page（不调用 get_frame）。"""
+    from dp_cli.commands._utils import frame_ctx
+    page = _FramePage()
+    assert frame_ctx(page, None) is page
+    assert page.frame_calls == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# fix2：frame_ctx NoneElement 判定 / cookie domain 白名单
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _RealNoneElement:
+    """模拟真实 NoneElement：类名判定为 NoneElement，但任意属性访问
+    抛 ElementNotFoundError（非 AttributeError，getattr 默认值挡不住）。"""
+
+    def __getattr__(self, item):
+        from DrissionPage.errors import ElementNotFoundError
+        raise ElementNotFoundError()
+
+
+_RealNoneElement.__name__ = 'NoneElement'
+
+
+@pytest.mark.unit
+def test_frame_ctx_nonelement_exits_4(runner, monkeypatch):
+    """get_frame 返回真实 NoneElement（属性访问即抛）→ ELEMENT_NOT_FOUND(4)，
+    而非被 getattr('_type') 触发 ElementNotFoundError 冒泡为 exit1。"""
+    import dp_cli.commands.element as em
+    from dp_cli.main import cli
+
+    page = _FramePage(frame=_RealNoneElement())
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    result = runner.invoke(
+        cli, ['click', 'css:.btn', '--frame', 'css:iframe'])
+    assert result.exit_code == 4
+    assert json.loads(result.output)['code'] == 'ELEMENT_NOT_FOUND'
+
+
+@pytest.mark.unit
+def test_cookie_list_domain_localhost_and_ip(runner, monkeypatch):
+    """--domain localhost / IPv4 / IPv6 字面量放行（无点号但合法）。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class P:
+        def cookies(self, all_domains=False, all_info=False):
+            return [{'name': 'a', 'value': '1',
+                     'domain': 'localhost', 'path': '/'},
+                    {'name': 'b', 'value': '2',
+                     'domain': '127.0.0.1', 'path': '/'}]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    for dom, expect_names in (
+            ('localhost', ['a']), ('127.0.0.1', ['b']), ('::1', [])):
+        r = runner.invoke(cli, ['cookie-list', '--domain', dom])
+        assert r.exit_code == 0, (dom, r.output)
+        names = [c['name'] for c in
+                 json.loads(r.output)['data']['cookies']]
+        assert names == expect_names, dom
+    # 裸顶级后缀仍拒绝
+    r = runner.invoke(cli, ['cookie-list', '--domain', 'com'])
+    assert r.exit_code == 2
+    assert json.loads(r.output)['code'] == 'INVALID_ARGS'

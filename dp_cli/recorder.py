@@ -4,6 +4,8 @@ import json
 import shlex
 import time
 
+from dp_cli.logs import debug
+
 _RECORDER_JS = r"""
 (function () {
   if (window.__dpRecorder && window.__dpRecorder.version) {
@@ -393,8 +395,8 @@ def inject_recorder(page) -> dict:
     try:
         page.run_cdp('Page.addScriptToEvaluateOnNewDocument',
                      source=_RECORDER_JS)
-    except Exception:
-        pass
+    except Exception as e:
+        debug('录制器 init_js 注册失败（仅当前页面内生效）', e)
     return page.run_js(_RECORDER_JS)
 
 

@@ -18,8 +18,10 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'], max_content_width=10
 
 @click.group(context_settings=CONTEXT_SETTINGS, invoke_without_command=True)
 @click.version_option(message='%(version)s')
+@click.option('-v', '--verbose', is_flag=True, envvar='DP_DEBUG',
+              help='输出 debug 日志到 stderr（也可设环境变量 DP_DEBUG=1）')
 @click.pass_context
-def cli(ctx):
+def cli(ctx, verbose):
     """
     \b
     dp-cli —— DrissionPage 命令行工具
@@ -32,6 +34,9 @@ def cli(ctx):
       dp fill "@name=username" admin
       dp close
     """
+    if verbose:
+        from dp_cli.logs import set_debug
+        set_debug(True)
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

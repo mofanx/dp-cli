@@ -2,11 +2,116 @@
 """
 dp-cli 输出格式化模块
 统一的 JSON 输出格式，便于 AI 工具解析。
+
+错误码与退出码契约见 ERROR_CODES.md。
 """
 import json
 import sys
 from typing import Any, Optional
+from dp_cli.logs import debug  # re-export，调用方只需 from dp_cli.output import ok, error, debug
 from dp_cli.snapshot.utils import suggest_locator
+
+# ── 退出码分级 ──────────────────────────────────────────────────────────────
+#   1 runtime   通用运行时失败（默认，向后兼容）
+#   2 usage     参数/用法错误（与 click 用法错误退出码一致）
+#   3 connect   连接/网络类失败
+#   4 not_found 元素/资源未找到、断言类失败
+#   5 timeout   超时
+EXIT_RUNTIME = 1
+EXIT_USAGE = 2
+EXIT_CONNECT = 3
+EXIT_NOT_FOUND = 4
+EXIT_TIMEOUT = 5
+
+# 错误码注册表：code -> (exit_code, 说明)。新增错误码请同步登记到
+# ERROR_CODES.md。未注册的 code 按 EXIT_RUNTIME 处理（向后兼容）。
+ERROR_CODES: dict[str, tuple[int, str]] = {
+    # ── usage（退出码 2）──
+    'INVALID_ARGS':         (EXIT_USAGE, '参数组合/取值无效'),
+    'INVALID_CONFIDENCE':   (EXIT_USAGE, '置信度参数越界'),
+    'INVALID_JSON':         (EXIT_USAGE, 'JSON 参数解析失败'),
+    'CONFLICTING_OPTIONS':  (EXIT_USAGE, '互斥选项同时使用'),
+    'PW_SYNTAX':            (EXIT_USAGE, 'pw 定位器语法错误'),
+    'FILE_NOT_FOUND':       (EXIT_USAGE, '指定文件不存在'),
+
+    # ── connect（退出码 3）──
+    'SESSION_NOT_FOUND':    (EXIT_CONNECT, '无法连接浏览器会话'),
+    'BROWSER_START_FAILED': (EXIT_CONNECT, '浏览器启动/连接失败'),
+    'AUTOCONNECT_FAILED':   (EXIT_CONNECT, 'auto-connect 自动发现失败'),
+    'NAVIGATE_FAILED':      (EXIT_CONNECT, '页面导航失败'),
+    'HTTP_FAILED':          (EXIT_CONNECT, 'HTTP 请求失败'),
+
+    # ── not_found（退出码 4）──
+    'ELEMENT_NOT_FOUND':    (EXIT_NOT_FOUND, '元素未找到'),
+    'TAB_NOT_FOUND':        (EXIT_NOT_FOUND, '标签页不存在'),
+    'REF_NOT_FOUND':        (EXIT_NOT_FOUND, 'ref 编号不在映射中'),
+    'REF_UNRESOLVABLE':     (EXIT_NOT_FOUND, 'ref 无法解析为有效定位器'),
+    'COOKIE_NOT_FOUND':     (EXIT_NOT_FOUND, 'Cookie 不存在'),
+    'PW_NOT_FOUND':         (EXIT_NOT_FOUND, 'pw 定位器未匹配到元素'),
+    'PROFILE_NOT_FOUND':    (EXIT_NOT_FOUND, '指定 profile 不存在'),
+    'NO_REFS':              (EXIT_NOT_FOUND, '无可用的 ref 映射（需先 snapshot）'),
+    'ASSERT_FAILED':        (EXIT_NOT_FOUND, '断言失败（页面状态不符合预期）'),
+
+    # ── timeout（退出码 5）──
+    'WAIT_TIMEOUT':         (EXIT_TIMEOUT, '等待超时'),
+
+    # ── runtime（退出码 1）──
+    'CLICK_FAILED':         (EXIT_RUNTIME, '点击失败'),
+    'FILL_FAILED':          (EXIT_RUNTIME, '输入失败'),
+    'TYPE_FAILED':          (EXIT_RUNTIME, '按键输入失败'),
+    'KEY_FAILED':           (EXIT_RUNTIME, '按键失败'),
+    'SCROLL_FAILED':        (EXIT_RUNTIME, '滚动失败'),
+    'AUTOSCROLL_FAILED':    (EXIT_RUNTIME, '自动滚动失败'),
+    'HOVER_FAILED':         (EXIT_RUNTIME, '悬停失败'),
+    'CHECK_FAILED':         (EXIT_RUNTIME, '勾选失败'),
+    'SELECT_FAILED':        (EXIT_RUNTIME, '下拉选择失败'),
+    'DRAG_FAILED':          (EXIT_RUNTIME, '拖拽失败'),
+    'CLEAR_FAILED':         (EXIT_RUNTIME, '清空失败'),
+    'UPLOAD_FAILED':        (EXIT_RUNTIME, '文件上传失败'),
+    'COUNT_FAILED':         (EXIT_RUNTIME, '计数失败'),
+    'CLOSE_FAILED':         (EXIT_RUNTIME, '关闭失败'),
+    'RELOAD_FAILED':        (EXIT_RUNTIME, '刷新失败'),
+    'STEALTH_FAILED':       (EXIT_RUNTIME, 'stealth 应用失败'),
+    'TAB_FAILED':           (EXIT_RUNTIME, '标签页操作失败'),
+    'LISTEN_FAILED':        (EXIT_RUNTIME, '网络监听数据获取失败'),
+    'WAIT_FAILED':          (EXIT_RUNTIME, '等待操作失败'),
+    'CONSOLE_FAILED':       (EXIT_RUNTIME, 'console 记录读取失败'),
+    'JS_FAILED':            (EXIT_RUNTIME, 'JS 执行失败'),
+    'INIT_JS_FAILED':       (EXIT_RUNTIME, 'init_js 注入失败'),
+    'DIALOG_FAILED':        (EXIT_RUNTIME, '对话框操作失败'),
+    'SCREENSHOT_FAILED':    (EXIT_RUNTIME, '截图失败'),
+    'PDF_FAILED':           (EXIT_RUNTIME, 'PDF 导出失败'),
+    'RESIZE_FAILED':        (EXIT_RUNTIME, '窗口尺寸调整失败'),
+    'WINDOW_FAILED':        (EXIT_RUNTIME, '窗口操作失败'),
+    'STATE_FAILED':         (EXIT_RUNTIME, '状态获取失败'),
+    'INSPECT_FAILED':       (EXIT_RUNTIME, '元素探测失败'),
+    'SNAPSHOT_FAILED':      (EXIT_RUNTIME, '快照获取失败'),
+    'SCAN_FAILED':          (EXIT_RUNTIME, 'clickable 扫描失败'),
+    'EXTRACT_FAILED':       (EXIT_RUNTIME, '数据提取失败'),
+    'FIND_FAILED':          (EXIT_RUNTIME, '元素查找失败'),
+    'QUERY_FAILED':         (EXIT_RUNTIME, '查询失败'),
+    'DOM_FAILED':           (EXIT_RUNTIME, 'DOM 操作失败'),
+    'COOKIE_FAILED':        (EXIT_RUNTIME, 'Cookie 操作失败'),
+    'STORAGE_FAILED':       (EXIT_RUNTIME, 'Storage 操作失败'),
+    'PW_EVAL_FAILED':       (EXIT_RUNTIME, 'pw 定位器求值失败'),
+    'RECORD_START_FAILED':  (EXIT_RUNTIME, '录制启动失败'),
+    'RECORD_STOP_FAILED':   (EXIT_RUNTIME, '录制停止失败'),
+    'RECORD_STATUS_FAILED': (EXIT_RUNTIME, '录制状态获取失败'),
+    'RECORD_SHOW_FAILED':   (EXIT_RUNTIME, '录制记录展示失败'),
+    'RECORD_EXPORT_FAILED': (EXIT_RUNTIME, '录制导出失败'),
+    'RECORD_CLEAR_FAILED':  (EXIT_RUNTIME, '录制清空失败'),
+    'EMULATE_FAILED':       (EXIT_RUNTIME, 'emulate 环境模拟设置失败'),
+    'DOWNLOAD_FAILED':      (EXIT_RUNTIME, '下载设置/等待失败'),
+    'INTERCEPT_FAILED':     (EXIT_RUNTIME, '请求拦截设置失败'),
+    'PERF_FAILED':          (EXIT_RUNTIME, '性能指标获取失败'),
+    'TRACE_FAILED':         (EXIT_RUNTIME, 'trace 采集/写盘失败'),
+    'SCREENCAST_FAILED':    (EXIT_RUNTIME, 'screencast 帧录制失败'),
+}
+
+
+def _exit_code_for(code: str) -> int:
+    """错误码 → 退出码；未注册码按通用运行时失败处理（向后兼容）。"""
+    return ERROR_CODES.get(code, (EXIT_RUNTIME, ''))[0]
 
 
 def ok(data: Any = None, msg: str = None) -> None:
@@ -20,12 +125,16 @@ def ok(data: Any = None, msg: str = None) -> None:
 
 
 def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
-    """错误输出"""
+    """错误输出并按错误码分级退出（见 ERROR_CODES.md）。
+
+    向后兼容：JSON 契约（status/code/message/detail）不变；
+    未注册/未知 code 仍退出 1。
+    """
     result = {'status': 'error', 'code': code, 'message': msg}
     if detail:
         result['detail'] = detail
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    sys.exit(1)
+    sys.exit(_exit_code_for(code))
 
 
 def format_element(ele, include_rect: bool = False) -> dict:
@@ -49,8 +158,8 @@ def format_element(ele, include_rect: bool = False) -> dict:
                 'size': list(ele.rect.size),
                 'midpoint': list(ele.rect.midpoint),
             }
-        except Exception:
-            pass
+        except Exception as e:
+            debug('获取元素 rect 失败', e)
 
     return info
 

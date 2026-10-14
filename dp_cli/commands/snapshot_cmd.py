@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.session import save_refs
 from dp_cli.snapshot import (extract_structured, query_elements,
                               take_a11y_snapshot, render_a11y_text,
@@ -452,8 +452,8 @@ def register(cli):
                              'display', 'visibility', 'position', 'z-index'):
                     try:
                         styles[prop] = ele.style(prop)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        debug(f'获取样式 {prop} 失败', e)
                 info['styles'] = styles
             ok(info)
         except Exception as e:
@@ -545,8 +545,8 @@ def register(cli):
                         s = _ele_summary(child)
                         if s:
                             children.append(s)
-                except Exception:
-                    pass
+                except Exception as e:
+                    debug('遍历子元素失败', e)
                 result['children'] = children
 
             # ---- siblings (prev + next) ----
@@ -559,15 +559,15 @@ def register(cli):
                         if s:
                             prev_sibs.append(s)
                     prev_sibs.reverse()
-                except Exception:
-                    pass
+                except Exception as e:
+                    debug('遍历前序兄弟元素失败', e)
                 try:
                     for sib in ele.nexts():
                         s = _ele_summary(sib)
                         if s:
                             next_sibs.append(s)
-                except Exception:
-                    pass
+                except Exception as e:
+                    debug('遍历后序兄弟元素失败', e)
                 result['prev_siblings'] = prev_sibs
                 result['next_siblings'] = next_sibs
 

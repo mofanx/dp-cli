@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from dp_cli.commands._utils import session_option, _get_page
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.session import load_session, save_session
 from dp_cli.recorder import (inject_recorder, stop_recorder, get_recorded_actions,
                              clear_recorded_actions, get_recorder_status,
@@ -47,8 +47,8 @@ def _get_recording_page(session):
     if tab_id:
         try:
             return page.get_tab(tab_id)
-        except Exception:
-            pass
+        except Exception as e:
+            debug(f'recording_tab={tab_id} 已失效，回退到活动标签页', e)
     return _get_page(session, inject_recording=False)
 
 

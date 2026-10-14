@@ -24,6 +24,8 @@ import sys
 import time
 from pathlib import Path
 
+from dp_cli.logs import debug
+
 IS_WINDOWS = sys.platform == 'win32'
 
 
@@ -74,8 +76,8 @@ def _win_terminate(pid: int) -> None:
             check=False,
             timeout=5,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        debug(f'taskkill pid={pid} 失败', e)
 
 
 _READY_RE = re.compile(r'^BRIDGE_READY host=(?P<host>\S+) port=(?P<port>\d+)\s*$')
@@ -113,8 +115,8 @@ def detect_inspect_mode(port: int, timeout: float = 2.0) -> bool:
         # 经典模式 /json/version 返回 dict，含 Browser 字段
         if isinstance(data, dict) and 'Browser' in data:
             return False
-    except Exception:
-        pass
+    except Exception as e:
+        debug(f'/json/version 响应解析失败，按 inspect 模式处理: port={port}', e)
     return True
 
 
@@ -166,8 +168,8 @@ def start_bridge(user_data_dir: str | os.PathLike,
             for line in proc.stderr:
                 with stderr_lock:
                     stderr_buf.append(line)
-        except Exception:
-            pass
+        except Exception as e:
+            debug('bridge stderr 读取线程结束异常', e)
 
     stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
     stderr_thread.start()
@@ -207,8 +209,8 @@ def start_bridge(user_data_dir: str | os.PathLike,
     except Exception:
         try:
             proc.terminate()
-        except Exception:
-            pass
+        except Exception as e:
+            debug('bridge 启动失败后 terminate 失败', e)
         raise
 
     # ready 后让 bridge 的 stdout 继续被 drain，避免管道阻塞。
@@ -217,8 +219,8 @@ def start_bridge(user_data_dir: str | os.PathLike,
         try:
             for _ in stream:
                 pass
-        except Exception:
-            pass
+        except Exception as e:
+            debug('stdout drain 线程结束异常', e)
 
     if proc.stdout:
         threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
@@ -256,8 +258,8 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
         # 1) 优雅: 给整个进程组发 CTRL_BREAK_EVENT
         try:
             os.kill(pid, signal.CTRL_BREAK_EVENT)
-        except Exception:
-            pass
+        except Exception as e:
+            debug(f'CTRL_BREAK_EVENT pid={pid} 失败', e)
 
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -276,8 +278,8 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
     except (ProcessLookupError, PermissionError, OSError):
         try:
             os.kill(pid, signal.SIGTERM)
-        except Exception:
-            pass
+        except Exception as e:
+            debug(f'SIGTERM pid={pid} 失败', e)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -291,7 +293,7 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
     except Exception:
         try:
             os.kill(pid, signal.SIGKILL)
-        except Exception:
-            pass
+        except Exception as e:
+            debug(f'SIGKILL pid={pid} 失败', e)
     time.sleep(0.1)
     return not is_bridge_alive(pid)

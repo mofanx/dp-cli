@@ -97,14 +97,14 @@ class CDPBridge:
             for ws in list(self._browser_clients):
                 try:
                     await ws.close(code=1011, message=b'upstream closed')
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug('close downstream ws failed: %s', e)
             self._browser_clients.clear()
             for sid, ws in list(self._session_to_client.items()):
                 try:
                     await ws.close(code=1011, message=b'upstream closed')
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug('close session ws failed: %s', e)
             self._session_to_client.clear()
             self.ws = None
             self._connected_evt.clear()
@@ -144,8 +144,8 @@ class CDPBridge:
             try:
                 if not client_ws.closed:
                     await client_ws.send_str(json.dumps(ev))
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug('forward event to client failed: %s', e)
             return
 
         if not sess_id:
@@ -154,8 +154,8 @@ class CDPBridge:
                 try:
                     if not c.closed:
                         await c.send_str(ev_str)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug('broadcast event failed: %s', e)
 
     async def call(self, method: str, params: dict | None = None,
                    session_id: str | None = None) -> dict:
@@ -200,8 +200,8 @@ class CDPBridge:
                 err = {'id': client_id, 'error': {'code': -32000, 'message': str(e)}}
                 try:
                     await client_ws.send_str(json.dumps(err))
-                except Exception:
-                    pass
+                except Exception as e2:
+                    log.debug('send error reply failed: %s', e2)
 
     async def attach_page_client(self, target_id: str,
                                  client_ws: web.WebSocketResponse) -> str | None:
@@ -386,8 +386,8 @@ async def handle_ws(request: web.Request) -> web.StreamResponse:
                 try:
                     payload = json.loads(msg.data)
                     await bridge.forward_from_client(payload, client_ws, session_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug('forward client message failed: %s', e)
             elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
                               aiohttp.WSMsgType.ERROR):
                 break
@@ -479,14 +479,14 @@ async def main_async(user_data_dir: Path, host: str, port: int) -> None:
                 continue
             try:
                 signal.signal(sig, _win_signal_handler)
-            except (ValueError, OSError):
-                pass
+            except (ValueError, OSError) as e:
+                log.debug('register signal handler failed: %s', e)
     else:
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, stop_evt.set)
-            except NotImplementedError:
-                pass
+            except NotImplementedError as e:
+                log.debug('add_signal_handler unsupported: %s', e)
     try:
         await stop_evt.wait()
     finally:

@@ -8,7 +8,7 @@ from time import perf_counter, sleep as _sleep
 import click
 
 from dp_cli.session import get_browser, load_refs, load_session, save_session
-from dp_cli.output import error
+from dp_cli.output import error, debug
 
 
 def normalize_url(url: str) -> str:
@@ -23,6 +23,30 @@ def normalize_url(url: str) -> str:
 def session_option(f):
     return click.option('-S', '--session', default='default',
                         help='会话名称，默认 default', show_default=True)(f)
+
+
+def frame_option(f):
+    return click.option('--frame', default=None,
+                        help='限定在 iframe 内查找元素（值为 iframe 的定位器，'
+                             '支持 css:/xpath:/pw:/ref:），如 --frame "css:iframe"')(f)
+
+
+def frame_ctx(page, frame_loc: str = None, session: str = 'default'):
+    """frame_loc 为 None 时返回 page 本身，否则返回该 iframe 的 frame 上下文。
+
+    返回对象（ChromiumFrame）同样提供 ele()/eles()，可直接替换 page 使用。
+    找不到 iframe 时 error(ELEMENT_NOT_FOUND) 退出。
+    """
+    if not frame_loc:
+        return page
+    loc = resolve_locator(frame_loc, session, page)
+    fr = page.get_frame(loc, timeout=3)
+    # 按类名判定：真实 NoneElement.__getattr__ 对任意属性抛
+    # ElementNotFoundError（非 AttributeError），getattr 默认值挡不住
+    if fr is None or fr.__class__.__name__ == 'NoneElement':
+        error(f'iframe 未找到: {frame_loc}', code='ELEMENT_NOT_FOUND')
+        return page
+    return fr
 
 
 def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
@@ -72,15 +96,31 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
                           langs=stealth_cfg.get('langs'),
                           webgl_vendor=stealth_cfg.get('webgl_vendor'),
                           webgl_renderer=stealth_cfg.get('webgl_renderer'))
-        except Exception:
-            pass  # 不能让 stealth 失败阻塞常规命令
+        except Exception as e:
+            # 不能让 stealth 失败阻塞常规命令
+            debug('stealth 重注入失败', e)
 
     if inject_recording and sess.get('recording'):
         try:
             from dp_cli.recorder import inject_recorder
             inject_recorder(target)
-        except Exception:
-            pass
+        except Exception as e:
+            debug('录制器重注入失败', e)
+
+    # 会话级 CDP override 重放（emulate/intercept 每条命令重新应用）
+    from dp_cli.commands.emulate import _apply_emulate, _apply_intercept
+    emulate_cfg = sess.get('emulate')
+    if emulate_cfg:
+        try:
+            _apply_emulate(target, emulate_cfg)
+        except Exception as e:
+            debug('emulate 重放失败', e)
+    intercept_cfg = sess.get('intercept')
+    if intercept_cfg:
+        try:
+            _apply_intercept(target, intercept_cfg)
+        except Exception as e:
+            debug('intercept 重放失败', e)
 
     return target
 

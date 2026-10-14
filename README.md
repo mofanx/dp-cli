@@ -252,7 +252,8 @@ dp_cli/
     ├── snapshot_cmd.py  # snapshot / extract / query / find / inspect
     ├── element.py       # click / fill / select / hover / drag / check / upload / count
     ├── keyboard.py      # press / type / scroll / scroll-to / autoscroll
-    ├── page.py          # screenshot / pdf / eval / wait (idle/loaded/url/title) / dialog
+    ├── page.py          # screenshot / pdf / eval / wait / console / dialog
+    ├── assert_cmd.py    # assert-text / assert-url / assert-visible / assert-count
     ├── tab.py           # tab-list / tab-new / tab-select / tab-close
     ├── storage.py       # cookie-* / localstorage-* / sessionstorage-*
     ├── network.py       # listen / listen-stop / http-get / http-post
@@ -261,7 +262,7 @@ dp_cli/
 
 ## Documentation
 
-See [`skills/SKILL.md`](skills/SKILL.md) for full workflow guide and [`skills/references/commands.md`](skills/references/commands.md) for complete command reference.
+See [`skills/dp-cli/SKILL.md`](skills/dp-cli/SKILL.md) for full workflow guide and [`skills/dp-cli/references/commands.md`](skills/dp-cli/references/commands.md) for complete command reference. Exit-code contract: [`ERROR_CODES.md`](ERROR_CODES.md).
 
 ## License
 

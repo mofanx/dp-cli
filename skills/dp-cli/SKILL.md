@@ -21,7 +21,9 @@ description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操�
 | 提取 | `extract` / `query` / `find` / `inspect` / `dom` / `count` | 数据提取和元素查询 |
 | 交互 | `click` / `dblclick` / `fill` / `clear` / `select` / `check` / `hover` / `drag` / `upload` | 元素操控 |
 | 键盘 | `press` / `type` / `scroll` / `scroll-to` / `autoscroll` | 键盘输入与滚动 |
-| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` |
+| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` / `--js` / `--response` |
+| 断言 | `assert-text` / `assert-url` / `assert-visible` / `assert-count` | 断言失败退出码 4，适合脚本/agent 自检 |
+| Console | `console-listen` / `console-dump` | 捕获 console 输出与未捕获异常 |
 | 监听 | `listen` / `listen-stop` | 网络请求捕获 |
 | 标签页 | `tab-list` / `tab-new` / `tab-select` / `tab-close` | 多标签页管理（支持绑定） |
 | 截图 | `screenshot` / `pdf` | 页面截图/PDF |
@@ -556,12 +558,13 @@ dp add-init-js "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})
 5. **善用 interactive 模式 / scan 省 token** — 循环操作用 `-i` 或改用 `dp scan`
 6. **操作后再 snapshot 确认** — 验证结果而非假设成功
 7. **小量验证再批量** — `dp query ... --limit 2` 确认后再 `dp extract`
-8. **动态页面先等待** — `dp wait --loaded` / `--idle` / `--locator` / `--text` / `--locator-gone`
-9. **严禁编造数据** — 所有数据必须从页面实际提取；加密内容标记 `[无法解密]`
-10. **优先批量提取** — 列表页优先 `dp extract`，避免逐个点击
-11. **遇反爬先 stealth** — `dp stealth` 或 `dp open --auto-connect --stealth`
-12. **善用 dom/count 辅助** — `dp dom "ref:N" -d parent` 找容器；`dp count` 检测懒加载
-13. **autoscroll 省心** — 无限滚动用 `dp autoscroll`，自动检测终止
+8. **动态页面先等待** — `dp wait --loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--js` / `--response`
+9. **关键操作后断言自检** — `dp assert-text` / `assert-url` / `assert-count` 验证结果，断言失败退出码 4 可被脚本捕获
+10. **严禁编造数据** — 所有数据必须从页面实际提取；加密内容标记 `[无法解密]`
+11. **优先批量提取** — 列表页优先 `dp extract`，避免逐个点击
+12. **遇反爬先 stealth** — `dp stealth` 或 `dp open --auto-connect --stealth`
+13. **善用 dom/count 辅助** — `dp dom "ref:N" -d parent` 找容器；`dp count` 检测懒加载
+14. **autoscroll 省心** — 无限滚动用 `dp autoscroll`，自动检测终止
 
 ---
 
@@ -587,6 +590,7 @@ dp add-init-js "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})
 - **iframe 内容** → DrissionPage 天然穿透 iframe，用 `dp snapshot` 直接可见
 - **定位不准** → `dp dom "ref:N" -d parent --depth 3` 查看上下文 → 用 `css` 字段获取精确路径
 - **需要 JS 兜底** → `dp eval "..."` 执行自定义 JavaScript
+- **排查 JS 报错/console 输出** → `dp console-listen` 后执行操作，再 `dp console-dump` 读取捕获记录
 - **懒加载不终止** → `dp autoscroll --locator "css:.item" --stable 3` 更耐心等待
 - **会话状态混乱** → `dp close` 清理当前会话；`dp list` 查看所有会话；`dp close-all` 清空；`dp open --new` 强制新建
 - **具体命令用法** → `dp <command> --help`

@@ -2,12 +2,22 @@
 """
 dp-cli 会话管理模块
 通过固定端口连接复用已运行的浏览器实例，实现跨命令状态共享。
+
+多上下文设计约束：
+  dp-cli 以命名 session（-S/--session）做隔离，每个会话独立 user-data-dir
+  （~/.dp_cli/sessions/profiles/<name>）+ auto_port 独立浏览器进程，
+  等价于 Playwright 的 profile 级隔离。Chromium 的 BrowserContext
+  （Target.createBrowserContext，同一进程内多隔离上下文，类似 incognito）
+  DrissionPage 未暴露对应 API，故不提供 --context/--profile 参数；
+  需要隔离时请使用 -S <name> 起独立会话。
 """
 import json
 import os
 import sys
 from pathlib import Path
 from time import sleep, perf_counter
+
+from dp_cli.logs import debug
 
 
 # 会话状态文件默认目录
@@ -58,8 +68,8 @@ def list_sessions() -> list:
         try:
             data = json.loads(f.read_text(encoding='utf-8'))
             sessions.append({'name': f.stem, **data})
-        except Exception:
-            pass
+        except Exception as e:
+            debug(f'会话文件 {f.name} 解析失败，已跳过', e)
     return sessions
 
 
@@ -338,8 +348,8 @@ def get_browser(session_name: str = 'default', headless: bool = False,
                 co.headless(True)
             page = ChromiumPage(co)
             return page
-        except Exception:
-            pass  # 继续走 2b 或新建
+        except Exception as e:
+            debug(f'saved_port={saved_port} 直连失败，尝试其他复用路径', e)
 
     # 2b) auto-connect 模式：重新发现端口，必要时自动起 bridge
     # 用户重启 Chrome 后端口会变，此路径让 dp 命令无缝继续工作
@@ -447,8 +457,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
             from dp_cli.bridge_manager import stop_bridge
             try:
                 stop_bridge(bridge_pid)
-            except Exception:
-                pass
+            except Exception as e:
+                debug(f'stop_bridge(pid={bridge_pid}) 失败', e)
         delete_session(session_name)
         return True
 
@@ -462,8 +472,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
         co.existing_only(True)
         page = ChromiumPage(co)
         page.browser.quit(del_data=del_data)
-    except Exception:
-        pass
+    except Exception as e:
+        debug(f'browser.quit(port={port}) 失败，仍清理会话', e)
 
     delete_session(session_name)
     return True

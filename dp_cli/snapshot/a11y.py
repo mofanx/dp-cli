@@ -15,6 +15,8 @@ a11y tree — 浏览器原生无障碍树获取与渲染
 """
 import json
 
+from dp_cli.logs import debug
+
 from .utils import suggest_locator
 
 # 交互角色列表：需要生成定位器的角色
@@ -175,8 +177,8 @@ def take_a11y_snapshot(page, selector=None, max_depth=None, attr_priority=None,
                     'stats': stats,
                     'warning': f'CDP 不可用，已降级到 JS fallback (CDP: {cdp_error_msg})',
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            debug('js_fallback 也失败，返回错误结构', e)
 
     # ── 全部失败 ──
     return {
@@ -604,8 +606,8 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
             result = page.run_cdp('Runtime.evaluate', expression=js, returnByValue=True)
             if result.get('result', {}).get('value'):
                 attrs_map = json.loads(result['result']['value'])
-        except Exception:
-            pass
+        except Exception as e:
+            debug('批量获取元素属性失败，回退 bid_map 路径', e)
 
         # 使用批量获取的属性映射
         for n in interactive_nodes:
@@ -700,8 +702,8 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
                                             break
                                     except Exception:
                                         continue
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                debug('eles 多元素回退查找失败', e)
 
                         # 生成真正的 locator
                         loc = suggest_locator(tag, attrs, text, attr_priority=attr_priority)

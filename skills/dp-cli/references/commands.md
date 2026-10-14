@@ -20,7 +20,9 @@
 | 提取 | `extract`, `query`, `find`, `inspect`, `dom`, `count` | 数据提取和元素查询 |
 | 交互 | `click`, `dblclick`, `fill`, `clear`, `select`, `check`, `hover`, `drag`, `upload` | 元素操控 |
 | 键盘 | `press`, `type`, `scroll`, `scroll-to`, `autoscroll` | 键盘输入与滚动 |
-| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` |
+| 等待 | `wait` | `--loaded` / `--idle` / `--locator` / `--text` / `--locator-gone` / `--url` / `--title` / `--downloads-done` / `--js` / `--response` |
+| 断言 | `assert-text`, `assert-url`, `assert-visible`, `assert-count` | 断言失败退出码 4，适合脚本/agent 自检 |
+| Console | `console-listen`, `console-dump` | 捕获 console 输出与未捕获异常 |
 | 监听 | `listen`, `listen-stop` | 网络请求捕获 |
 | 标签页 | `tab-list`, `tab-new`, `tab-select`, `tab-close` | 多标签页管理（支持标签页绑定/分离自动化与手动浏览） |
 | 截图 | `screenshot`, `pdf` | 页面截图/PDF（支持全页截图、元素截图） |
@@ -306,7 +308,38 @@ dp wait --url "success"        # 等待 URL 变化
 dp wait --title "搜索结果"     # 等待标题变化
 dp wait --text "操作成功"      # 等待页面含文本
 dp wait --downloads-done       # 等待下载完成
+dp wait --js "window.appReady === true"  # 轮询 JS 表达式直到为真
+dp wait --response "api/login"           # 等待 URL 含此文本的网络响应
 ```
+
+## 断言命令
+
+断言失败时输出 `{"status":"error","code":"ASSERT_FAILED"}` 并以退出码 4 退出；
+参数非法（如 `assert-count` 的位置参数与 `--min/--max` 同时给出）返回 `INVALID_ARGS`、退出码 2。
+
+```
+dp assert-text "登录成功"                    # 页面包含文本
+dp assert-text "订单已提交" --locator "#msg" # 指定元素包含文本
+dp assert-text "Hello" --locator "#title" --exact  # 精确匹配
+dp assert-url "dashboard"                    # URL 包含文本
+dp assert-url "欢迎" --title                 # 标题包含文本
+dp assert-visible "#modal"                   # 元素可见
+dp assert-visible ".error" --hidden          # 元素不可见/不存在
+dp assert-count ".item" 20                   # 恰好 20 个
+dp assert-count ".item" --min 1 --max 10     # 数量区间（与位置参数互斥）
+```
+
+## Console 捕获
+
+```
+dp console-listen           # 开始捕获（console.* + 未捕获异常 + Log 域）
+dp console-dump             # 读取并清空缓冲区、停止监听
+dp console-dump --keep      # 读取后继续保持监听
+dp console-dump --keep --clear  # 继续监听但清空已读记录
+```
+
+缓冲上限 1000 条（超出丢弃最旧记录）。捕获来源：
+`Runtime.consoleAPICalled`、`Runtime.exceptionThrown`、`Log.entryAdded`。
 
 ## 交互命令通用选项
 

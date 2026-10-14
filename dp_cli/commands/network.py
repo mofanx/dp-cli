@@ -1,11 +1,13 @@
 # -*- coding:utf-8 -*-
-"""网络命令: listen / listen-stop / http-get / http-post"""
+"""网络命令: listen / listen-stop / http-get / http-post / har-dump"""
 import json
+from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter, sleep as _sleep
 
 import click
 
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import session_option, _get_page
 
 
@@ -38,6 +40,57 @@ def _emit_response(page, output):
         except Exception:
             result['body'] = '<binary>'
     return result
+
+
+def _hdr_list(headers) -> list:
+    """CDP headers dict → HAR [{name, value}] 列表。"""
+    if not isinstance(headers, dict):
+        return []
+    return [{'name': k, 'value': str(v)} for k, v in headers.items()]
+
+
+def _iso_ts(wall_time) -> str:
+    """CDP wallTime（unix 秒，可为浮点）→ ISO8601 UTC。"""
+    try:
+        return datetime.fromtimestamp(float(wall_time), tz=timezone.utc) \
+            .isoformat().replace('+00:00', 'Z')
+    except Exception:
+        return ''
+
+
+def _build_har(entries: dict, page_url: str = '') -> dict:
+    """把收集的 Network 事件 dict 聚合为 HAR 1.2。"""
+    out_entries = []
+    for rid, e in entries.items():
+        timing = e.pop('_timing', None) or {}
+        resp_ts = e.pop('_resp_ts', None)
+        end_ts = e.pop('_end_ts', None)
+        e.pop('_done', None)
+        e.pop('_failed', None)
+        send = max(0.0, timing.get('sendEnd', 0) - timing.get('sendStart', 0))
+        wait = max(0.0, timing.get('receiveHeadersEnd', 0)
+                   - timing.get('sendEnd', 0))
+        receive = (max(0.0, (end_ts - resp_ts) * 1000)
+                   if (resp_ts and end_ts) else 0)
+        e['timings'] = {'send': send, 'wait': wait, 'receive': receive}
+        e['time'] = send + wait + receive
+        out_entries.append(e)
+    out_entries.sort(key=lambda x: x.get('startedDateTime', ''))
+    har = {'log': {
+        'version': '1.2',
+        'creator': {'name': 'dp-cli', 'version': '0.6.3'},
+        'browser': {'name': 'chromium'},
+        'pages': [],
+        'entries': out_entries,
+    }}
+    if page_url:
+        har['log']['pages'] = [{
+            'id': 'page_1', 'title': page_url,
+            'startedDateTime': out_entries[0]['startedDateTime']
+            if out_entries else '',
+            'pageTimings': {},
+        }]
+    return har
 
 
 def register(cli):
@@ -95,14 +148,157 @@ def register(cli):
                         }
                         try:
                             item['response_body'] = pkt.response.body
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            debug(f'读取响应体失败 url={item["url"]}', e)
                         results.append(item)
                     except Exception:
                         continue
             ok({'packets': results, 'count': len(results)})
         except Exception as e:
             error(f'获取监听数据失败', code='LISTEN_FAILED', detail=str(e))
+
+    @cli.command('har-dump')
+    @session_option
+    @click.option('--seconds', type=float, default=5, show_default=True,
+                  help='收集窗口秒数（期间触发的请求被聚合为 HAR）')
+    @click.option('--filter', 'url_filter', default=None,
+                  help='URL 关键字过滤，如 "api/"')
+    @click.option('--output', default=None,
+                  help='HAR 写入文件路径（默认内联到 JSON data.har）')
+    @click.option('--body', 'with_body', is_flag=True,
+                  help='抓取响应 body（逐条 Network.getResponseBody，较慢）')
+    def har_dump(session, seconds, url_filter, output, with_body):
+        """录制网络活动并导出 HAR 1.2（entries/timings/可选响应体）。
+
+        开启 Network domain 事件收集，等待 --seconds 秒后聚合输出；
+        期间可通过其它进程/手动操作触发页面请求。
+
+        \b
+        示例:
+          dp har-dump --seconds 10 --output trace.har
+          dp har-dump --seconds 8 --filter "api/" --body
+        """
+        page = _get_page(session)
+        entries = {}
+
+        def _on_request(**kw):
+            rid = kw.get('requestId')
+            req = kw.get('request') or {}
+            url = req.get('url', '')
+            if url_filter and url_filter not in url:
+                return
+            e = {
+                'startedDateTime': _iso_ts(kw.get('wallTime')),
+                '_resp_ts': None, '_end_ts': None,
+                'request': {
+                    'method': req.get('method', 'GET'),
+                    'url': url,
+                    'httpVersion': 'HTTP/1.1',
+                    'headers': _hdr_list(req.get('headers')),
+                    'queryString': [],
+                    'headersSize': -1,
+                    'bodySize': len(req.get('postData') or ''),
+                },
+                'response': {
+                    'status': 0, 'statusText': '', 'httpVersion': '',
+                    'headers': [], 'content': {}, 'redirectURL': '',
+                    'headersSize': -1, 'bodySize': -1,
+                },
+                'cache': {},
+                'timings': {'send': 0, 'wait': 0, 'receive': 0},
+                'time': 0,
+            }
+            if req.get('postData') is not None:
+                e['request']['postData'] = {
+                    'mimeType': (req.get('headers') or {}).get(
+                        'Content-Type', 'application/octet-stream'),
+                    'text': req['postData'],
+                }
+            entries[rid] = e
+
+        def _on_response(**kw):
+            e = entries.get(kw.get('requestId'))
+            if not e:
+                return
+            resp = kw.get('response') or {}
+            resp_headers = resp.get('headers') or {}
+            e['response'] = {
+                'status': resp.get('status', 0),
+                'statusText': resp.get('statusText', ''),
+                'httpVersion': resp.get('protocol', 'http/1.1'),
+                'headers': _hdr_list(resp_headers),
+                'content': {'size': -1,
+                            'mimeType': resp.get('mimeType', '')},
+                'redirectURL': str(resp_headers.get('location')
+                                   or resp_headers.get('Location') or ''),
+                'headersSize': -1, 'bodySize': -1,
+            }
+            e['_timing'] = resp.get('timing') or {}
+            e['_resp_ts'] = kw.get('timestamp')
+
+        def _on_finished(**kw):
+            e = entries.get(kw.get('requestId'))
+            if not e:
+                return
+            size = kw.get('encodedDataLength', -1)
+            e['response']['bodySize'] = size
+            e['response']['content']['size'] = size
+            e['_end_ts'] = kw.get('timestamp')
+            e['_done'] = True
+
+        def _on_failed(**kw):
+            e = entries.get(kw.get('requestId'))
+            if not e:
+                return
+            e['_end_ts'] = kw.get('timestamp')
+            e['_done'] = True
+            e['response']['statusText'] = kw.get('errorText', 'failed')
+            e['_failed'] = True
+
+        try:
+            page.run_cdp('Network.enable')
+            driver = page.driver
+            driver.set_callback('Network.requestWillBeSent', _on_request)
+            driver.set_callback('Network.responseReceived', _on_response)
+            driver.set_callback('Network.loadingFinished', _on_finished)
+            driver.set_callback('Network.loadingFailed', _on_failed)
+            try:
+                end = perf_counter() + seconds
+                while perf_counter() < end:
+                    _sleep(0.1)
+            finally:
+                for ev in ('Network.requestWillBeSent',
+                           'Network.responseReceived',
+                           'Network.loadingFinished',
+                           'Network.loadingFailed'):
+                    driver.set_callback(ev, None)
+
+            # 可选：逐条补抓响应体（仅对已完成的请求）
+            if with_body:
+                for rid, e in entries.items():
+                    if not e.get('_done') or e.get('_failed'):
+                        continue
+                    try:
+                        b = page.run_cdp('Network.getResponseBody',
+                                         requestId=rid)
+                        e['response']['content']['text'] = b.get('body', '')
+                        if b.get('base64Encoded'):
+                            e['response']['content']['encoding'] = 'base64'
+                    except Exception as ex:
+                        debug(f'getResponseBody 失败 url={e["request"]["url"]}',
+                              ex)
+
+            har = _build_har(entries, getattr(page, 'url', '') or '')
+            if output:
+                Path(output).write_text(
+                    json.dumps(har, ensure_ascii=False, indent=2),
+                    encoding='utf-8')
+                ok({'saved_to': output,
+                    'entries': len(har['log']['entries'])})
+            else:
+                ok({'har': har, 'entries': len(har['log']['entries'])})
+        except Exception as e:
+            error('HAR 收集失败', code='LISTEN_FAILED', detail=str(e))
 
     @cli.command('http-get')
     @click.argument('url')

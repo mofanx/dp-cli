@@ -2,7 +2,7 @@
 """标签页管理命令: tab-list / tab-new / tab-select / tab-close"""
 import click
 
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.session import load_session, save_session
 from dp_cli.commands._utils import session_option, _get_page, normalize_url
 
@@ -123,8 +123,8 @@ def register(cli):
                 try:
                     from dp_cli.recorder import inject_recorder
                     inject_recorder(tab)
-                except Exception:
-                    pass
+                except Exception as e:
+                    debug('新标签页注入录制器失败', e)
             ok({'id': tab_id, 'url': tab.url, 'title': tab.title},
                msg='已绑定，dp 命令将在此标签页执行')
         except Exception as e:
@@ -181,7 +181,7 @@ def _resolve_tab_target(page, target: str) -> str:
               code='TAB_NOT_FOUND')
         return ''
     except ValueError:
-        pass
+        debug(f'target 不是序号，按 tab_id/url 匹配: {target}')
 
     # 2. 尝试按 tab_id 精确匹配
     if target in tab_ids:

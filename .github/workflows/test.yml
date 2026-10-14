@@ -26,8 +26,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[test]"
 
+      # 覆盖率门禁：当前实测 ~59%，卡 58 防水位倒退，后续补用例后逐步上调至 60+
       - name: Run unit tests with coverage
-        run: pytest -m "not integration" --cov=dp_cli --cov-report=xml --cov-report=term-missing
+        run: pytest -m "not integration" --cov=dp_cli --cov-report=xml --cov-report=term-missing --cov-fail-under=58
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
@@ -37,14 +38,10 @@ jobs:
           fail_ci_if_error: false
 
   # ── 集成测试(需要真实浏览器)──────────────────────────────────────────────
-  # 当前仓库尚无 @pytest.mark.integration 用例,故暂时禁用(if: false)。
-  # 待补充集成测试后,把 `if: false` 改为
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-  # 即可启用。Chrome 通过 browser-actions/setup-chrome 安装,统一 headless 运行。
+  # bridge 端到端用例与真实 Chrome 冒烟用例(headless)在此运行。
   integration:
     name: Integration Tests (headless)
     runs-on: ubuntu-latest
-    if: false
     steps:
       - uses: actions/checkout@v4
 

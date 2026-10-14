@@ -1,12 +1,13 @@
 # -*- coding:utf-8 -*-
 """页面操作命令: screenshot / pdf / eval / add-init-js / dialog-accept / dialog-dismiss / wait (idle/loaded/url/title/text/downloads)"""
 import json
+from collections import deque
 from pathlib import Path
 from time import perf_counter, sleep as _sleep
 
 import click
 
-from dp_cli.output import ok, error, format_page_info
+from dp_cli.output import ok, error, debug, format_page_info
 from dp_cli.commands._utils import session_option, _get_page, wait_network_idle
 
 
@@ -124,6 +125,99 @@ def register(cli):
         except Exception as e:
             error(f'添加初始化脚本失败', code='INIT_JS_FAILED', detail=str(e))
 
+    # ── Console / Errors ──────────────────────────
+
+    @cli.command('console-listen')
+    @session_option
+    def console_listen(session):
+        """开始捕获页面 console 输出与未捕获异常。
+
+        \b
+        捕获来源：Runtime.consoleAPICalled（console.*）、
+                  Runtime.exceptionThrown（未捕获异常）、Log.entryAdded。
+        缓冲上限 1000 条（超出丢弃最旧记录）。
+
+        \b
+        示例:
+          dp console-listen
+          dp console-dump
+          dp console-dump --keep    # dump 后继续保持监听
+        """
+        page = _get_page(session)
+        try:
+            page.run_cdp('Runtime.enable')
+            page.run_cdp('Log.enable')
+            msgs = deque(maxlen=1000)
+            setattr(page, '_dp_console_msgs', msgs)
+            driver = page.driver
+
+            def _on_console(**kw):
+                parts = []
+                for a in kw.get('args') or []:
+                    if isinstance(a, dict):
+                        # value 可能是 0/False/'' 等 falsy 值，需按键存在判断
+                        v = a['value'] if 'value' in a else a.get('description', '')
+                        parts.append(str(v))
+                    else:
+                        parts.append(str(a))
+                msgs.append({'level': kw.get('type', 'log'),
+                             'text': ' '.join(parts).strip(),
+                             'source': 'console',
+                             'timestamp': kw.get('timestamp')})
+
+            def _on_exception(**kw):
+                det = kw.get('exceptionDetails') or {}
+                exc = det.get('exception') or {}
+                text = exc.get('description') or det.get('text') or ''
+                msgs.append({'level': 'error', 'text': text,
+                             'source': 'exception',
+                             'timestamp': kw.get('timestamp')})
+
+            def _on_log(**kw):
+                entry = kw.get('entry') or {}
+                msgs.append({'level': entry.get('level', 'info'),
+                             'text': entry.get('text', ''),
+                             'source': entry.get('source', 'log'),
+                             'timestamp': entry.get('timestamp')})
+
+            driver.set_callback('Runtime.consoleAPICalled', _on_console)
+            driver.set_callback('Runtime.exceptionThrown', _on_exception)
+            driver.set_callback('Log.entryAdded', _on_log)
+            ok(msg='已开始监听 console/error（上限 1000 条）')
+        except Exception as e:
+            error(f'启动 console 监听失败', code='CONSOLE_FAILED', detail=str(e))
+
+    @cli.command('console-dump')
+    @session_option
+    @click.option('--keep', is_flag=True, help='dump 后继续保持监听')
+    @click.option('--clear', 'clear_buf', is_flag=True, help='dump 后清空缓冲区')
+    def console_dump(session, keep, clear_buf):
+        """读取已捕获的 console/error 记录。
+
+        默认 dump 后停止监听并清空缓冲区；--keep 保持监听，
+        --clear 仅在 --keep 时有意义（继续监听但清空已读记录）。
+        """
+        page = _get_page(session)
+        try:
+            msgs = getattr(page, '_dp_console_msgs', None)
+            if msgs is None:
+                ok({'messages': [], 'count': 0}, msg='当前无 console 监听记录')
+                return
+            results = list(msgs)
+            if clear_buf or not keep:
+                msgs.clear()
+            if not keep:
+                try:
+                    driver = page.driver
+                    driver.set_callback('Runtime.consoleAPICalled', None)
+                    driver.set_callback('Runtime.exceptionThrown', None)
+                    driver.set_callback('Log.entryAdded', None)
+                except Exception as e:
+                    debug('console 回调清理失败', e)
+            ok({'messages': results, 'count': len(results)})
+        except Exception as e:
+            error(f'读取 console 记录失败', code='CONSOLE_FAILED', detail=str(e))
+
     @cli.command('dialog-accept')
     @click.argument('text', required=False)
     @session_option
@@ -164,8 +258,13 @@ def register(cli):
     @click.option('--idle', type=float, is_flag=False, flag_value=2.0, default=None,
                   help='等待网络空闲（无请求持续 N 秒，默认 2），适合懒加载')
     @click.option('--downloads-done', is_flag=True, help='等待所有下载完成')
+    @click.option('--js', 'js_expr', default=None,
+                  help='等待 JS 表达式结果为真（轮询），如 "document.querySelector(\'#x\')!==null"')
+    @click.option('--response', 'resp_pattern', default=None,
+                  help='等待 URL 含此文本的网络响应出现（一步式，等价 listen + listen-stop）')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
-    def wait(session, url, title, locator, locator_gone, text, loaded, idle, downloads_done, timeout):
+    def wait(session, url, title, locator, locator_gone, text, loaded, idle,
+             downloads_done, js_expr, resp_pattern, timeout):
         """等待条件满足。
 
         \b
@@ -179,6 +278,8 @@ def register(cli):
           dp wait --title "搜索结果"                 # 标题变化
           dp wait --text "操作成功"                  # 页面含文本
           dp wait --downloads-done                  # 下载完成
+          dp wait --js "window.appReady === true"   # JS 表达式为真
+          dp wait --response "api/login"            # 捕获到 URL 含 api/login 的响应
 
         \b
         懒加载典型工作流:
@@ -220,6 +321,48 @@ def register(cli):
             elif downloads_done:
                 page.wait.downloads_done(timeout=timeout)
                 ok(msg='下载已完成')
+            elif js_expr:
+                end = perf_counter() + timeout
+                value = None
+                while perf_counter() < end:
+                    try:
+                        value = page.run_js(js_expr, as_expr=True)
+                    except Exception:
+                        value = None
+                    if value:
+                        break
+                    _sleep(0.3)
+                if value:
+                    ok({'expression': js_expr, 'result': value}, msg='JS 条件已满足')
+                else:
+                    error(f'等待超时：JS 表达式未返回真值 "{js_expr[:80]}"',
+                          code='WAIT_TIMEOUT')
+            elif resp_pattern:
+                # 一步式响应等待：start→wait→stop；若已有监听器在跑则只等待不干扰
+                started = False
+                try:
+                    page.listen.start(resp_pattern)
+                    started = True
+                except Exception as e:
+                    debug('listen.start 失败，wait 仍会兜底探测', e)
+                pkt = None
+                try:
+                    pkt = page.listen.wait(1, timeout=timeout, fit_count=False)
+                finally:
+                    if started:
+                        try:
+                            page.listen.stop()
+                        except Exception as e:
+                            debug('listen.stop 失败', e)
+                pkts = pkt if isinstance(pkt, list) else ([pkt] if pkt else [])
+                if pkts:
+                    p = pkts[0]
+                    ok({'url': p.url, 'method': p.method,
+                        'status': p.response.status if p.response else None},
+                       msg='已捕获匹配响应')
+                else:
+                    error(f'等待超时：未捕获 URL 含 "{resp_pattern}" 的响应',
+                          code='WAIT_TIMEOUT')
             else:
                 error('请至少指定一个等待条件', code='INVALID_ARGS')
         except Exception as e:

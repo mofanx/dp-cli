@@ -15,6 +15,8 @@ from .clickable_js import (
     build_detect_js,
     CLEANUP_CLICKABLES_JS,
 )
+from dp_cli.logs import debug
+
 from .utils import suggest_locator
 
 
@@ -121,8 +123,8 @@ def detect_clickables(page,
     # 清理临时属性（失败不致命，页面不会永久污染因为 detect 下次会重新赋号）
     try:
         page.run_js(CLEANUP_CLICKABLES_JS)
-    except Exception:
-        pass
+    except Exception as e:
+        debug('清理临时扫描属性失败（非致命）', e)
 
     return {
         'elements': elements,

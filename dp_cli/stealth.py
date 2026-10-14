@@ -18,6 +18,8 @@
 """
 from __future__ import annotations
 
+from dp_cli.logs import debug
+
 
 # ===== JS 补丁脚本 =====
 
@@ -346,8 +348,8 @@ def apply_stealth(
     # 2a) 直接用 CDP 注册，避开 DrissionPage add_init_js 的潜在封装问题
     try:
         page.run_cdp('Page.enable')
-    except Exception:
-        pass
+    except Exception as e:
+        debug('stealth: Page.enable 失败', e)
     try:
         result = page.run_cdp('Page.addScriptToEvaluateOnNewDocument',
                               source=script)

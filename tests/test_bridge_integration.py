@@ -149,6 +149,7 @@ def _make_profile(tmp: Path, port: int, ws_path: str) -> Path:
     return udd
 
 
+@pytest.mark.integration
 @pytest.mark.timeout(30)
 def test_bridge_end_to_end(tmp_path):
     fake = FakeChrome()

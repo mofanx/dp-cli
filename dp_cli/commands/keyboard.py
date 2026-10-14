@@ -4,7 +4,7 @@ from time import sleep as _sleep
 
 import click
 
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import (
     session_option, _get_page, resolve_locator, wait_network_idle,
 )
@@ -390,7 +390,8 @@ def register(cli):
                     try:
                         wait_network_idle(page, idle_time=idle, timeout=idle_timeout)
                     except TimeoutError:
-                        pass  # 超时也继续判断，可能本来就没新请求
+                        # 超时也继续判断，可能本来就没新请求
+                        debug('wait_network_idle 超时，继续轮询')
                 else:
                     _sleep(0.3)
 

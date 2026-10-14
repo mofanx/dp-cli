@@ -2,9 +2,11 @@
 from dp_cli.commands import (
     browser, snapshot_cmd, element, keyboard,
     page, tab, storage, network, record, misc,
+    assert_cmd, emulate, observe,
 )
 
-_MODULES = [browser, snapshot_cmd, element, keyboard, page, tab, storage, network, record, misc]
+_MODULES = [browser, snapshot_cmd, element, keyboard, page, tab, storage, network, record, misc,
+            assert_cmd, emulate, observe]
 
 
 def register_all(cli):

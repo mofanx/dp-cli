@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import ok, error
+from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import session_option, _get_page
 
 
@@ -90,15 +90,15 @@ def register(cli):
                 for name, value in state['cookies'].items():
                     try:
                         page.set.cookies({'name': name, 'value': value})
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        debug(f'恢复 cookie {name} 失败', e)
             if 'localStorage' in state and state['localStorage']:
                 for k, v in state['localStorage'].items():
                     try:
                         page.run_js(f'localStorage.setItem({json.dumps(k)}, {json.dumps(v)})',
                                     as_expr=True)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        debug(f'恢复 localStorage[{k}] 失败', e)
             ok({'filename': filename,
                 'cookies_restored': len(state.get('cookies', {}))}, msg='状态已加载')
         except FileNotFoundError:

@@ -3,7 +3,8 @@
 import click
 
 from dp_cli.output import ok, error
-from dp_cli.commands._utils import session_option, _get_page, resolve_locator
+from dp_cli.commands._utils import (session_option, frame_option,
+                                    _get_page, resolve_locator, frame_ctx)
 
 
 def register(cli):
@@ -13,8 +14,9 @@ def register(cli):
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
     @click.option('--by-js', is_flag=True, help='使用 JavaScript 点击')
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_click(locator, session, index, by_js, timeout):
+    def cmd_click(locator, session, index, by_js, frame, timeout):
         """点击元素。
 
         \b
@@ -27,8 +29,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -44,8 +47,9 @@ def register(cli):
     @click.argument('locator')
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def dblclick(locator, session, index, timeout):
+    def dblclick(locator, session, index, frame, timeout):
         """双击元素。
 
         \b
@@ -55,8 +59,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -72,8 +77,9 @@ def register(cli):
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
     @click.option('--clear', is_flag=True, default=True, help='填入前清空（默认开启）')
     @click.option('--by-js', is_flag=True, help='使用 JavaScript 设置值')
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def fill(locator, value, session, index, clear, by_js, timeout):
+    def fill(locator, value, session, index, clear, by_js, frame, timeout):
         """向输入框填入文本。
 
         \b
@@ -84,8 +90,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -98,13 +105,15 @@ def register(cli):
     @click.argument('locator')
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_clear(locator, session, index, timeout):
+    def cmd_clear(locator, session, index, frame, timeout):
         """清空输入框内容。"""
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -120,8 +129,9 @@ def register(cli):
     @click.option('--index', default=1, help='第几个匹配 select 元素', show_default=True)
     @click.option('--by-text', is_flag=True, help='按文本选择（默认按 value）')
     @click.option('--by-index', 'sel_by_index', default=None, type=int, help='按位置索引选择（从1开始）')
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_select(locator, value, session, index, by_text, sel_by_index, timeout):
+    def cmd_select(locator, value, session, index, by_text, sel_by_index, frame, timeout):
         """选择下拉框选项。
 
         \b
@@ -132,8 +142,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -153,8 +164,9 @@ def register(cli):
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
     @click.option('--offset-x', default=None, type=int, help='X 偏移量（像素）')
     @click.option('--offset-y', default=None, type=int, help='Y 偏移量（像素）')
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def hover(locator, session, index, offset_x, offset_y, timeout):
+    def hover(locator, session, index, offset_x, offset_y, frame, timeout):
         """悬停鼠标到元素。
 
         \b
@@ -164,8 +176,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, index=index, timeout=timeout)
+            ele = ctx.ele(locator, index=index, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -179,8 +192,9 @@ def register(cli):
     @click.argument('to_locator')
     @session_option
     @click.option('--duration', default=0.5, help='拖拽持续时间（秒）', show_default=True)
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def drag(from_locator, to_locator, session, duration, timeout):
+    def drag(from_locator, to_locator, session, duration, frame, timeout):
         """拖拽元素到另一个元素。
 
         \b
@@ -191,9 +205,10 @@ def register(cli):
         from_locator = resolve_locator(from_locator, session)
         to_locator = resolve_locator(to_locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            src = page.ele(from_locator, timeout=timeout)
-            dst = page.ele(to_locator, timeout=timeout)
+            src = ctx.ele(from_locator, timeout=timeout)
+            dst = ctx.ele(to_locator, timeout=timeout)
             if not src or src.__class__.__name__ == 'NoneElement':
                 error(f'未找到源元素: {from_locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -209,8 +224,9 @@ def register(cli):
     @click.argument('locator')
     @session_option
     @click.option('--check/--uncheck', default=True, help='选中/取消选中')
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_check(locator, session, check, timeout):
+    def cmd_check(locator, session, check, frame, timeout):
         """勾选或取消勾选 checkbox/radio。
 
         \b
@@ -221,8 +237,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, timeout=timeout)
+            ele = ctx.ele(locator, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -237,8 +254,9 @@ def register(cli):
     @click.argument('locator')
     @click.argument('file_path')
     @session_option
+    @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def upload(locator, file_path, session, timeout):
+    def upload(locator, file_path, session, frame, timeout):
         """上传文件到 input[type=file] 元素。
 
         \b
@@ -248,8 +266,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            ele = page.ele(locator, timeout=timeout)
+            ele = ctx.ele(locator, timeout=timeout)
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
@@ -261,8 +280,9 @@ def register(cli):
     @cli.command('count')
     @click.argument('locator')
     @session_option
+    @frame_option
     @click.option('--timeout', default=0, type=float, help='等待元素出现的超时秒数（默认 0 即时返回）', show_default=True)
-    def cmd_count(locator, session, timeout):
+    def cmd_count(locator, session, frame, timeout):
         """统计匹配选择器的元素数量。
 
         \b
@@ -285,8 +305,9 @@ def register(cli):
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
         try:
-            eles = page.eles(locator, timeout=timeout)
+            eles = ctx.eles(locator, timeout=timeout)
             count = len(eles)
             ok({'locator': locator, 'count': count}, msg=f'找到 {count} 个元素')
         except Exception as e:

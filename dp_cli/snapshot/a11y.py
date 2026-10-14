@@ -14,6 +14,7 @@ a11y tree — 浏览器原生无障碍树获取与渲染
   6. CDP 失败时降级到 JS fallback
 """
 import json
+from collections import deque
 
 from dp_cli.logs import debug
 
@@ -57,13 +58,16 @@ _REF_CONTENT_ROLES = frozenset({
 def take_a11y_snapshot(page, selector=None, max_depth=None, attr_priority=None,
                        with_clickables: bool = True,
                        include_low: bool = False,
-                       viewport_only: bool = False) -> dict:
+                       viewport_only: bool = False,
+                       max_nodes: int = None) -> dict:
     """
     获取页面 a11y tree，并（可选）合并 Vimium 风格的可点击元素探测。
 
     :param page: DrissionPage 的 ChromiumPage 对象
     :param selector: CSS 选择器，限定子树范围（可选）
     :param max_depth: 最大深度限制（可选，传给 CDP）
+    :param max_nodes: 节点总量上限（可选，BFS 保留前 N 个节点，
+                      超限部分剪掉并在 stats['pruned_nodes'] 记录数量）
     :param with_clickables: True 时额外运行 clickable 探测并合并到快照；
                             收集 a11y tree 漏掉的可交互元素（如纯图标按钮、
                             弹窗菜单项等）
@@ -86,20 +90,19 @@ def take_a11y_snapshot(page, selector=None, max_depth=None, attr_priority=None,
         selector_warning = None
         frame_id = None
         if selector:
-            tree, selector_warning, frame_id = _find_subtree_by_selector(page, tree, normalized, selector)
+            tree, selector_warning, frame_id = _find_subtree_by_selector(
+                page, tree, normalized, selector, max_depth=max_depth)
+
+        # 节点总量裁剪：超限在 BFS 序上剪掉尾部节点，
+        # stats/locator 生成都只作用于保留集，裁剪量记入 stats
+        pruned = _prune_tree(tree, max_nodes) if max_nodes else 0
 
         # ponytail: 如果切换到 iframe frame，需要重新获取 normalized 和 stats
-        if frame_id:
-            # 从 tree 重新构建 normalized（tree 已经是 iframe 的 tree）
-            normalized = []
-            def extract_normalized(node):
-                normalized.append(node)
-                for child in node.get('children', []):
-                    extract_normalized(child)
-            extract_normalized(tree)
-            stats = _compute_stats(normalized)
-        else:
-            stats = _compute_stats(normalized)
+        if frame_id or pruned:
+            normalized = _flatten_tree(tree)
+        stats = _compute_stats(normalized)
+        if pruned:
+            stats['pruned_nodes'] = pruned
 
         # 为交互节点 + 可引用内容节点批量生成定位器
         need_locator = [n for n in normalized
@@ -282,6 +285,8 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     stats_line = (f"- Nodes: {stats.get('total', 0)} total, "
                   f"{stats.get('interactive', 0)} interactive, "
                   f"{ref_count} refs")
+    if stats.get('pruned_nodes'):
+        stats_line += f", {stats['pruned_nodes']} pruned (--max-nodes)"
     if extras:
         stats_line += f" (含 {len(extras)} 个 a11y 外可交互)"
     lines[stats_idx] = stats_line
@@ -349,8 +354,48 @@ def _get_full_tree_cdp(page, max_depth=None, frame_id=None) -> list:
     return result.get('nodes', [])
 
 
+def _flatten_tree(root: dict) -> list:
+    """把嵌套 tree 拍平为节点列表（DFS 序）"""
+    flat = []
+
+    def walk(n):
+        flat.append(n)
+        for c in n.get('children', []):
+            walk(c)
+    if root:
+        walk(root)
+    return flat
+
+
+def _count_subtree(node: dict) -> int:
+    return 1 + sum(_count_subtree(c) for c in node.get('children', []))
+
+
+def _prune_tree(root: dict, max_nodes: int) -> int:
+    """BFS 保留前 max_nodes 个节点，就地剪掉超出部分，返回剪掉总数。
+
+    BFS 保证浅层结构优先保留——裁剪掉的是最深的尾部节点。
+    """
+    if not root or not max_nodes or max_nodes <= 0:
+        return 0
+    kept = 0
+    pruned = 0
+    queue = deque([root])
+    while queue:
+        node = queue.popleft()
+        kept += 1
+        children = node.get('children') or []
+        budget = max_nodes - kept - len(queue)
+        keep_k = min(len(children), max(0, budget))
+        if keep_k < len(children):
+            pruned += sum(_count_subtree(c) for c in children[keep_k:])
+            node['children'] = children[:keep_k]
+        queue.extend(node['children'])
+    return pruned
+
+
 def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
-                               selector: str) -> tuple:
+                               selector: str, max_depth: int = None) -> tuple:
     """在已构建的 a11y tree 中，找到 selector 对应的子树。
 
     :return: (subtree, warning) — subtree 为匹配的子树或完整树，warning 为失败提示或 None
@@ -408,7 +453,7 @@ def _find_subtree_by_selector(page, tree: dict, all_nodes: list,
                 frame_id = node_info.get('frameId')
                 if frame_id:
                     # 重新获取该 frame 的 a11y tree
-                    flat_nodes = _get_full_tree_cdp(page, max_depth=None, frame_id=frame_id)
+                    flat_nodes = _get_full_tree_cdp(page, max_depth=max_depth, frame_id=frame_id)
                     if flat_nodes:
                         normalized = [_normalize_node(n) for n in flat_nodes]
                         frame_tree = _build_tree(normalized)

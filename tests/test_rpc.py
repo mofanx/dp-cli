@@ -254,8 +254,45 @@ def test_get_page_replays_rpc(monkeypatch):
                     'b': {'body': '()=>2', 'js_id': 'old-b'}}}
     monkeypatch.setattr(_utils, 'load_session', lambda s: dict(sess))
     target = _utils._get_page('t')
-    assert len(page.init_js) == 2
-    assert 'window.__dp_rpc["a"]' in page.init_js[0]
-    # 重放更新内存中的 js_id（供 unregister 的 remove_init_js 使用）
+    # 打包：N 段合并为一次 add_init_js（省 N-1 个 CDP RTT）
+    assert len(page.init_js) == 1
+    bundle = page.init_js[0]
+    assert 'window.__dp_rpc["a"]' in bundle
+    assert 'window.__dp_rpc["b"]' in bundle
+    # 每段 try/catch 包裹，保持原独立注册的运行时隔离语义
+    assert bundle.count('try{') >= 2 and 'catch(e){}' in bundle
+    # js_id 共享 bundle id（unregister 移除整包后重放补回剩余段）
     assert sess['rpc']['a']['js_id'] == 'jsid-1'
-    assert sess['rpc']['b']['js_id'] == 'jsid-2'
+    assert sess['rpc']['b']['js_id'] == 'jsid-1'
+
+
+@pytest.mark.unit
+def test_get_page_replay_bundle_isolates_bad_spec(monkeypatch):
+    """单个 spec 生成失败不拖垮其余段——rpc 坏条目被跳过，
+    hooks 好条目仍进同一个 bundle。"""
+    from dp_cli.commands import _utils
+
+    page = _RpcPage()
+    sess = {
+        'rpc': {
+            'good': {'body': '()=>1'},
+            # 坏 spec：_register_js 对任何 body 都不抛——
+            # 用 hooks 侧的坏 path 触发生成期异常来验证隔离
+        },
+        'hooks': {
+            'bad': {'type': 'func', 'spec': {}},   # 缺 path → KeyError
+            'ok-1': {'type': 'xhr', 'spec': {'url': '/a/'}},
+        },
+    }
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(_utils, 'save_session', lambda s, d: None)
+    _utils._get_page('t')
+    assert len(page.init_js) == 1
+    bundle = page.init_js[0]
+    assert 'window.__dp_rpc["good"]' in bundle       # rpc 段在
+    assert 'XMLHttpRequest.prototype' in bundle       # hooks 好段在
+    assert 'try{' in bundle                           # 分段包裹
+    # 两个合法 spec 共享同一 bundle id
+    assert sess['rpc']['good']['js_id'] == 'jsid-1'
+    assert sess['hooks']['ok-1']['js_id'] == 'jsid-1'

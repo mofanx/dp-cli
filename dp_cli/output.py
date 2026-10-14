@@ -108,6 +108,8 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'PERF_FAILED':          (EXIT_RUNTIME, '性能指标获取失败'),
     'RPC_FAILED':           (EXIT_RUNTIME, 'RPC 注册/列表/移除失败'),
     'RPC_CALL_FAILED':      (EXIT_RUNTIME, 'RPC 调用执行失败'),
+    'HOOK_FAILED':          (EXIT_RUNTIME, 'hook 注入/移除/导出失败'),
+    'HOOK_NOT_FOUND':       (EXIT_NOT_FOUND, 'hook 未安装'),
     'TRACE_FAILED':         (EXIT_RUNTIME, 'trace 采集/写盘失败'),
     'SCREENCAST_FAILED':    (EXIT_RUNTIME, 'screencast 帧录制失败'),
     'STEALTH_CHECK_FAILED': (EXIT_RUNTIME, 'stealth 指纹自检失败'),
@@ -118,6 +120,22 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'THROTTLE_FAILED':      (EXIT_RUNTIME, '网络/CPU 节流设置失败'),
     'FILE_CHOOSER_FAILED':  (EXIT_RUNTIME, '文件选择对话框处理失败'),
 }
+
+
+_COMPACT = False
+
+
+def set_compact(enabled: bool) -> None:
+    """全局紧凑输出开关（--compact / DP_CLI_COMPACT=1）。"""
+    global _COMPACT
+    _COMPACT = enabled
+
+
+def _dump(obj: Any) -> str:
+    """统一 JSON 序列化：compact 单行无空格 / 默认 indent=2。"""
+    if _COMPACT:
+        return json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+    return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
 def _exit_code_for(code: str) -> int:
@@ -132,7 +150,7 @@ def ok(data: Any = None, msg: str = None) -> None:
         result['message'] = msg
     if data is not None:
         result['data'] = data
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(_dump(result))
 
 
 def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
@@ -144,7 +162,7 @@ def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
     result = {'status': 'error', 'code': code, 'message': msg}
     if detail:
         result['detail'] = detail
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(_dump(result))
     sys.exit(_exit_code_for(code))
 
 

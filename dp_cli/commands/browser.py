@@ -21,7 +21,7 @@ from dp_cli.session import (get_browser, close_browser, list_sessions,
                             sniff_auto_user_data_dir)
 from dp_cli.output import ok, error, format_page_info, debug
 from dp_cli.commands._utils import (session_option, _get_page, normalize_url,
-                                    resolve_locator)
+                                    resolve_locator, CdpWaitGate)
 from dp_cli.stealth import apply_stealth, stealth_check, PRESETS, DEFAULT_UA
 
 
@@ -786,8 +786,10 @@ def register(cli):
     @click.option('--timeout', default=30.0, show_default=True,
                   type=float, help='等待挑战通过的最长秒数')
     @click.option('--poll', default=0.5, show_default=True, type=float,
-                  help='检测轮询间隔秒数')
-    def cf_wait(session, timeout, poll):
+                  help='检测轮询间隔秒数（事件驱动不可用时的回落节拍）')
+    @click.option('--no-events', 'force_poll', is_flag=True,
+                  help='禁用事件驱动，强制纯轮询')
+    def cf_wait(session, timeout, poll, force_poll):
         """检测并等待 Cloudflare Turnstile/挑战页通过。
 
         识别挑战页标志：challenges.cloudflare.com / turnstile iframe、
@@ -800,17 +802,29 @@ def register(cli):
         """
         import re as _re
         page = _get_page(session)
+        # as_expr=True 走 Runtime.evaluate：顶层 return 是非法语法（会抛
+        # JavaScriptError 被保守分支吞成"仍在挑战"），必须用括号表达式
         detect_js = (
-            'return {f:!!document.querySelector('
+            '({f:!!document.querySelector('
             '\'iframe[src*="challenges.cloudflare.com"],'
             'iframe[src*="cf-challenge"],'
             'iframe[src*="turnstile"]\'),'
-            't:document.title||""}')
+            't:document.title||""})')
+        # 事件驱动 watcher 的"挑战已清除"条件（页内探测，变真即唤醒）
+        clear_cond = (
+            '!document.querySelector('
+            + json.dumps('iframe[src*="challenges.cloudflare.com"],'
+                         'iframe[src*="cf-challenge"],'
+                         'iframe[src*="turnstile"]')
+            + ')&&!/just a moment|请稍候|checking your browser'
+              '|verify you are human/i.test(document.title||"")')
 
         start = perf_counter()
         end = start + timeout
         ever = False
         last_title = ''
+        gate = CdpWaitGate(page)
+        armed = gate.arm(clear_cond, force_poll=force_poll)
         try:
             while True:
                 try:
@@ -837,7 +851,10 @@ def register(cli):
                           f'（title={last_title!r}）。建议先 dp stealth '
                           f'或检查代理/指纹', code='WAIT_TIMEOUT')
                     return
-                _sleep(poll)
+                if armed:
+                    gate.wait(min(poll, end - perf_counter()))
+                else:
+                    _sleep(poll)
             ok({'passed': True, 'was_challenged': ever,
                 'waited_seconds': round(perf_counter() - start, 2),
                 'title': last_title})
@@ -845,3 +862,5 @@ def register(cli):
             raise
         except Exception as e:
             error('CF 挑战等待失败', code='WAIT_FAILED', detail=str(e))
+        finally:
+            gate.disarm()

@@ -19,8 +19,8 @@ import click
 
 from dp_cli.output import error
 
-# 不允许在批处理内递归调用自身（stdin 会读空/语义混乱）
-_FORBIDDEN = {'batch', 'exec'}
+# 不允许在批处理内递归调用自身/serve（stdin 会读空/语义混乱）
+_FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
 
 
 def _read_lines(src: str) -> list:
@@ -140,7 +140,8 @@ def batch(file, keep_going, verbose, no_summary):
                 argv = argv[1:]
             # 跳过全局 flag 定位真实命令名，防止 "-v batch f.txt" 绕过嵌套防护
             cmd_name = next(
-                (a for a in argv if a not in ('-v', '--verbose')), None)
+                (a for a in argv
+                 if a not in ('-v', '--verbose', '--compact')), None)
             if cmd_name is None:
                 code, result = _invalid(f'第 {lineno} 行为空命令')
             elif cmd_name in _FORBIDDEN:

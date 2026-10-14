@@ -353,12 +353,13 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 导航/页面 | `state-load` | [filename], [session] |
 | 导航/页面 | `state-save` | [filename], [session] |
 | 快照 | `dom` | <locator>, [session], [direction], [depth], [index], [timeout] |
+| 快照 | `dom-snapshot` | [session], [loc], [styles], [no_rects], [no_paint], [output] |
 | 快照 | `extract` | [session], <container>, <fields_json>, [limit], [output_fmt], [filename] |
 | 快照 | `find` | <locator>, [session], [find_all], [timeout] |
 | 快照 | `inspect` | <locator>, [session], [index], [include_rect], [include_style], [timeout] |
 | 快照 | `query` | [session], <selector>, [fields], [limit], [filename] |
 | 快照 | `scan` | [session], [viewport_only], [confidence], [max_elements], [fmt], [filename], [verbose] |
-| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority] |
+| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [timeout] |
 | 提取/交互 | `clear` | <locator>, [session], [index], [frame], [timeout] |
 | 提取/交互 | `click` | <locator>, [session], [index], [by_js], [human], [human_min], [human_max], [frame], [timeout] |
@@ -378,7 +379,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 网络 | `http-get` | <url>, [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `http-post` | <url>, [data], [form], [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `listen` | [session], [url_filter], [count], [timeout], [method] |
-| 网络 | `listen-stop` | [session], [count], [timeout], [output] |
+| 网络 | `listen-stop` | [session], [count], [timeout], [output], [fields], [head] |
 | 断言 | `assert-count` | <locator>, [expected], [session], [min_count], [max_count], [frame], [timeout] |
 | 断言 | `assert-text` | <text>, [session], [locator], [exact], [frame], [timeout] |
 | 断言 | `assert-url` | <text>, [session], [exact], [check_title] |
@@ -397,7 +398,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 存储 | `cookie-delete` | <name>, [session] |
 | 存储 | `cookie-export` | [session], [domain], [fmt], [output] |
 | 存储 | `cookie-get` | <name>, [session] |
-| 存储 | `cookie-list` | [session], [domain], [url] |
+| 存储 | `cookie-list` | [session], [domain], [url], [fields], [head] |
 | 存储 | `cookie-set` | <name>, <value>, [session], [domain], [path], [http_only], [secure] |
 | 存储 | `localstorage-clear` | [session] |
 | 存储 | `localstorage-delete` | <key>, [session] |
@@ -416,7 +417,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 录制 | `record-status` | [session] |
 | 录制 | `record-stop` | [session], [fmt], [output], [filename], [raw] |
 | 页面 | `add-init-js` | <script>, [session] |
-| 页面 | `console-dump` | [session], [keep], [clear_buf] |
+| 页面 | `console-dump` | [session], [keep], [clear_buf], [fields], [head] |
 | 页面 | `console-listen` | [session] |
 | 页面 | `dialog-accept` | [text], [session] |
 | 页面 | `dialog-dismiss` | [session] |
@@ -426,6 +427,12 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary] |
+| 批量 | `serve` | [session] |
+| 批量 | `sh` | [session] |
+| 逆向 | `hook-clear` | [hid], [all_], [buf], [session] |
+| 逆向 | `hook-dump` | [out], [clear], [fields], [head], [session] |
+| 逆向 | `hook-list` | [session] |
+| 逆向 | `hook-set` | <htype>, [path], [name], [url], [method], [when], [hid], [persist], [session] |
 | 逆向 | `rpc-call` | <name>, [args], [session] |
 | 逆向 | `rpc-list` | [session] |
 | 逆向 | `rpc-register` | <name>, <js>, [session], [persist] |

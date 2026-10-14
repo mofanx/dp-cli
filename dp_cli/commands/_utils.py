@@ -3,6 +3,7 @@
 import io
 import csv
 import re
+import threading
 from time import perf_counter, sleep as _sleep
 
 import click
@@ -23,6 +24,34 @@ def normalize_url(url: str) -> str:
 def session_option(f):
     return click.option('-S', '--session', default='default',
                         help='会话名称，默认 default', show_default=True)(f)
+
+
+def trim_options(f):
+    """--fields/--head 输出裁剪选项组（记录列表类命令共用）。"""
+    f = click.option('--head', type=int, default=None,
+                     help='只输出前 N 条记录（附 total 字段说明截断）')(f)
+    f = click.option('--fields', default=None,
+                     help='字段白名单，逗号分隔；非法字段名报错')(f)
+    return f
+
+
+def shape_records(records, fields, head, valid_fields):
+    """应用 --fields/--head 裁剪，返回 (shaped, total)；参数非法经 error() 退出。"""
+    total = len(records)
+    if fields is not None:
+        keys = [k.strip() for k in fields.split(',') if k.strip()]
+        bad = [k for k in keys if k not in valid_fields]
+        if not keys or bad:
+            error(f'--fields 非法字段: {", ".join(bad) or "（空）"}'
+                  f'（可用: {", ".join(sorted(valid_fields))}）',
+                  code='INVALID_ARGS')
+        records = [{k: (r.get(k) if isinstance(r, dict) else None)
+                    for k in keys} for r in records]
+    if head is not None:
+        if head < 0:
+            error('--head 需为非负整数', code='INVALID_ARGS')
+        records = records[:head]
+    return records, total
 
 
 def frame_option(f):
@@ -128,18 +157,48 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             _apply_browser_cdp(target, browser_cdp_cfg)
         except Exception as e:
             debug('browser_cdp 重放失败', e)
+    # persist 重放脚本打包：rpc/hooks 的 N 个 init-js 合并为单个 bundle
+    # 一次 addScriptToEvaluateOnNewDocument 注册，省 N-1 个 CDP RTT。
+    # 每段 try/catch 包裹隔离运行时异常（原独立注册语义）；
+    # 各段均为生成器模板 + json.dumps 插值，语法安全由生成器保证。
+    bundle_parts = []
+
     rpc_cfg = sess.get('rpc')
     if rpc_cfg:
         try:
             from dp_cli.commands.rpc import _register_js
             for rpc_name, spec in rpc_cfg.items():
                 try:
-                    spec['js_id'] = target.add_init_js(
-                        _register_js(rpc_name, spec['body']))
+                    bundle_parts.append(_register_js(rpc_name, spec['body']))
                 except Exception as e:
                     debug(f'rpc 重放失败 name={rpc_name}', e)
         except Exception as e:
             debug('rpc 重放失败', e)
+    hooks_cfg = sess.get('hooks')
+    if hooks_cfg:
+        try:
+            from dp_cli.commands.hook import _hook_js
+            for hid, spec in hooks_cfg.items():
+                try:
+                    bundle_parts.append(_hook_js(hid, spec['type'], spec['spec']))
+                except Exception as e:
+                    debug(f'hook 重放失败 id={hid}', e)
+        except Exception as e:
+            debug('hook 重放失败', e)
+
+    if bundle_parts:
+        try:
+            bundle_js = ';'.join(
+                f'try{{{s}}}catch(e){{}}' for s in bundle_parts)
+            bundle_id = target.add_init_js(bundle_js)
+            # js_id 共享 bundle id：unregister 移除整包后，
+            # 下次 _get_page 重放自动补回剩余段
+            for spec in (rpc_cfg or {}).values():
+                spec['js_id'] = bundle_id
+            for spec in (hooks_cfg or {}).values():
+                spec['js_id'] = bundle_id
+        except Exception as e:
+            debug('persist 脚本打包注册失败', e)
 
     return target
 
@@ -313,6 +372,103 @@ def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
     error(f'ref:{ref_id} 无法解析为有效定位器 (role={ref_data.get("role")})',
           code='REF_UNRESOLVABLE')
     raise SystemExit(1)
+
+
+class CdpWaitGate:
+    """CDP 事件驱动的等待唤醒门：事件到达即唤醒重检，无事件按 poll 节拍回落。
+
+    事件源：
+    - Runtime.bindingCalled：页内 watcher（MutationObserver + 低频 interval）
+      检测到条件变真后经 __dp_wait binding 上报——JS 侧探测零 CDP 轮询流量
+    - Page.frameNavigated/domContentEventFired/loadEventFired：导航唤醒
+      重检，并在新文档重注入 watcher（导航后 JS 上下文销毁）
+
+    arm() 任一步失败（旧内核不支持 addBinding / driver 不可用）或调用方
+    强制轮询 → armed=False，调用方走纯 _sleep 路径，语义完全等价。
+    """
+    BIND_NAME = '__dp_wait'
+    _WATCHER = (
+        '(function(){if(window.__dp_wait_armed)return"armed";'
+        'window.__dp_wait_armed=1;var done=false;'
+        'function chk(){if(done)return;var v=false;'
+        'try{v=!!(__COND__)}catch(e){}'
+        'if(v){done=true;try{window.__dp_wait("hit")}catch(e){}}}'
+        'try{new MutationObserver(chk).observe('
+        'document.documentElement||document,'
+        '{subtree:true,childList:true,attributes:true,characterData:true})}'
+        'catch(e){}'
+        'window.__dp_wait_iv=setInterval(chk,250);chk();return "ok"})()')
+    _PAGE_EVENTS = ('Page.frameNavigated', 'Page.domContentEventFired',
+                    'Page.loadEventFired')
+    _EVENTS = ('Runtime.bindingCalled',) + _PAGE_EVENTS
+
+    def __init__(self, page):
+        self.page = page
+        self.wake = threading.Event()
+        self.nav = threading.Event()
+        self.armed = False
+        self._driver = None
+        self._cond = None
+
+    def arm(self, cond_js=None, force_poll=False) -> bool:
+        """注册 binding + Page 事件 + 注入页内 watcher。返回是否成功武装。"""
+        if force_poll:
+            return False
+        self._cond = cond_js
+        try:
+            self._driver = self.page.driver
+            self.page.run_cdp('Runtime.enable')
+            self.page.run_cdp('Runtime.addBinding', name=self.BIND_NAME)
+            self.page.run_cdp('Page.enable')
+            self._driver.set_callback('Runtime.bindingCalled', self._on_binding)
+            for ev in self._PAGE_EVENTS:
+                self._driver.set_callback(ev, self._on_nav)
+            self.armed = True
+            if cond_js:
+                self.reinject()
+        except Exception as e:
+            debug('事件驱动等待不可用，回落轮询', e)
+            self.disarm()
+        return self.armed
+
+    def reinject(self):
+        """（导航后的新文档）重新注入页内条件 watcher。"""
+        if not (self.armed and self._cond):
+            return
+        try:
+            self.page.run_js(
+                self._WATCHER.replace('__COND__', f'({self._cond})'))
+        except Exception as e:
+            # 导航瞬断期注入失败无碍：后续 Page 事件/轮询节拍会再触发重试
+            debug('watcher 注入失败', e)
+
+    def wait(self, seconds: float) -> bool:
+        """阻塞至事件唤醒或超时；返回 True=被事件唤醒。自动处理导航重注入。"""
+        fired = self.wake.wait(max(0.0, seconds))
+        self.wake.clear()
+        if self.nav.is_set():
+            self.nav.clear()
+            self.reinject()
+        return fired
+
+    def disarm(self):
+        """摘除全部回调（binding 留在会话内无副作用）。"""
+        if self._driver is not None:
+            for ev in self._EVENTS:
+                try:
+                    self._driver.set_callback(ev, None)
+                except Exception:
+                    pass
+            self._driver = None
+        self.armed = False
+
+    def _on_binding(self, **kw):
+        if kw.get('name') == self.BIND_NAME:
+            self.wake.set()
+
+    def _on_nav(self, **kw):
+        self.nav.set()
+        self.wake.set()
 
 
 def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30) -> bool:

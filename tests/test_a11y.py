@@ -743,3 +743,72 @@ def test_generate_locators_escapes_attr_selector():
     # 属性名以 JSON 字符串形式出现（双引号包裹，单引号原样保留）
     assert '"[data-fo\'o]"' in exprs[0]
     assert '["data-fo\'o"]' in exprs[0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t2 性能：_prune_tree 结构级裁剪（--max-nodes）
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_prune_tree_bfs_keeps_shallow():
+    """BFS 保留前 N 节点：浅层优先，剪最深尾部，返回剪掉总数（含子树）。"""
+    # root → [a, b]；a → [a1]；a1 → [a1x]
+    leaf = node(role='StaticText', name='x')
+    a1 = node(role='paragraph', children=[leaf])
+    a = node(role='main', children=[a1])
+    b = node(role='button', name='B', backendNodeId=9)
+    root = node(role='WebArea', children=[a, b])
+
+    pruned = a11y._prune_tree(root, 3)
+
+    assert pruned == 2            # a1 + leaf 整棵子树被剪
+    assert len(root['children']) == 2
+    assert a['children'] == []    # a1 被剪
+    assert root['children'][1] is b  # b 保留
+
+
+@pytest.mark.unit
+def test_prune_tree_noop():
+    """max_nodes=None/0/超上限 → 不剪。"""
+    root = node(role='WebArea', children=[node(role='p', name='x')])
+    assert a11y._prune_tree(root, None) == 0
+    assert a11y._prune_tree(root, 0) == 0
+    assert a11y._prune_tree(root, 99) == 0
+    assert len(root['children']) == 1
+
+
+@pytest.mark.unit
+def test_take_snapshot_max_nodes_marks_stats():
+    """take_a11y_snapshot(max_nodes=N)：超限节点剪掉，stats['pruned_nodes'] 记录。"""
+    nodes = [
+        {'nodeId': '1', 'role': {'value': 'WebArea'},
+         'childIds': ['2', '3']},
+        {'nodeId': '2', 'parentId': '1', 'role': {'value': 'main'},
+         'childIds': ['4']},
+        {'nodeId': '3', 'parentId': '1', 'role': {'value': 'banner'}},
+        {'nodeId': '4', 'parentId': '2', 'role': {'value': 'StaticText'},
+         'name': {'value': 'deep'}},
+    ]
+    page = FakePage(cdp_map={'Accessibility.getFullAXTree': {'nodes': nodes}})
+    result = a11y.take_a11y_snapshot(page, max_nodes=3,
+                                     with_clickables=False)
+    assert result['stats']['total'] == 3
+    assert result['stats']['pruned_nodes'] == 1
+    # 渲染层 stats 行带 pruned 标记
+    text = a11y.render_a11y_text(result)
+    assert 'pruned' in text
+
+
+@pytest.mark.unit
+def test_take_snapshot_max_depth_passed_to_cdp():
+    """max_depth 透传给 Accessibility.getFullAXTree 的 depth 参数。"""
+    seen = {}
+
+    def ax(**kw):
+        seen.update(kw)
+        return {'nodes': [{'nodeId': '1', 'role': {'value': 'WebArea'},
+                           'childIds': []}]}
+
+    page = FakePage(cdp_map={'Accessibility.getFullAXTree': ax})
+    a11y.take_a11y_snapshot(page, max_depth=2, with_clickables=False)
+    assert seen.get('depth') == 2

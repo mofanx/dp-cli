@@ -1,17 +1,37 @@
 # -*- coding:utf-8 -*-
 """快照与数据提取命令: snapshot / extract / query / find / inspect / dom"""
 import json
+from html import unescape
 from pathlib import Path
 
 import click
 
-from dp_cli.output import ok, error, debug
+from dp_cli.output import ok, error, debug, _dump
 from dp_cli.session import save_refs
 from dp_cli.snapshot import (extract_structured, query_elements,
                               take_a11y_snapshot, render_a11y_text,
                               render_a11y_plain_text, detect_clickables)
 from dp_cli.snapshot.utils import suggest_locator
 from dp_cli.commands._utils import session_option, _get_page, records_to_csv, resolve_locator
+
+# inspect 聚合 JS（this=元素）：一次 Runtime.evaluate 取回全部字段
+_INSPECT_JS = """var el=this,cs=getComputedStyle(el),a={},i,at;
+for(i=0;i<el.attributes.length;i++){at=el.attributes[i];a[at.name]=at.value;}
+var r=el.getBoundingClientRect();
+var vv=window.visualViewport||{pageLeft:0,pageTop:0};
+var disp=!(cs.visibility==='hidden'||cs.display==='none'||el.hidden);
+var en=!el.disabled;
+return {tag:el.localName?String(el.localName).toLowerCase():'',
+text:el.innerText||'',attrs:a,
+displayed:disp,enabled:en,checked:!!el.checked,
+clickable:(el.getClientRects().length>0&&en&&disp&&cs.pointerEvents!=='none'),
+rect:{location:[r.left+vv.pageLeft,r.top+vv.pageTop],
+size:[r.width,r.height],
+midpoint:[r.left+vv.pageLeft+Math.floor(r.width/2),
+r.top+vv.pageTop+Math.floor(r.height/2)]},
+styles:{color:cs.color,'background-color':cs.backgroundColor,
+'font-size':cs.fontSize,display:cs.display,visibility:cs.visibility,
+position:cs.position,'z-index':cs.zIndex}};"""
 
 
 def register(cli):
@@ -35,8 +55,13 @@ def register(cli):
                   help='补充探测只看视口内元素（省 token、更快）')
     @click.option('--locator-priority', '-p', default=None,
                   help='自定义 locator 属性优先级（逗号分隔），如 "data-testid,data-test-id,id"')
+    @click.option('--depth', 'max_depth', type=int, default=None,
+                  help='限制 a11y 树深度（传给 CDP getFullAXTree，省 token）')
+    @click.option('--max-nodes', type=int, default=None,
+                  help='节点总量上限（BFS 保留前 N 个，超限附 pruned 标记）')
     def snapshot(session, mode, interactive, selector, fmt, filename,
-                 no_clickables, include_low, viewport_only, locator_priority):
+                 no_clickables, include_low, viewport_only, locator_priority,
+                 max_depth, max_nodes):
         """获取页面快照（a11y tree + Vimium 风格可交互元素补充）。
 
         \b
@@ -63,6 +88,8 @@ def register(cli):
           dp snapshot --no-clickables          # 纯 a11y tree，旧版本行为
           dp snapshot -s ".main"               # 只获取指定区域
           dp snapshot -p "data-testid,data-test-id,id"  # 自定义属性优先级
+          dp snapshot --depth 3                # 只取 a11y 树前 3 层
+          dp snapshot --max-nodes 200          # 总量上限，超出附 pruned 标记
         """
         # -i 选项覆盖 mode
         if interactive:
@@ -82,6 +109,8 @@ def register(cli):
                 include_low=include_low,
                 viewport_only=viewport_only,
                 attr_priority=attr_priority,
+                max_depth=max_depth,
+                max_nodes=max_nodes,
             )
         except Exception as e:
             error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
@@ -93,8 +122,7 @@ def register(cli):
         mode_effective = 'interactive' if mode == 'brief' else mode
         if fmt == 'json':
             render_a11y_text(data, refs=refs)  # 触发编号分配
-            output = json.dumps({'status': 'ok', 'data': data},
-                                ensure_ascii=False, indent=2)
+            output = _dump({'status': 'ok', 'data': data})
         elif mode_effective == 'text':
             output = render_a11y_plain_text(data, refs=refs)
         elif mode_effective == 'interactive':
@@ -236,7 +264,7 @@ def register(cli):
             save_refs(session, url, refs)
 
         if fmt == 'json':
-            output = json.dumps({
+            output = _dump({
                 'status': 'ok',
                 'data': {
                     'page': {'url': url, 'title': title},
@@ -249,7 +277,7 @@ def register(cli):
                     },
                     'elements': filtered,
                 }
-            }, ensure_ascii=False, indent=2)
+            })
         else:
             output = '\n'.join(rendered_lines)
 
@@ -428,33 +456,29 @@ def register(cli):
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
+            # 单次 Runtime.evaluate 聚合取回 tag/text/attrs/states/rect/styles，
+            # 与逐项 ele.tag/raw_text/attrs/states/rect/style() 语义一致，
+            # ~20 次 CDP 往返降为 1 次
+            d = ele.run_js(_INSPECT_JS) or {}
+            # text 等价于 raw_text：innerText + format_html(unescape + nbsp→空格)
+            text = unescape(d.get('text') or '').replace('\xa0', ' ')
             info = {
-                'tag': ele.tag,
-                'text': (ele.raw_text or '').strip(),
-                'attrs': ele.attrs,
+                'tag': d.get('tag') or '',
+                'text': text.strip(),
+                'attrs': d.get('attrs') or {},
                 'states': {
-                    'is_displayed': ele.states.is_displayed,
-                    'is_enabled': ele.states.is_enabled,
-                    'is_checked': ele.states.is_checked if ele.tag in ('input', 'option') else None,
-                    'is_clickable': ele.states.is_clickable,
+                    'is_displayed': d.get('displayed'),
+                    'is_enabled': d.get('enabled'),
+                    'is_checked': (d.get('checked')
+                                   if d.get('tag') in ('input', 'option')
+                                   else None),
+                    'is_clickable': d.get('clickable'),
                 },
             }
             if include_rect:
-                rect = ele.rect
-                info['rect'] = {
-                    'location': list(rect.location),
-                    'size': list(rect.size),
-                    'midpoint': list(rect.midpoint),
-                }
+                info['rect'] = d.get('rect')
             if include_style:
-                styles = {}
-                for prop in ('color', 'background-color', 'font-size',
-                             'display', 'visibility', 'position', 'z-index'):
-                    try:
-                        styles[prop] = ele.style(prop)
-                    except Exception as e:
-                        debug(f'获取样式 {prop} 失败', e)
-                info['styles'] = styles
+                info['styles'] = d.get('styles') or {}
             ok(info)
         except Exception as e:
             error(f'查询元素失败: {locator}', code='INSPECT_FAILED', detail=str(e))
@@ -574,3 +598,82 @@ def register(cli):
             ok(result)
         except Exception as e:
             error(f'DOM 查询失败: {locator}', code='DOM_FAILED', detail=str(e))
+
+    @cli.command('dom-snapshot')
+    @session_option
+    @click.option('--selector', 'loc', default=None,
+                  help='限定子树的定位器（默认整文档；支持 css:/xpath:/ref: 等）')
+    @click.option('--styles', default=None,
+                  help='逗号分隔的 computed style 白名单（默认常用集）')
+    @click.option('--no-rects', is_flag=True, help='不采集 layout rects')
+    @click.option('--no-paint', is_flag=True, help='不采集 paint order')
+    @click.option('--output', '-o', default=None,
+                  help='原始 JSON 落盘（默认内联 data.snapshot，含摘要 stats）')
+    def cmd_dom_snapshot(session, loc, styles, no_rects, no_paint, output):
+        """整页/子树 DOMSnapshot 取证快照（DOM + computed style + layout）。
+
+        与 a11y snapshot 不同：这是渲染层完整取证——含 shadow DOM 展开、
+        computed style、layout box，适合离线 diff 与样式取证。
+        子树走 DOM.getSnapshot（需要 selector 对应元素）。
+
+        \b
+        示例:
+          dp dom-snapshot -o snap.json            # 整页取证
+          dp dom-snapshot --selector "css:main"   # 子树快照
+          dp dom-snapshot --styles "display,color,font-size"
+        """
+        page = _get_page(session)
+        style_list = ([s.strip() for s in styles.split(',') if s.strip()]
+                      if styles else
+                      ['display', 'position', 'visibility', 'overflow',
+                       'width', 'height', 'color', 'font-size',
+                       'font-family', 'z-index'])
+        try:
+            if loc:
+                real_loc = resolve_locator(loc, session, page)
+                ele = page.ele(real_loc)
+                if ele is None or ele.__class__.__name__ == 'NoneElement':
+                    error(f'元素未找到: {loc}', code='ELEMENT_NOT_FOUND')
+                    return
+                backend = getattr(ele, '_backend_id', None)
+                node_id = getattr(ele, '_node_id', None)
+                kw = {'computedStyleWhitelist': style_list,
+                      'includeDOMRects': not no_rects,
+                      'includePaintOrder': not no_paint}
+                if backend:
+                    kw['backendNodeId'] = backend
+                elif node_id:
+                    kw['nodeId'] = node_id
+                else:
+                    error('无法获取元素节点标识', code='DOM_FAILED')
+                    return
+                snap = page.run_cdp('DOM.getSnapshot', **kw)
+                stats = {
+                    'dom_nodes': len(snap.get('domNodes', [])),
+                    'layout_nodes': len(snap.get('layoutTreeNodes', [])),
+                    'computed_styles': len(snap.get('computedStyles', [])),
+                }
+            else:
+                kw = {'computedStyles': style_list,
+                      'includeDOMRects': not no_rects,
+                      'includePaintOrder': not no_paint}
+                snap = page.run_cdp('DOMSnapshot.captureSnapshot', **kw)
+                stats = {
+                    'documents': len(snap.get('documents', [])),
+                    'nodes': sum(len(d.get('nodes', {}).get('nodeName', []))
+                                 for d in snap.get('documents', [])),
+                    'strings': len(snap.get('strings', [])),
+                }
+            data = {'scope': 'subtree' if loc else 'document',
+                    'selector': loc, 'stats': stats}
+            if output:
+                Path(output).write_text(
+                    json.dumps(snap, ensure_ascii=False), encoding='utf-8')
+                data['saved_to'] = output
+            else:
+                data['snapshot'] = snap
+            ok(data)
+        except SystemExit:
+            raise
+        except Exception as e:
+            error('DOMSnapshot 采集失败', code='DOM_FAILED', detail=str(e))

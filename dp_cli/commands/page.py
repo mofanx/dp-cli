@@ -8,7 +8,11 @@ from time import perf_counter, sleep as _sleep
 import click
 
 from dp_cli.output import ok, error, debug, format_page_info
-from dp_cli.commands._utils import session_option, _get_page, wait_network_idle
+from dp_cli.commands._utils import (session_option, _get_page,
+                                    wait_network_idle, trim_options,
+                                    shape_records, CdpWaitGate)
+
+_CONSOLE_FIELDS = {'level', 'text', 'source', 'timestamp'}
 
 
 def register(cli):
@@ -191,7 +195,8 @@ def register(cli):
     @session_option
     @click.option('--keep', is_flag=True, help='dump 后继续保持监听')
     @click.option('--clear', 'clear_buf', is_flag=True, help='dump 后清空缓冲区')
-    def console_dump(session, keep, clear_buf):
+    @trim_options
+    def console_dump(session, keep, clear_buf, fields, head):
         """读取已捕获的 console/error 记录。
 
         默认 dump 后停止监听并清空缓冲区；--keep 保持监听，
@@ -214,7 +219,12 @@ def register(cli):
                     driver.set_callback('Log.entryAdded', None)
                 except Exception as e:
                     debug('console 回调清理失败', e)
-            ok({'messages': results, 'count': len(results)})
+            shaped, total = shape_records(results, fields, head,
+                                          _CONSOLE_FIELDS)
+            data = {'messages': shaped, 'count': len(shaped)}
+            if head is not None:
+                data['total'] = total
+            ok(data)
         except Exception as e:
             error(f'读取 console 记录失败', code='CONSOLE_FAILED', detail=str(e))
 
@@ -263,8 +273,10 @@ def register(cli):
     @click.option('--response', 'resp_pattern', default=None,
                   help='等待 URL 含此文本的网络响应出现（一步式，等价 listen + listen-stop）')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
+    @click.option('--poll', '--no-events', 'force_poll', is_flag=True,
+                  help='禁用事件驱动（--text/--js），强制纯轮询')
     def wait(session, url, title, locator, locator_gone, text, loaded, idle,
-             downloads_done, js_expr, resp_pattern, timeout):
+             downloads_done, js_expr, resp_pattern, timeout, force_poll):
         """等待条件满足。
 
         \b
@@ -307,13 +319,24 @@ def register(cli):
                 page.wait.ele_hidden(locator_gone, timeout=timeout)
                 ok({'locator': locator_gone}, msg='元素已消失')
             elif text:
-                end = perf_counter() + timeout
-                found = False
-                while perf_counter() < end:
-                    if text in page.html:
-                        found = True
-                        break
-                    _sleep(0.3)
+                gate = CdpWaitGate(page)
+                armed = gate.arm(
+                    'document.body&&document.body.innerText.includes('
+                    + json.dumps(text) + ')',
+                    force_poll=force_poll)
+                try:
+                    end = perf_counter() + timeout
+                    found = False
+                    while perf_counter() < end:
+                        if text in page.html:
+                            found = True
+                            break
+                        if armed:
+                            gate.wait(min(0.3, end - perf_counter()))
+                        else:
+                            _sleep(0.3)
+                finally:
+                    gate.disarm()
                 if found:
                     ok({'text': text}, msg='文本已出现')
                 else:
@@ -322,16 +345,24 @@ def register(cli):
                 page.wait.downloads_done(timeout=timeout)
                 ok(msg='下载已完成')
             elif js_expr:
-                end = perf_counter() + timeout
-                value = None
-                while perf_counter() < end:
-                    try:
-                        value = page.run_js(js_expr, as_expr=True)
-                    except Exception:
-                        value = None
-                    if value:
-                        break
-                    _sleep(0.3)
+                gate = CdpWaitGate(page)
+                armed = gate.arm(f'({js_expr})', force_poll=force_poll)
+                try:
+                    end = perf_counter() + timeout
+                    value = None
+                    while perf_counter() < end:
+                        try:
+                            value = page.run_js(js_expr, as_expr=True)
+                        except Exception:
+                            value = None
+                        if value:
+                            break
+                        if armed:
+                            gate.wait(min(0.3, end - perf_counter()))
+                        else:
+                            _sleep(0.3)
+                finally:
+                    gate.disarm()
                 if value:
                     ok({'expression': js_expr, 'result': value}, msg='JS 条件已满足')
                 else:

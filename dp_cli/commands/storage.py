@@ -6,7 +6,11 @@ from pathlib import Path
 import click
 
 from dp_cli.output import ok, error
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import (session_option, _get_page,
+                                    trim_options, shape_records)
+
+_COOKIE_FIELDS = {'name', 'value', 'domain', 'path', 'secure', 'httpOnly',
+                  'sameSite', 'expires'}
 
 
 def _is_local_or_ip(host: str) -> bool:
@@ -29,7 +33,8 @@ def register(cli):
     @session_option
     @click.option('--domain', default=None, help='按域名过滤')
     @click.option('--url', default=None, help='按 URL 过滤')
-    def cookie_list(session, domain, url):
+    @trim_options
+    def cookie_list(session, domain, url, fields, head):
         """列出所有 Cookie。
 
         \b
@@ -83,7 +88,12 @@ def register(cli):
                                          'httpOnly': c.get('httpOnly', False),
                                          'sameSite': c.get('sameSite'),
                                          'expires': c.get('expires')})
-            ok({'cookies': cookie_list_data, 'count': len(cookie_list_data)})
+            shaped, total = shape_records(cookie_list_data, fields, head,
+                                          _COOKIE_FIELDS)
+            data = {'cookies': shaped, 'count': len(shaped)}
+            if head is not None:
+                data['total'] = total
+            ok(data)
         except Exception as e:
             error(f'获取 Cookie 失败', code='COOKIE_FAILED', detail=str(e))
 

@@ -2495,3 +2495,214 @@ def test_cf_wait_timeout(runner, monkeypatch):
     r = runner.invoke(cli, ['cf-wait', '--timeout', '0.05', '--poll', '0.01'])
     assert r.exit_code == 5, r.output
     assert json.loads(r.output)['code'] == 'WAIT_TIMEOUT'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t2：dp dom-snapshot（DOMSnapshot.captureSnapshot / DOM.getSnapshot 子树）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _DomSnapPage:
+    """记录 run_cdp 调用并按方法返回预设快照的假页面。"""
+
+    def __init__(self, responses=None, ele=None):
+        self.cdp_calls = []
+        self._responses = responses or {}
+        self._ele = ele
+
+    def run_cdp(self, method, **kw):
+        self.cdp_calls.append((method, kw))
+        return self._responses.get(method, {})
+
+    def ele(self, locator, **kw):
+        return self._ele
+
+
+@pytest.mark.unit
+def test_dom_snapshot_whole_doc(runner, monkeypatch, tmp_path):
+    """dom-snapshot 整文档：captureSnapshot 调用 + stats 摘要 + --output。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    fake_snap = {'documents': [
+        {'nodes': {'nodeName': [0, 1, 2, 3]}, 'layout': {}},
+        {'nodes': {'nodeName': [4]}, 'layout': {}},
+    ], 'strings': ['a', 'b']}
+    page = _DomSnapPage(
+        responses={'DOMSnapshot.captureSnapshot': fake_snap})
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    out_file = tmp_path / 'snap.json'
+    r = runner.invoke(cli, ['dom-snapshot', '--output', str(out_file)])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['scope'] == 'document'
+    assert out['data']['stats'] == {'documents': 2, 'nodes': 5,
+                                    'strings': 2}
+    assert json.loads(out_file.read_text()) == fake_snap
+    method, kw = page.cdp_calls[0]
+    assert method == 'DOMSnapshot.captureSnapshot'
+    assert 'computedStyles' in kw and kw['includeDOMRects'] is True
+
+
+@pytest.mark.unit
+def test_dom_snapshot_subtree(runner, monkeypatch):
+    """dom-snapshot --selector：用元素 _backend_id 走 DOM.getSnapshot 子树。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    class Ele:
+        _backend_id = 777
+        _node_id = 55
+
+    fake_snap = {'domNodes': [{'x': 1}, {'x': 2}],
+                 'layoutTreeNodes': [{'y': 1}],
+                 'computedStyles': [{'z': 1}]}
+    page = _DomSnapPage(responses={'DOM.getSnapshot': fake_snap},
+                        ele=Ele())
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    r = runner.invoke(cli, ['dom-snapshot', '--selector', 'css:main',
+                            '--styles', 'display,color'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['scope'] == 'subtree'
+    assert out['data']['stats'] == {'dom_nodes': 2, 'layout_nodes': 1,
+                                    'computed_styles': 1}
+    method, kw = page.cdp_calls[0]
+    assert method == 'DOM.getSnapshot'
+    assert kw['backendNodeId'] == 777
+    assert kw['computedStyleWhitelist'] == ['display', 'color']
+
+
+@pytest.mark.unit
+def test_dom_snapshot_styles_stripped(runner, monkeypatch):
+    """--styles 逗号分隔带空格 → strip 后传入白名单（防 CDP 匹配静默丢失）。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    class Ele:
+        _backend_id = 1
+        _node_id = 1
+
+    page = _DomSnapPage(
+        responses={'DOM.getSnapshot': {'domNodes': [], 'layoutTreeNodes': [],
+                                       'computedStyles': []}},
+        ele=Ele())
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    r = runner.invoke(cli, ['dom-snapshot', '--selector', 'css:main',
+                            '--styles', 'display, color , font-size'])
+    assert r.exit_code == 0, r.output
+    _, kw = page.cdp_calls[0]
+    assert kw['computedStyleWhitelist'] == ['display', 'color', 'font-size']
+
+
+@pytest.mark.unit
+def test_dom_snapshot_selector_not_found(runner, monkeypatch):
+    """dom-snapshot --selector 未命中 → ELEMENT_NOT_FOUND exit4。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    class _NE:
+        pass
+    _NE.__name__ = 'NoneElement'
+
+    page = _DomSnapPage(ele=_NE())
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    r = runner.invoke(cli, ['dom-snapshot', '--selector', 'css:missing'])
+    assert r.exit_code == 4
+    assert json.loads(r.output)['code'] == 'ELEMENT_NOT_FOUND'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t2 性能：snapshot --depth/--max-nodes + inspect 单次 evaluate 合并
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_snapshot_depth_and_max_nodes_options(runner, monkeypatch):
+    """--depth/--max-nodes 透传 take_a11y_snapshot，默认 None 不改旧行为。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    captured = {}
+
+    def fake_snap(page, **kw):
+        captured.update(kw)
+        return {'page': {'url': 'u', 'title': 't'},
+                'stats': {'total': 1, 'interactive': 0},
+                'tree': {}, 'method': 'cdp'}
+
+    page = _DomSnapPage()
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    monkeypatch.setattr(smod, 'take_a11y_snapshot', fake_snap)
+    r = runner.invoke(cli, ['snapshot', '--depth', '3',
+                            '--max-nodes', '50', '--no-clickables'])
+    assert r.exit_code == 0, r.output
+    assert captured['max_depth'] == 3
+    assert captured['max_nodes'] == 50
+
+    captured.clear()
+    r = runner.invoke(cli, ['snapshot', '--no-clickables'])
+    assert captured['max_depth'] is None
+    assert captured['max_nodes'] is None
+
+
+@pytest.mark.unit
+def test_inspect_single_evaluate(runner, monkeypatch):
+    """inspect 合并为一次 run_js：输出字段与旧逐项调用版完全一致。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    calls = []
+
+    class Ele:
+        def run_js(self, js, *a, **k):
+            calls.append(js)
+            return {
+                'tag': 'input', 'text': 'Hello\xa0World',
+                'attrs': {'id': 'inp', 'type': 'checkbox'},
+                'displayed': True, 'enabled': True, 'checked': True,
+                'clickable': True,
+                'rect': {'location': [10, 20], 'size': [100, 30],
+                         'midpoint': [60, 35]},
+                'styles': {'color': 'rgb(0,0,0)', 'display': 'block'},
+            }
+
+    class P(_DomSnapPage):
+        pass
+
+    page = P(ele=Ele())
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    r = runner.invoke(cli, ['inspect', 'css:#inp',
+                            '--include-rect', '--include-style'])
+    assert r.exit_code == 0, r.output
+    assert len(calls) == 1, f'应只调用一次 run_js，实际 {len(calls)}'
+    out = json.loads(r.output)
+    d = out['data']
+    assert d['tag'] == 'input'
+    assert d['text'] == 'Hello World'          # nbsp→空格 + strip
+    assert d['attrs'] == {'id': 'inp', 'type': 'checkbox'}
+    assert d['states'] == {'is_displayed': True, 'is_enabled': True,
+                           'is_checked': True, 'is_clickable': True}
+    assert d['rect']['size'] == [100, 30]
+    assert d['styles']['display'] == 'block'
+
+
+@pytest.mark.unit
+def test_inspect_checked_gated_by_tag(runner, monkeypatch):
+    """非 input/option 元素 is_checked=None（与旧逻辑一致）。"""
+    import dp_cli.commands.snapshot_cmd as smod
+    from dp_cli.main import cli
+
+    class Ele:
+        def run_js(self, js, *a, **k):
+            return {'tag': 'div', 'text': '', 'attrs': {},
+                    'displayed': True, 'enabled': True, 'checked': True,
+                    'clickable': False,
+                    'rect': {}, 'styles': {}}
+
+    page = _DomSnapPage(ele=Ele())
+    monkeypatch.setattr(smod, '_get_page', lambda s: page)
+    r = runner.invoke(cli, ['inspect', 'css:div'])
+    assert r.exit_code == 0
+    d = json.loads(r.output)['data']
+    assert d['states']['is_checked'] is None
+    # 未指定 flag 时不含 rect/styles 键
+    assert 'rect' not in d and 'styles' not in d

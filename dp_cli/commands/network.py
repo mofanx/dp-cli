@@ -8,7 +8,11 @@ from time import perf_counter, sleep as _sleep
 import click
 
 from dp_cli.output import ok, error, debug
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import (session_option, _get_page,
+                                    trim_options, shape_records)
+
+_PACKET_FIELDS = {'url', 'method', 'status', 'type', 'request_headers',
+                  'postData', 'response_headers', 'response_body'}
 
 
 def _emit_response(url, resp, output):
@@ -205,7 +209,8 @@ def register(cli):
     @click.option('--timeout', default=10, help='等待数据超时秒数', show_default=True)
     @click.option('--output', default=None,
                   help='把数据包结构化 JSON 写入文件（默认内联到 data.packets）')
-    def listen_stop(session, count, timeout, output):
+    @trim_options
+    def listen_stop(session, count, timeout, output, fields, head):
         """停止监听并获取捕获的网络请求数据（含请求头/postData/响应体）。"""
         page = _get_page(session)
         try:
@@ -249,7 +254,11 @@ def register(cli):
                         results.append(item)
                     except Exception:
                         continue
+            results, total = shape_records(results, fields, head,
+                                           _PACKET_FIELDS)
             data = {'packets': results, 'count': len(results)}
+            if head is not None:
+                data['total'] = total
             if output:
                 Path(output).write_text(
                     json.dumps(data, ensure_ascii=False, indent=2),

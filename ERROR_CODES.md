@@ -57,6 +57,7 @@
 | `NO_REFS` | 无可用的 ref 映射（需先 `dp snapshot`） |
 | `ASSERT_FAILED` | 断言失败（页面状态不符合预期） |
 | `RPC_NOT_FOUND` | RPC 函数未注册且非页内可调用函数 |
+| `HOOK_NOT_FOUND` | hook 未安装（hook-clear --id 指定不存在） |
 
 ### timeout（退出码 5）
 
@@ -98,6 +99,7 @@
 | `MEDIA_FAILED` / `BYPASS_CSP_FAILED` / `THROTTLE_FAILED` | 媒体模拟/CSP 绕过/节流设置失败 |
 | `FILE_CHOOSER_FAILED` | 文件选择对话框拦截/填文件失败 |
 | `RPC_FAILED` / `RPC_CALL_FAILED` | RPC 注册/列表/移除失败、RPC 调用执行失败 |
+| `HOOK_FAILED` | hook 注入/移除/导出失败 |
 
 ## 兼容性说明
 

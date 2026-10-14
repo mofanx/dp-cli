@@ -128,6 +128,18 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             _apply_browser_cdp(target, browser_cdp_cfg)
         except Exception as e:
             debug('browser_cdp 重放失败', e)
+    rpc_cfg = sess.get('rpc')
+    if rpc_cfg:
+        try:
+            from dp_cli.commands.rpc import _register_js
+            for rpc_name, spec in rpc_cfg.items():
+                try:
+                    spec['js_id'] = target.add_init_js(
+                        _register_js(rpc_name, spec['body']))
+                except Exception as e:
+                    debug(f'rpc 重放失败 name={rpc_name}', e)
+        except Exception as e:
+            debug('rpc 重放失败', e)
 
     return target
 

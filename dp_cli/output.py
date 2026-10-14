@@ -51,6 +51,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'PROFILE_NOT_FOUND':    (EXIT_NOT_FOUND, '指定 profile 不存在'),
     'NO_REFS':              (EXIT_NOT_FOUND, '无可用的 ref 映射（需先 snapshot）'),
     'ASSERT_FAILED':        (EXIT_NOT_FOUND, '断言失败（页面状态不符合预期）'),
+    'RPC_NOT_FOUND':        (EXIT_NOT_FOUND, 'RPC 函数未注册且非页内可调用函数'),
 
     # ── timeout（退出码 5）──
     'WAIT_TIMEOUT':         (EXIT_TIMEOUT, '等待超时'),
@@ -88,6 +89,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'SNAPSHOT_FAILED':      (EXIT_RUNTIME, '快照获取失败'),
     'SCAN_FAILED':          (EXIT_RUNTIME, 'clickable 扫描失败'),
     'EXTRACT_FAILED':       (EXIT_RUNTIME, '数据提取失败'),
+    'DEPENDENCY_MISSING':   (EXIT_RUNTIME, '可选依赖缺失'),
     'FIND_FAILED':          (EXIT_RUNTIME, '元素查找失败'),
     'QUERY_FAILED':         (EXIT_RUNTIME, '查询失败'),
     'DOM_FAILED':           (EXIT_RUNTIME, 'DOM 操作失败'),
@@ -104,6 +106,8 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'DOWNLOAD_FAILED':      (EXIT_RUNTIME, '下载设置/等待失败'),
     'INTERCEPT_FAILED':     (EXIT_RUNTIME, '请求拦截设置失败'),
     'PERF_FAILED':          (EXIT_RUNTIME, '性能指标获取失败'),
+    'RPC_FAILED':           (EXIT_RUNTIME, 'RPC 注册/列表/移除失败'),
+    'RPC_CALL_FAILED':      (EXIT_RUNTIME, 'RPC 调用执行失败'),
     'TRACE_FAILED':         (EXIT_RUNTIME, 'trace 采集/写盘失败'),
     'SCREENCAST_FAILED':    (EXIT_RUNTIME, 'screencast 帧录制失败'),
     'STEALTH_CHECK_FAILED': (EXIT_RUNTIME, 'stealth 指纹自检失败'),

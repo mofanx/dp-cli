@@ -5,6 +5,7 @@ import click
 from dp_cli.output import ok, error
 from dp_cli.commands._utils import (session_option, frame_option,
                                     _get_page, resolve_locator, frame_ctx)
+from dp_cli.human import human_options, human_click, human_type, human_clear
 
 
 def register(cli):
@@ -14,9 +15,11 @@ def register(cli):
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
     @click.option('--by-js', is_flag=True, help='使用 JavaScript 点击')
+    @human_options
     @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_click(locator, session, index, by_js, frame, timeout):
+    def cmd_click(locator, session, index, by_js, frame, timeout,
+                  human, human_min, human_max):
         """点击元素。
 
         \b
@@ -26,7 +29,12 @@ def register(cli):
           dp click "ref:5"              # 使用快照编号
           dp click "css:.btn-primary" --by-js
           dp click "css:li" --index 3
+          dp click "ref:5" --human      # 拟人：贝塞尔轨迹+随机停顿
         """
+        if human and by_js:
+            error('--human 与 --by-js 互斥（JS 点击无轨迹可言）',
+                  code='INVALID_ARGS')
+            return
         locator = resolve_locator(locator, session)
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
@@ -37,6 +45,8 @@ def register(cli):
                 return
             if by_js:
                 ele.click.js()
+            elif human:
+                human_click(page, ele, human_min, human_max)
             else:
                 ele.click()
             ok({'locator': locator}, msg='点击成功')
@@ -47,9 +57,11 @@ def register(cli):
     @click.argument('locator')
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
+    @human_options
     @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def dblclick(locator, session, index, frame, timeout):
+    def dblclick(locator, session, index, frame, timeout,
+                 human, human_min, human_max):
         """双击元素。
 
         \b
@@ -65,7 +77,10 @@ def register(cli):
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
-            ele.click(count=2)
+            if human:
+                human_click(page, ele, human_min, human_max, times=2)
+            else:
+                ele.click(count=2)
             ok({'locator': locator}, msg='双击成功')
         except Exception as e:
             error(f'双击失败: {locator}', code='CLICK_FAILED', detail=str(e))
@@ -77,9 +92,11 @@ def register(cli):
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
     @click.option('--clear', is_flag=True, default=True, help='填入前清空（默认开启）')
     @click.option('--by-js', is_flag=True, help='使用 JavaScript 设置值')
+    @human_options
     @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def fill(locator, value, session, index, clear, by_js, frame, timeout):
+    def fill(locator, value, session, index, clear, by_js, frame, timeout,
+             human, human_min, human_max):
         """向输入框填入文本。
 
         \b
@@ -87,7 +104,11 @@ def register(cli):
           dp fill "@name=username" admin
           dp fill "ref:15" "Python"     # 使用快照编号
           dp fill "css:textarea" "多行\\n文本"
+          dp fill "ref:15" "secret" --human   # 拟人：点击聚焦+逐字符随机间隔
         """
+        if human and by_js:
+            error('--human 与 --by-js 互斥', code='INVALID_ARGS')
+            return
         locator = resolve_locator(locator, session)
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
@@ -96,7 +117,13 @@ def register(cli):
             if not ele or ele.__class__.__name__ == 'NoneElement':
                 error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
                 return
-            ele.input(value, clear=clear, by_js=by_js)
+            if human:
+                human_click(page, ele, human_min, human_max)
+                if clear:
+                    human_clear(page)
+                human_type(page, value, human_min, human_max)
+            else:
+                ele.input(value, clear=clear, by_js=by_js)
             ok({'locator': locator, 'value': value}, msg='填入成功')
         except Exception as e:
             error(f'填入失败: {locator}', code='FILL_FAILED', detail=str(e))

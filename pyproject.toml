@@ -29,6 +29,10 @@ dependencies = [
 tls = [
     "curl_cffi>=0.7.0",
 ]
+extract = [
+    "trafilatura>=1.6.0",
+    "readability-lxml>=0.8.1",
+]
 test = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",

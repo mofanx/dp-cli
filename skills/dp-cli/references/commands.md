@@ -330,6 +330,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 类别 | 命令 | 参数 |
 |------|------|------|
 | 浏览器 | `bypass-csp` | [session], [off] |
+| 浏览器 | `cf-wait` | [session], [timeout], [poll] |
 | 浏览器 | `clipboard-get` | [session] |
 | 浏览器 | `clipboard-set` | <text>, [session] |
 | 浏览器 | `close` | [session], [del_data], [force] |
@@ -360,19 +361,19 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [timeout] |
 | 提取/交互 | `clear` | <locator>, [session], [index], [frame], [timeout] |
-| 提取/交互 | `click` | <locator>, [session], [index], [by_js], [frame], [timeout] |
+| 提取/交互 | `click` | <locator>, [session], [index], [by_js], [human], [human_min], [human_max], [frame], [timeout] |
 | 提取/交互 | `count` | <locator>, [session], [frame], [timeout] |
-| 提取/交互 | `dblclick` | <locator>, [session], [index], [frame], [timeout] |
+| 提取/交互 | `dblclick` | <locator>, [session], [index], [human], [human_min], [human_max], [frame], [timeout] |
 | 提取/交互 | `drag` | <from_locator>, <to_locator>, [session], [duration], [frame], [timeout] |
-| 提取/交互 | `fill` | <locator>, <value>, [session], [index], [clear], [by_js], [frame], [timeout] |
+| 提取/交互 | `fill` | <locator>, <value>, [session], [index], [clear], [by_js], [human], [human_min], [human_max], [frame], [timeout] |
 | 提取/交互 | `hover` | <locator>, [session], [index], [offset_x], [offset_y], [frame], [timeout] |
 | 提取/交互 | `select` | <locator>, <value>, [session], [index], [by_text], [sel_by_index], [frame], [timeout] |
 | 提取/交互 | `upload` | <locator>, <file_path>, [session], [frame], [timeout] |
 | 键盘/滚动 | `autoscroll` | [locator], [container], [max_rounds], [stable], [idle], [idle_timeout], [step], [fast], [fast_delay], [mouse_x], [mouse_y], [session] |
-| 键盘/滚动 | `press` | <key>, [session] |
+| 键盘/滚动 | `press` | <key>, [session], [human], [human_min], [human_max] |
 | 键盘/滚动 | `scroll` | [x], [y], [top], [bottom], [locator], [mouse_x], [mouse_y], [session] |
 | 键盘/滚动 | `scroll-to` | <locator>, [session] |
-| 键盘/滚动 | `type` | <text>, [session] |
+| 键盘/滚动 | `type` | <text>, [session], [human], [human_min], [human_max] |
 | 网络 | `har-dump` | [session], [seconds], [url_filter], [output], [with_body] |
 | 网络 | `http-get` | <url>, [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `http-post` | <url>, [data], [form], [headers], [proxy], [timeout], [output], [impersonate] |
@@ -425,3 +426,8 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary] |
+| 逆向 | `rpc-call` | <name>, [args], [session] |
+| 逆向 | `rpc-list` | [session] |
+| 逆向 | `rpc-register` | <name>, <js>, [session], [persist] |
+| 逆向 | `rpc-unregister` | <name>, [session] |
+| 提取 | `read` | [session], [selector], [fmt], [output] |

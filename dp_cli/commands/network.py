@@ -110,6 +110,15 @@ def _http_send(url, method, headers, proxy, timeout, impersonate,
     return final_url, resp, warnings
 
 
+def _pkg_version() -> str:
+    """包版本（HAR creator 用）；取不到时回退 'unknown'。"""
+    try:
+        from importlib.metadata import version
+        return version('dp-cli')
+    except Exception:
+        return 'unknown'
+
+
 def _hdr_list(headers) -> list:
     """CDP headers dict → HAR [{name, value}] 列表。"""
     if not isinstance(headers, dict):
@@ -146,7 +155,7 @@ def _build_har(entries: dict, page_url: str = '') -> dict:
     out_entries.sort(key=lambda x: x.get('startedDateTime', ''))
     har = {'log': {
         'version': '1.2',
-        'creator': {'name': 'dp-cli', 'version': '0.6.3'},
+        'creator': {'name': 'dp-cli', 'version': _pkg_version()},
         'browser': {'name': 'chromium'},
         'pages': [],
         'entries': out_entries,

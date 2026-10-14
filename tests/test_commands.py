@@ -2223,3 +2223,275 @@ def test_emulate_reset_clears_touch_override(runner, monkeypatch):
     touch_calls = [c for c in page.calls
                    if c[0] == 'Emulation.setTouchEmulationEnabled']
     assert touch_calls and touch_calls[-1][1]['enabled'] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# t3：dp read（正文提取）+ dp cf-wait（CF 挑战等待）
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_read_missing_deps(runner, monkeypatch):
+    """read：trafilatura/readability 均缺失 → DEPENDENCY_MISSING + 安装提示。"""
+    import sys
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    # 强制双缺路径（即便环境碰巧装了也覆盖 ImportError 分支）
+    monkeypatch.setitem(sys.modules, 'trafilatura', None)
+    monkeypatch.setitem(sys.modules, 'readability', None)
+
+    class P:
+        html = '<html><body>text</body></html>'
+        url = 'https://x'
+        title = 't'
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['read'])
+    assert r.exit_code == 1
+    out = json.loads(r.output)
+    assert out['code'] == 'DEPENDENCY_MISSING'
+    assert 'dp-cli[extract]' in out['message']
+
+
+@pytest.mark.unit
+def test_read_trafilatura_markdown(runner, monkeypatch, tmp_path):
+    """read：trafilatura 引擎输出 markdown，--output 落盘。"""
+    import sys
+    import types
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    captured = {}
+
+    def fake_extract(html, output_format='txt', url=None, include_links=False):
+        captured.update(fmt=output_format, links=include_links)
+        return '# 标题\n\n正文内容'
+
+    fake = types.ModuleType('trafilatura')
+    fake.extract = fake_extract
+    monkeypatch.setitem(sys.modules, 'trafilatura', fake)
+
+    class P:
+        html = '<html><body>article</body></html>'
+        url = 'https://x/a'
+        title = 'demo'
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    out_file = tmp_path / 'a.md'
+    r = runner.invoke(cli, ['read', '--output', str(out_file)])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['engine'] == 'trafilatura'
+    assert out['data']['format'] == 'markdown'
+    assert captured['fmt'] == 'markdown' and captured['links'] is True
+    assert out_file.read_text() == '# 标题\n\n正文内容'
+
+
+@pytest.mark.unit
+def test_read_readability_fallback(runner, monkeypatch):
+    """read：trafilatura 缺失时 readability 兜底，html→text 转文本。"""
+    import sys
+    import types
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    monkeypatch.setitem(sys.modules, 'trafilatura', None)
+
+    class Doc:
+        def __init__(self, html):
+            pass
+
+        def summary(self):
+            return '<div><p>Hello <b>World</b></p><script>x()</script></div>'
+
+    fake = types.ModuleType('readability')
+    fake.Document = Doc
+    monkeypatch.setitem(sys.modules, 'readability', fake)
+
+    class P:
+        html = '<html></html>'
+        url = 'https://x'
+        title = ''
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['read', '--format', 'text'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['engine'] == 'readability'
+    assert out['data']['content'] == 'Hello World'
+
+
+@pytest.mark.unit
+def test_read_selector_scope(runner, monkeypatch):
+    """read --selector：用 ele().html 限定区域而非整页。"""
+    import sys
+    import types
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    fake = types.ModuleType('trafilatura')
+    fake.extract = lambda html, **kw: 'REGION'
+    monkeypatch.setitem(sys.modules, 'trafilatura', fake)
+
+    class Ele:
+        html = '<div>scoped</div>'
+
+    class P:
+        html = '<html>full</html>'
+        url = 'x'
+        title = ''
+
+        def ele(self, locator):
+            assert locator == 'css:article'
+            return Ele()
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['read', '--selector', 'css:article'])
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.output)['data']['content'] == 'REGION'
+
+
+@pytest.mark.unit
+def test_read_html_format_uses_trafilatura_html(runner, monkeypatch):
+    """r3 修复：read --format html 应以 html 输出格式提取正文（而非原样回显整页）。"""
+    import sys
+    import types
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    captured = {}
+
+    def fake_extract(html, output_format='txt', url=None, include_links=False):
+        captured['fmt'] = output_format
+        return '<article>正文HTML</article>'
+
+    fake = types.ModuleType('trafilatura')
+    fake.extract = fake_extract
+    monkeypatch.setitem(sys.modules, 'trafilatura', fake)
+
+    class P:
+        html = '<html><body>nav junk + article</body></html>'
+        url = 'x'
+        title = ''
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['read', '--format', 'html'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert captured['fmt'] == 'html'
+    # 返回的是提取结果而非原始整页 HTML
+    assert out['data']['content'] == '<article>正文HTML</article>'
+
+
+@pytest.mark.unit
+def test_read_trafilatura_exception_falls_back(runner, monkeypatch):
+    """r3 修复：trafilatura 抛非 ImportError 时降级 readability。"""
+    import sys
+    import types
+    import dp_cli.commands.extract as ex_mod
+    from dp_cli.main import cli
+
+    fake_t = types.ModuleType('trafilatura')
+
+    def boom(html, **kw):
+        raise ValueError('malformed input')
+
+    fake_t.extract = boom
+    monkeypatch.setitem(sys.modules, 'trafilatura', fake_t)
+
+    class Doc:
+        def __init__(self, html):
+            pass
+
+        def summary(self):
+            return '<p>fallback text</p>'
+
+    fake_r = types.ModuleType('readability')
+    fake_r.Document = Doc
+    monkeypatch.setitem(sys.modules, 'readability', fake_r)
+
+    class P:
+        html = '<html></html>'
+        url = 'x'
+        title = ''
+
+    monkeypatch.setattr(ex_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['read', '--format', 'text'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['engine'] == 'readability'
+    assert out['data']['content'] == 'fallback text'
+
+
+@pytest.mark.unit
+def test_cf_wait_js_transient_error_keeps_waiting(runner, monkeypatch):
+    """r3 修复：run_js 瞬断（导航中上下文销毁）不误判通过，继续轮询。"""
+    import dp_cli.commands.browser as bmod
+    from dp_cli.main import cli
+
+    seq = iter([RuntimeError('context destroyed'),       # 第 1 次瞬断
+                {'f': True, 't': 'Just a moment...'},     # 挑战仍在
+                {'f': False, 't': 'My Site'}])            # 挑战通过
+
+    class P:
+        def run_js(self, script, *a, **k):
+            r = next(seq)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+    monkeypatch.setattr(bmod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['cf-wait', '--timeout', '10', '--poll', '0.01'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['passed'] is True
+    assert out['data']['was_challenged'] is True
+    assert out['data']['title'] == 'My Site'
+
+
+@pytest.mark.unit
+def test_cf_wait_not_challenged_and_clears(runner, monkeypatch):
+    """cf-wait：无挑战秒过；挑战页 title 消失后返回 was_challenged=True。"""
+    import dp_cli.commands.browser as bmod
+    from dp_cli.main import cli
+
+    class P:
+        def run_js(self, script, *a, **k):
+            return {'f': False, 't': 'My Site'}
+
+    monkeypatch.setattr(bmod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['cf-wait'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['passed'] is True
+    assert out['data']['was_challenged'] is False
+
+    seq = iter([{'f': True, 't': 'Just a moment...'},
+                {'f': False, 't': 'My Site'}])
+
+    class P2:
+        def run_js(self, script, *a, **k):
+            return next(seq)
+
+    monkeypatch.setattr(bmod, '_get_page', lambda s: P2())
+    r = runner.invoke(cli, ['cf-wait', '--poll', '0.01'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['data']['was_challenged'] is True
+    assert out['data']['title'] == 'My Site'
+
+
+@pytest.mark.unit
+def test_cf_wait_timeout(runner, monkeypatch):
+    """cf-wait：挑战持续存在 → WAIT_TIMEOUT 退出码 5。"""
+    import dp_cli.commands.browser as bmod
+    from dp_cli.main import cli
+
+    class P:
+        def run_js(self, script, *a, **k):
+            return {'f': True, 't': 'Just a moment...'}
+
+    monkeypatch.setattr(bmod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['cf-wait', '--timeout', '0.05', '--poll', '0.01'])
+    assert r.exit_code == 5, r.output
+    assert json.loads(r.output)['code'] == 'WAIT_TIMEOUT'

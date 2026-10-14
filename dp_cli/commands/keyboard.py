@@ -8,6 +8,7 @@ from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import (
     session_option, _get_page, resolve_locator, wait_network_idle,
 )
+from dp_cli.human import human_options, human_type, _rand
 
 # ponytail: 提取重复的 findScrollable JS 函数
 _FIND_SCROLLABLE_JS = """
@@ -29,7 +30,8 @@ def register(cli):
     @cli.command('press')
     @click.argument('key')
     @session_option
-    def cmd_press(key, session):
+    @human_options
+    def cmd_press(key, session, human, human_min, human_max):
         """模拟键盘按键。
 
         \b
@@ -79,6 +81,8 @@ def register(cli):
                 k = getattr(Keys, attr, None)
                 return k if k is not None else name.strip()
 
+            if human:
+                page.actions.wait(_rand(human_min, human_max))
             if '+' in key:
                 # 前缀修饰键逐个出栈，支持 Control+Shift+Delete 多修饰组合
                 parts = [p for p in key.split('+') if p.strip()]
@@ -89,7 +93,11 @@ def register(cli):
                     act = page.actions
                     for m in mods:
                         act = act.key_down(m)
+                        if human:
+                            act = act.wait(_rand(human_min, human_max))
                     act = act.type(_key_token('+'.join(parts)))
+                    if human:
+                        act = act.wait(_rand(human_min, human_max))
                     for m in reversed(mods):
                         act = act.key_up(m)
                 else:
@@ -103,17 +111,22 @@ def register(cli):
     @cli.command('type')
     @click.argument('text')
     @session_option
-    def cmd_type(text, session):
+    @human_options
+    def cmd_type(text, session, human, human_min, human_max):
         """输入文本（当前焦点元素）。
 
         \b
         示例:
           dp type "hello world"
           dp type "search query"
+          dp type "hello" --human   # 逐字符随机间隔输入
         """
         page = _get_page(session)
         try:
-            page.actions.type(text)
+            if human:
+                human_type(page, text, human_min, human_max)
+            else:
+                page.actions.type(text)
             ok({'text': text}, msg='输入成功')
         except Exception as e:
             error(f'输入失败', code='TYPE_FAILED', detail=str(e))

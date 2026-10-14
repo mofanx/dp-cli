@@ -56,6 +56,7 @@
 | `PROFILE_NOT_FOUND` | 指定 profile 不存在 |
 | `NO_REFS` | 无可用的 ref 映射（需先 `dp snapshot`） |
 | `ASSERT_FAILED` | 断言失败（页面状态不符合预期） |
+| `RPC_NOT_FOUND` | RPC 函数未注册且非页内可调用函数 |
 
 ### timeout（退出码 5）
 
@@ -86,6 +87,7 @@
 | `INSPECT_FAILED` | 元素探测失败 |
 | `SNAPSHOT_FAILED` / `SCAN_FAILED` | 快照/clickable 扫描失败 |
 | `EXTRACT_FAILED` / `FIND_FAILED` / `QUERY_FAILED` / `DOM_FAILED` | 数据提取/DOM 查询失败 |
+| `DEPENDENCY_MISSING` | 可选依赖未安装（如 curl_cffi/trafilatura，提示含安装命令） |
 | `COOKIE_FAILED` / `STORAGE_FAILED` | Cookie/Storage 操作失败 |
 | `PW_EVAL_FAILED` | pw 定位器求值失败 |
 | `RECORD_*_FAILED`（START/STOP/STATUS/SHOW/EXPORT/CLEAR） | 录制相关失败 |
@@ -95,6 +97,7 @@
 | `PERMISSIONS_FAILED` / `CLIPBOARD_FAILED` | 权限授权/剪贴板读写失败 |
 | `MEDIA_FAILED` / `BYPASS_CSP_FAILED` / `THROTTLE_FAILED` | 媒体模拟/CSP 绕过/节流设置失败 |
 | `FILE_CHOOSER_FAILED` | 文件选择对话框拦截/填文件失败 |
+| `RPC_FAILED` / `RPC_CALL_FAILED` | RPC 注册/列表/移除失败、RPC 调用执行失败 |
 
 ## 兼容性说明
 

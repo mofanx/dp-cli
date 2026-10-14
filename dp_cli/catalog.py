@@ -24,7 +24,8 @@ CATEGORY = {
     'element': '提取/交互', 'keyboard': '键盘/滚动', 'network': '网络',
     'assert_cmd': '断言', 'emulate': '模拟/下载/拦截', 'observe': '观测',
     'tab': '标签页', 'storage': '存储', 'record': '录制',
-    'page': '页面', 'batch': '批量',
+    'page': '页面', 'batch': '批量', 'rpc': '逆向',
+    'extract': '提取',
 }
 
 

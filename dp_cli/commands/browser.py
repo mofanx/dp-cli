@@ -8,6 +8,7 @@ media / bypass-csp / throttle / file-chooser
 media / bypass-csp / throttle 的配置写入 session['browser_cdp']，
 由 _get_page 每条命令重放（每个 dp 进程是独立 CDP session，必须重放）。
 """
+import json
 from pathlib import Path
 from time import perf_counter, sleep as _sleep
 
@@ -779,3 +780,68 @@ def register(cli):
                 driver.set_callback('Page.fileChooserOpened', None)
             except Exception as e:
                 debug('清除 fileChooserOpened 回调失败', e)
+
+    @cli.command('cf-wait')
+    @session_option
+    @click.option('--timeout', default=30.0, show_default=True,
+                  type=float, help='等待挑战通过的最长秒数')
+    @click.option('--poll', default=0.5, show_default=True, type=float,
+                  help='检测轮询间隔秒数')
+    def cf_wait(session, timeout, poll):
+        """检测并等待 Cloudflare Turnstile/挑战页通过。
+
+        识别挑战页标志：challenges.cloudflare.com / turnstile iframe、
+        "Just a moment"/"请稍候"/"Checking your browser" 标题。挑战
+        标志消失（含自然跳转回原页面）即返回通过；超时退出码 5。
+
+        \b
+        示例:
+          dp open https://site --stealth && dp cf-wait --timeout 60
+        """
+        import re as _re
+        page = _get_page(session)
+        detect_js = (
+            'return {f:!!document.querySelector('
+            '\'iframe[src*="challenges.cloudflare.com"],'
+            'iframe[src*="cf-challenge"],'
+            'iframe[src*="turnstile"]\'),'
+            't:document.title||""}')
+
+        start = perf_counter()
+        end = start + timeout
+        ever = False
+        last_title = ''
+        try:
+            while True:
+                try:
+                    st = page.run_js(detect_js, as_expr=True)
+                    if isinstance(st, str):
+                        st = json.loads(st)
+                    challenging = bool(
+                        st.get('f') or
+                        _re.search(
+                            r'just a moment|请稍候|checking your '
+                            r'browser|verify you are human',
+                            st.get('t', ''), _re.I))
+                    last_title = st.get('t', '') or last_title
+                    if challenging:
+                        ever = True
+                except Exception:
+                    # 挑战跳转期间 JS 上下文瞬断属正常；未知状态保守
+                    # 视为"仍在挑战"，继续轮询而非误判通过
+                    challenging = True
+                if not challenging:
+                    break
+                if perf_counter() >= end:
+                    error(f'Cloudflare 挑战未在 {timeout}s 内通过'
+                          f'（title={last_title!r}）。建议先 dp stealth '
+                          f'或检查代理/指纹', code='WAIT_TIMEOUT')
+                    return
+                _sleep(poll)
+            ok({'passed': True, 'was_challenged': ever,
+                'waited_seconds': round(perf_counter() - start, 2),
+                'title': last_title})
+        except SystemExit:
+            raise
+        except Exception as e:
+            error('CF 挑战等待失败', code='WAIT_FAILED', detail=str(e))

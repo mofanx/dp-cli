@@ -170,6 +170,9 @@ def register(cli):
         典型逆向闭环：浏览器过盾（dp open + stealth）→ 本命令导出
         cf_clearance 等凭据 → dp http-get --impersonate 高速续爬。
 
+        注意：netscape 格式不携带 HttpOnly 标志（该格式无此字段；
+        `#HttpOnly_` 前缀是 curl 私有扩展，本导出未启用）。
+
         \b
         示例:
           dp cookie-export --output cookies.txt

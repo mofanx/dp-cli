@@ -2706,3 +2706,191 @@ def test_inspect_checked_gated_by_tag(runner, monkeypatch):
     assert d['states']['is_checked'] is None
     # 未指定 flag 时不含 rect/styles 键
     assert 'rect' not in d and 'styles' not in d
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# state-save --format playwright：Playwright storageState 结构导出
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _StatePage:
+    def __init__(self, cookies=None, ls=None, url='https://app.example.com/home'):
+        self._cookies = cookies or []
+        self._ls = ls
+        self.url = url
+
+    def cookies(self, all_domains=False, all_info=False):
+        assert all_domains and all_info
+        return self._cookies
+
+    def run_js(self, js, **kw):
+        import json as _j
+        return _j.dumps(self._ls) if self._ls is not None else '[]'
+
+
+def _save_state(runner, monkeypatch, tmp_path, page, *extra):
+    import dp_cli.commands.misc as misc_mod
+    from dp_cli.main import cli
+    monkeypatch.setattr(misc_mod, '_get_page', lambda s: page)
+    f = tmp_path / 'state.json'
+    r = runner.invoke(cli, ['state-save', str(f), *extra])
+    assert r.exit_code == 0, r.output
+    return r, json.loads(f.read_text())
+
+
+@pytest.mark.unit
+def test_state_save_playwright_schema(runner, monkeypatch, tmp_path):
+    """--format playwright：cookies 全字段映射 + storageState 顶层结构。"""
+    page = _StatePage(cookies=[
+        {'name': 'sid', 'value': 'abc', 'domain': '.example.com',
+         'path': '/', 'expires': 1893456000.0,
+         'httpOnly': True, 'secure': True, 'sameSite': 'Strict'},
+    ], ls=[{'name': 'tok', 'value': 'v1'}])
+    _, st = _save_state(runner, monkeypatch, tmp_path, page,
+                        '--format', 'playwright')
+    # Playwright storageState 顶层结构
+    assert set(st) == {'cookies', 'origins'}
+    c = st['cookies'][0]
+    assert c == {'name': 'sid', 'value': 'abc', 'domain': '.example.com',
+                 'path': '/', 'expires': 1893456000.0,
+                 'httpOnly': True, 'secure': True, 'sameSite': 'Strict'}
+    assert st['origins'] == [{
+        'origin': 'https://app.example.com',
+        'localStorage': [{'name': 'tok', 'value': 'v1'}]}]
+
+
+@pytest.mark.unit
+def test_state_save_playwright_session_cookie(runner, monkeypatch, tmp_path):
+    """会话 cookie（session 标志/expires 缺失/<=0）→ expires=-1。"""
+    page = _StatePage(cookies=[
+        {'name': 's1', 'value': 'a', 'domain': 'e.com', 'path': '/',
+         'session': True, 'expires': 9999999999.0},
+        {'name': 's2', 'value': 'b', 'domain': 'e.com', 'path': '/',
+         'expires': 0},
+        {'name': 's3', 'value': 'c', 'domain': 'e.com', 'path': '/'},
+    ])
+    _, st = _save_state(runner, monkeypatch, tmp_path, page,
+                        '--format', 'playwright')
+    assert [c['expires'] for c in st['cookies']] == [-1, -1, -1]
+
+
+@pytest.mark.unit
+def test_state_save_playwright_samesite_map(runner, monkeypatch, tmp_path):
+    """sameSite 枚举映射：Lax/Strict/None/no_restriction/缺失→Lax。"""
+    page = _StatePage(cookies=[
+        {'name': 'a', 'sameSite': 'strict'},
+        {'name': 'b', 'sameSite': 'None'},
+        {'name': 'c', 'sameSite': 'no_restriction'},
+        {'name': 'd'},
+    ])
+    _, st = _save_state(runner, monkeypatch, tmp_path, page,
+                        '--format', 'playwright')
+    sites = [c['sameSite'] for c in st['cookies']]
+    assert sites == ['Strict', 'None', 'None', 'Lax']
+    assert all(s in ('Strict', 'Lax', 'None') for s in sites)
+
+
+@pytest.mark.unit
+def test_state_save_playwright_non_http_origin_skipped(runner, monkeypatch,
+                                                       tmp_path):
+    """非 http(s) 页（file://）不产出 origins 条目。"""
+    page = _StatePage(url='file:///tmp/x.html',
+                      ls=[{'name': 'k', 'value': 'v'}])
+    _, st = _save_state(runner, monkeypatch, tmp_path, page,
+                        '--format', 'playwright')
+    assert st['origins'] == []
+
+
+@pytest.mark.unit
+def test_state_save_default_format_unchanged(runner, monkeypatch, tmp_path):
+    """默认 dp 格式不变：{name:value} cookies + flat localStorage + url。"""
+    class P:
+        url = 'https://a.com/'
+
+        def cookies(self, all_domains=False):
+            class _CL(list):
+                def as_dict(self):
+                    return {'sid': 'abc'}
+            return _CL()
+
+        def run_js(self, js, **kw):
+            return '{"k": "v"}'
+
+    r, st = _save_state(runner, monkeypatch, tmp_path, P())
+    assert st == {'cookies': {'sid': 'abc'},
+                  'url': 'https://a.com/', 'localStorage': {'k': 'v'}}
+    assert json.loads(r.output)['data']['format'] == 'dp'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# as_expr=True + 顶层 return 回归守卫（Runtime.evaluate 下非法语法）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _StrictExprPage:
+    """run_js 模拟 Runtime.evaluate：as_expr 且脚本以 return 开头即抛错。"""
+
+    def __init__(self, cookies=None, ls_items=None, url='https://app.example.com/'):
+        self._cookies = cookies or []
+        self._ls_items = ls_items
+        self.url = url
+
+    def cookies(self, all_domains=False, all_info=False):
+        class _CL(list):
+            def as_dict(self):
+                return {c['name']: c['value'] for c in self}
+        return _CL(self._cookies)
+
+    def run_js(self, js, *a, **kw):
+        if kw.get('as_expr') and js.lstrip().startswith('return'):
+            raise RuntimeError('Illegal return statement')
+        # localstorage-list：Object.fromEntries → {k:v}
+        if 'Object.fromEntries' in js:
+            items = self._ls_items or []
+            return json.dumps({i['name']: i['value'] for i in items})
+        # storageState：entries → [{name,value}]
+        items = self._ls_items or []
+        return json.dumps(items)
+
+
+@pytest.mark.unit
+def test_state_save_playwright_no_toplevel_return(runner, monkeypatch, tmp_path):
+    """as_expr 脚本以 return 开头会被 Runtime.evaluate 拒绝——
+    origins 不应因此静默为空。"""
+    import dp_cli.commands.misc as misc_mod
+    from dp_cli.main import cli
+    monkeypatch.setattr(misc_mod, '_get_page', lambda s: _StrictExprPage(
+        ls_items=[{'name': 'tok', 'value': 'v9'}]))
+    f = tmp_path / 'st.json'
+    r = runner.invoke(cli, ['state-save', str(f), '--format', 'playwright'])
+    assert r.exit_code == 0, r.output
+    st = json.loads(f.read_text())
+    assert st['origins'] == [{
+        'origin': 'https://app.example.com',
+        'localStorage': [{'name': 'tok', 'value': 'v9'}]}]
+
+
+@pytest.mark.unit
+def test_state_save_dp_localstorage_no_toplevel_return(runner, monkeypatch,
+                                                       tmp_path):
+    """默认 dp 格式同样不得用顶层 return（此前 localStorage 静默为空）。"""
+    import dp_cli.commands.misc as misc_mod
+    from dp_cli.main import cli
+    monkeypatch.setattr(misc_mod, '_get_page', lambda s: _StrictExprPage(
+        cookies=[{'name': 'sid', 'value': 'x'}],
+        ls_items=[{'name': 'k', 'value': 'v'}]))
+    f = tmp_path / 'st.json'
+    r = runner.invoke(cli, ['state-save', str(f)])
+    assert r.exit_code == 0, r.output
+    assert json.loads(f.read_text())['localStorage'] == {'k': 'v'}
+
+
+@pytest.mark.unit
+def test_localstorage_list_no_toplevel_return(runner, monkeypatch):
+    """localstorage-list 同样修复（此前真机必报 STORAGE_FAILED）。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: _StrictExprPage(
+        ls_items=[{'name': 'a', 'value': '1'}]))
+    r = runner.invoke(cli, ['localstorage-list'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['storage'] == {'a': '1'} and d['count'] == 1

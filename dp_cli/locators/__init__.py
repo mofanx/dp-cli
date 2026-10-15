@@ -6,4 +6,5 @@
   - build_pw_js(matchers): 把 matcher 列表转成可执行的 JS 脚本
 """
 from .playwright import parse_pw, PwParseError  # noqa: F401
-from .pw_js import build_pw_js  # noqa: F401
+from .pw_js import build_pw_js, build_pw_count_js  # noqa: F401
+from .suggest import pw_candidates, implicit_role, dp_loc_to_pw  # noqa: F401

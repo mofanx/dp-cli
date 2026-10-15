@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """浏览器操作录制器：记录点击、输入、选择、按键与滚动。"""
 import json
+import re
 import shlex
 import time
 
@@ -495,6 +496,8 @@ def format_actions_text(actions: list, raw: bool = False) -> str:
     lines = ['### Recorded Actions', '']
     for i, action in enumerate(actions, start=1):
         typ = action.get('type')
+        if typ == '_final':
+            continue                # 伪动作：终态 url 标记
         element = action.get('element') or {}
         label = _element_label(element)
         locator = action.get('best_locator') or element.get('best_locator') or ''
@@ -529,13 +532,19 @@ def format_actions_text(actions: list, raw: bool = False) -> str:
 
 def export_actions(actions: list, fmt: str) -> str:
     if fmt == 'json':
-        return json.dumps(actions, ensure_ascii=False, indent=2)
+        # _final 是 playwright 导出专用的伪动作标记，不进程序化消费面
+        return json.dumps([a for a in actions if a.get('type') != '_final'],
+                          ensure_ascii=False, indent=2)
     if fmt == 'dp':
         return _export_dp_script(actions)
     if fmt == 'playwright':
         return _export_playwright_sync_script(actions)
     if fmt == 'playwright-async':
         return _export_playwright_async_script(actions)
+    if fmt == 'playwright-ts':
+        return _export_playwright_ts_script(actions, standalone=False)
+    if fmt == 'playwright-ts-async':
+        return _export_playwright_ts_script(actions, standalone=True)
     if fmt == 'selenium':
         return _export_selenium_script(actions)
     raise ValueError(f'不支持的导出格式: {fmt}')
@@ -545,6 +554,8 @@ def _export_dp_script(actions: list) -> str:
     lines = ['#!/usr/bin/env bash', 'set -e', '']
     for action in actions:
         typ = action.get('type')
+        if typ == '_final':
+            continue                # 伪动作：终态 url 标记
         locator = _action_locator(action)
         if typ == 'click' and locator:
             lines.append(f'dp click {shlex.quote(locator)}')
@@ -583,7 +594,7 @@ def _export_playwright_script(actions: list, is_async: bool = False) -> str:
     new_page_line = f'        page = {await_kw}browser.new_page()'
     
     lines = [
-        f'from playwright.{api_module} import {playwright_func}',
+        f'from playwright.{api_module} import {playwright_func}, expect',
         '',
         '',
         f'{prefix}def run():',
@@ -594,22 +605,22 @@ def _export_playwright_script(actions: list, is_async: bool = False) -> str:
     first_url = _first_url(actions)
     if first_url:
         lines.append(f'        {await_kw}page.goto({repr(str(first_url))})')
-    for action in actions:
+    for i, action in enumerate(actions):
         typ = action.get('type')
-        selector = _playwright_selector(action)
-        if typ == 'click' and selector:
-            lines.append(f'        {await_kw}page.locator({repr(str(selector))}).click()')
-        elif typ == 'fill' and selector:
-            lines.append(f'        {await_kw}page.locator({repr(str(selector))}).fill({repr(str(action.get("value", "")))})')
-        elif typ == 'select' and selector:
-            lines.append(f'        {await_kw}page.locator({repr(str(selector))}).select_option({repr(str(action.get("value", "")))})')
-        elif typ == 'check' and selector:
+        loc = _pw_locator(action)   # 完整 page 定位器表达式（含 page. 前缀）
+        if typ == 'click' and loc:
+            lines.append(f'        {await_kw}{loc}.click()')
+        elif typ == 'fill' and loc:
+            lines.append(f'        {await_kw}{loc}.fill({repr(str(action.get("value", "")))})')
+        elif typ == 'select' and loc:
+            lines.append(f'        {await_kw}{loc}.select_option({repr(str(action.get("value", "")))})')
+        elif typ == 'check' and loc:
             method = 'check' if action.get('checked') else 'uncheck'
-            lines.append(f'        {await_kw}page.locator({repr(str(selector))}).{method}()')
+            lines.append(f'        {await_kw}{loc}.{method}()')
         elif typ == 'press':
             key = action.get('key') or ''
-            if selector:
-                lines.append(f'        {await_kw}page.locator({repr(str(selector))}).press({repr(str(key))})')
+            if loc:
+                lines.append(f'        {await_kw}{loc}.press({repr(str(key))})')
             else:
                 lines.append(f'        {await_kw}page.keyboard.press({repr(str(key))})')
         elif typ == 'scroll':
@@ -618,6 +629,16 @@ def _export_playwright_script(actions: list, is_async: bool = False) -> str:
             if mouse.get('x') is not None and mouse.get('y') is not None:
                 lines.append(f'        {await_kw}page.mouse.move({mouse.get("x")}, {mouse.get("y")})')
             lines.append(f'        {await_kw}page.mouse.wheel({delta.get("x", 0)}, {delta.get("y", 0)})')
+        # 导航同步点：下一个动作的 page.url ≠ 本动作 url → 本动作
+        # 触发了导航 → 断言新 URL（消除竞态）。末次导航由 stop 时
+        # 补录的 _final pseudo-action 捕获。
+        if i + 1 < len(actions):
+            nxt_url = (actions[i + 1].get('page') or {}).get('url')
+            cur_url = (action.get('page') or {}).get('url')
+            if nxt_url and cur_url and nxt_url != cur_url:
+                lines.append(
+                    f'        {await_kw}expect(page).to_have_url('
+                    f'{repr(str(nxt_url))})')
     if is_async:
         lines.extend([
             '',
@@ -641,6 +662,78 @@ def _export_playwright_sync_script(actions: list) -> str:
 
 def _export_playwright_async_script(actions: list) -> str:
     return _export_playwright_script(actions, is_async=True)
+
+
+def _export_playwright_ts_script(actions: list, standalone: bool) -> str:
+    """导出 TypeScript Playwright 脚本（驼峰 API + async/await）。
+
+    standalone=False → Playwright Test 风格（.spec.ts）：
+      import { test, expect } from '@playwright/test'
+    standalone=True → 独立库脚本：
+      import { chromium, expect } from 'playwright' + async function run()
+    定位器语义复用 _pw_locator，仅经 py_loc_to_ts 做 API 层映射。
+    """
+    from dp_cli.pw_ts import py_loc_to_ts, ts_str
+    ind = '  '
+    if standalone:
+        lines = [
+            "import { chromium, expect } from 'playwright';",
+            '',
+            'async function run() {',
+            f'{ind}const browser = await chromium.launch({{ headless: false }});',
+            f'{ind}const page = await browser.newPage();',
+        ]
+    else:
+        lines = [
+            "import { test, expect } from '@playwright/test';",
+            '',
+            "test('dp-cli recording', async ({ page }) => {",
+        ]
+    first_url = _first_url(actions)
+    if first_url:
+        lines.append(f'{ind}await page.goto({ts_str(first_url)});')
+    for i, action in enumerate(actions):
+        typ = action.get('type')
+        py_loc = _pw_locator(action)
+        loc = py_loc_to_ts(py_loc) if py_loc else ''
+        if typ == 'click' and loc:
+            lines.append(f'{ind}await {loc}.click();')
+        elif typ == 'fill' and loc:
+            lines.append(
+                f'{ind}await {loc}.fill({ts_str(action.get("value", ""))});')
+        elif typ == 'select' and loc:
+            lines.append(
+                f'{ind}await {loc}.selectOption({ts_str(action.get("value", ""))});')
+        elif typ == 'check' and loc:
+            method = 'check' if action.get('checked') else 'uncheck'
+            lines.append(f'{ind}await {loc}.{method}();')
+        elif typ == 'press':
+            key = action.get('key') or ''
+            if loc:
+                lines.append(f'{ind}await {loc}.press({ts_str(key)});')
+            else:
+                lines.append(f'{ind}await page.keyboard.press({ts_str(key)});')
+        elif typ == 'scroll':
+            delta = action.get('delta') or {}
+            mouse = action.get('mouse') or {}
+            if mouse.get('x') is not None and mouse.get('y') is not None:
+                lines.append(
+                    f'{ind}await page.mouse.move({mouse.get("x")}, {mouse.get("y")});')
+            lines.append(
+                f'{ind}await page.mouse.wheel({delta.get("x", 0)}, {delta.get("y", 0)});')
+        # 导航同步点：与 py 版同规则——下一动作 page.url 变化 →
+        # 断言着陆 URL；末次导航由 _final pseudo-action 捕获
+        if i + 1 < len(actions):
+            nxt_url = (actions[i + 1].get('page') or {}).get('url')
+            cur_url = (action.get('page') or {}).get('url')
+            if nxt_url and cur_url and nxt_url != cur_url:
+                lines.append(
+                    f'{ind}await expect(page).toHaveURL({ts_str(nxt_url)});')
+    if standalone:
+        lines.extend(['}', '', 'run();'])
+    else:
+        lines.append('});')
+    return '\n'.join(lines) + '\n'
 
 
 def _export_selenium_script(actions: list) -> str:
@@ -670,6 +763,8 @@ def _export_selenium_script(actions: list) -> str:
     lines.append('    actions = ActionChains(driver)')
     for action in actions:
         typ = action.get('type')
+        if typ == '_final':
+            continue                # 伪动作：终态 url 标记
         locator = _action_locator(action)
         if typ == 'click' and locator:
             lines.append(f'    find(driver, {repr(str(locator))}).click()')
@@ -714,6 +809,82 @@ def _export_selenium_script(actions: list) -> str:
 def _action_locator(action: dict) -> str:
     element = action.get('element') or {}
     return action.get('best_locator') or element.get('best_locator') or ''
+
+
+# ── Playwright 语义定位器 ────────────────────────────────────────────────
+# tag → ARIA role 映射（显式 role 属性优先；input 按 type 细分）
+_PW_TAG_ROLE = {
+    'button': 'button', 'select': 'combobox', 'textarea': 'textbox',
+    'h1': 'heading', 'h2': 'heading', 'h3': 'heading', 'h4': 'heading',
+    'h5': 'heading', 'h6': 'heading',
+    'img': 'img', 'nav': 'navigation', 'main': 'main',
+    'header': 'banner', 'footer': 'contentinfo', 'form': 'form',
+    'table': 'table', 'li': 'listitem', 'ul': 'list', 'ol': 'list',
+    'article': 'article', 'aside': 'complementary', 'section': 'region',
+    'dialog': 'dialog', 'progress': 'progressbar',
+}
+_PW_INPUT_ROLE = {
+    'text': 'textbox', 'email': 'textbox', 'password': 'textbox',
+    'tel': 'textbox', 'url': 'textbox', 'search': 'searchbox',
+    'checkbox': 'checkbox', 'radio': 'radio', 'number': 'spinbutton',
+    'range': 'slider', 'button': 'button', 'submit': 'button',
+    'reset': 'button',
+}
+
+
+def _pw_role(element: dict) -> str:
+    """element.tag/attrs → Playwright ARIA role（无语义时返回 ''）。"""
+    attrs = element.get('attrs') or {}
+    if attrs.get('role'):
+        return attrs['role']                        # 显式 role 属性
+    tag = element.get('tag') or ''
+    if tag == 'input':
+        return _PW_INPUT_ROLE.get((attrs.get('type') or 'text').lower(), '')
+    if tag == 'a':
+        return 'link' if attrs.get('href') else ''  # 无 href 的 a 不是 link
+    return _PW_TAG_ROLE.get(tag, '')
+
+
+def _pw_locator(action: dict) -> str:
+    """action → 完整 page 定位器表达式（get_by_* 优先，page.locator 兜底）。
+
+    优先级对齐 Playwright 官方推荐：testid > role+name > label >
+    placeholder > name(表单) > id > text > css。无语义元素回退
+    page.locator(css)——与旧版输出一致（向后兼容）。
+    """
+    el = action.get('element') or {}
+    attrs = el.get('attrs') or {}
+    tag = el.get('tag') or ''
+    text = (el.get('text') or '').strip()[:60]
+    # accessible name：aria-label > innerText
+    name = (attrs.get('aria-label') or '').strip() or text[:50]
+
+    if attrs.get('data-testid'):
+        return f"page.get_by_test_id({attrs['data-testid']!r})"
+    if attrs.get('data-test'):
+        return f"page.locator({('[data-test=' + json.dumps(attrs['data-test'], ensure_ascii=False) + ']')!r})"
+    role = _pw_role(el)
+    # role+accessible_name 最具语义；无 name 的纯 role 降为兜底
+    # （get_by_role('textbox') 在多输入框页不唯一，让位 label/placeholder）
+    if role and name:
+        return f"page.get_by_role({role!r}, name={name!r})"
+    if attrs.get('placeholder') and tag == 'input':
+        return f"page.get_by_placeholder({attrs['placeholder']!r})"
+    if attrs.get('name') and tag in ('input', 'select', 'textarea'):
+        return f"page.locator({('[name=' + json.dumps(attrs['name'], ensure_ascii=False) + ']')!r})"
+    if attrs.get('id'):
+        # 合法 CSS 标识符用 #id（惯用可读）；含元字符（JSF form:field 型）
+        # 落 [id="..."] 引号形式，否则选择器破裂
+        eid = attrs['id']
+        if re.fullmatch(r'[A-Za-z_][\w-]*', eid):
+            return f"page.locator('#{eid}')"
+        return f"page.locator({('[id=' + json.dumps(eid, ensure_ascii=False) + ']')!r})"
+    if text and len(text) <= 40:
+        return f"page.get_by_text({text!r})"
+    if role:
+        return f"page.get_by_role({role!r})"
+    sel = _playwright_selector(action)
+    return f"page.locator({sel!r})" if sel else ''
 
 
 def _playwright_selector(action: dict) -> str:

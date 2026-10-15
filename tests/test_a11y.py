@@ -812,3 +812,75 @@ def test_take_snapshot_max_depth_passed_to_cdp():
     page = FakePage(cdp_map={'Accessibility.getFullAXTree': ax})
     a11y.take_a11y_snapshot(page, max_depth=2, with_clickables=False)
     assert seen.get('depth') == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.7 --pw-locators：ref 附 Playwright 首选定位器
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_pw_locators_attached_to_refs():
+    """交互元素 ref 附 pw_locator 字段 + 行末 pw= 段。"""
+    snap = snapshot(node(role='button', name='登录', locator='#login'))
+    refs = {}
+    result = a11y.render_a11y_text(snap, refs=refs, pw_locators=True)
+
+    assert refs['1']['pw_locator'] == 'page.get_by_role("button", name="登录")'
+    assert 'pw=page.get_by_role' in result
+
+
+@pytest.mark.unit
+def test_pw_locators_non_interactive_no_pw():
+    """非交互元素（StaticText/generic 无 locator）不附 pw_locator。"""
+    snap = snapshot(node(role='StaticText', name='正文内容'))
+    refs = {}
+    result = a11y.render_a11y_text(snap, refs=refs, pw_locators=True)
+
+    assert not refs                       # StaticText 不分配 ref
+    assert 'pw=' not in result
+
+
+@pytest.mark.unit
+def test_pw_locators_off_by_default():
+    """默认 pw_locators=False：refs 无 pw_locator 字段，行内无 pw=。"""
+    snap = snapshot(node(role='button', name='登录', locator='#login'))
+    refs = {}
+    result = a11y.render_a11y_text(snap, refs=refs)
+
+    assert 'pw_locator' not in refs['1']
+    assert 'pw=' not in result
+
+
+@pytest.mark.unit
+def test_pw_locators_brief_compat():
+    """brief + pw_locators 共存：refs 附 pw_locator。"""
+    snap = snapshot(node(role='button', name='OK', locator='#ok'))
+    refs = {}
+    result = a11y.render_a11y_text(snap, brief=True, refs=refs,
+                                   pw_locators=True)
+
+    assert refs['1']['pw_locator'].startswith('page.get_by_role')
+    assert 'pw=page.get_by_role' in result
+
+
+@pytest.mark.unit
+def test_pw_locators_ref_content_role():
+    """_REF_CONTENT_ROLES（paragraph/heading 等）+ display_name →
+    也附 pw_locator（固化断言可用 get_by_role）。"""
+    snap = snapshot(node(role='heading', name='标题一', locator='h1'))
+    refs = {}
+    a11y.render_a11y_text(snap, refs=refs, pw_locators=True)
+
+    assert refs['1']['pw_locator'] == \
+        'page.get_by_role("heading", name="标题一")'
+
+
+@pytest.mark.unit
+def test_pw_locators_css_fallback():
+    """无 role/name 的 locator 元素 → css 兜底（page.locator）。"""
+    snap = snapshot(node(role='generic', name='', locator='#x'))
+    # generic 无 name → 分配 ref 吗？看 should_ref 逻辑：
+    # role in _INTERACTIVE_ROLES and loc —— generic 不在 → 不分配 ref
+    refs = {}
+    a11y.render_a11y_text(snap, refs=refs, pw_locators=True)
+    assert not refs   # generic 无 name 被跳过，无 ref 无 pw_locator

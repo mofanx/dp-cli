@@ -471,3 +471,195 @@ def test_get_recorder_status_none_returns_default():
     page = FakePage(js_return=None)
     result = recorder.get_recorder_status(page)
     assert result == {'recording': False, 'count': 0, 'version': None}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.4 语义定位器导出（_pw_locator）
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _el(tag='', attrs=None, text='', locators=None):
+    return {"tag": tag, "attrs": attrs or {}, "text": text,
+            "locators": locators or {}}
+
+
+@pytest.mark.unit
+def test_pw_locator_testid():
+    """data-testid → get_by_test_id（最高优先级）。"""
+    a = {"type": "click", "element": _el('button',
+         {"id": "btn", "data-testid": "login-btn"}, "提交")}
+    assert recorder._pw_locator(a) == "page.get_by_test_id('login-btn')"
+
+
+@pytest.mark.unit
+def test_pw_locator_role_with_name():
+    """button 元素 → get_by_role('button', name=...)——accessible name
+    取 aria-label > innerText。"""
+    a = {"type": "click", "element": _el('button', {}, "登录",
+         {"css": "css:.login-btn"})}
+    assert recorder._pw_locator(a) == \
+        "page.get_by_role('button', name='登录')"
+    # aria-label 优先于 innerText
+    a2 = {"type": "click", "element": _el('button',
+          {"aria-label": "关闭"}, "X")}
+    assert recorder._pw_locator(a2) == \
+        "page.get_by_role('button', name='关闭')"
+
+
+@pytest.mark.unit
+def test_pw_locator_input_types():
+    """input type → 细分 role：text→textbox、checkbox→checkbox；
+    无 name 时纯 role 兜底。"""
+    a = {"type": "fill", "element": _el('input',
+         {"type": "email"}, "")}
+    # 无 accessible name → 纯 role（降为兜底语义）
+    assert recorder._pw_locator(a) == "page.get_by_role('textbox')"
+    a2 = {"type": "check", "element": _el('input',
+          {"type": "checkbox", "aria-label": "同意"})}
+    assert recorder._pw_locator(a2) == \
+        "page.get_by_role('checkbox', name='同意')"
+
+
+@pytest.mark.unit
+def test_pw_locator_link_and_label():
+    """a[href] → link；input aria-label → get_by_role(name=...)
+    （aria-label 即 accessible name，比 get_by_label 更精确）。"""
+    a = {"type": "click", "element": _el('a', {"href": "/next"}, "下一页")}
+    assert recorder._pw_locator(a) == \
+        "page.get_by_role('link', name='下一页')"
+    a2 = {"type": "fill", "element": _el('input',
+          {"aria-label": "搜索"})}
+    assert recorder._pw_locator(a2) == \
+        "page.get_by_role('textbox', name='搜索')"
+
+
+@pytest.mark.unit
+def test_pw_locator_placeholder_and_name():
+    """input placeholder → get_by_placeholder（先于纯 role）；
+    name 属性 → locator('[name="..."]')（带引号，含空格/特殊字符安全）。"""
+    a = {"type": "fill", "element": _el('input', {"placeholder": "用户名"})}
+    assert recorder._pw_locator(a) == "page.get_by_placeholder('用户名')"
+    a2 = {"type": "fill", "element": _el('input', {"name": "username"})}
+    assert recorder._pw_locator(a2) == 'page.locator(\'[name="username"]\')'
+
+
+@pytest.mark.unit
+def test_pw_locator_id_and_text_fallback():
+    """无 role/label 时 id → locator('#id')；短 text → get_by_text。"""
+    a = {"type": "click", "element": _el('', {"id": "ok-btn"})}
+    assert recorder._pw_locator(a) == "page.locator('#ok-btn')"
+    a2 = {"type": "click", "element": _el('', {}, "提交")}
+    assert recorder._pw_locator(a2) == "page.get_by_text('提交')"
+
+
+@pytest.mark.unit
+def test_pw_locator_css_fallback():
+    """无语义元素（无 tag/role/attrs/text）→ css 兜底（向后兼容）。"""
+    a = {"type": "click", "best_locator": "css:#btn",
+         "element": _el(locators={"css": "css:.x"})}
+    # element 无语义 → 兜底 _playwright_selector → best_locator css
+    assert recorder._pw_locator(a) == "page.locator('#btn')"
+    # 完全无 element → 空
+    assert recorder._pw_locator({"type": "click"}) == ''
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2.5 导航同步点（to_have_url）
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_playwright_nav_sync_point():
+    """动作后 page.url 变化 → 插 expect(page).to_have_url(...)。"""
+    actions = [
+        {"type": "click", "best_locator": "css:#a",
+         "element": _el(locators={"css": "css:#a"}),
+         "page": {"url": "https://a.com"}},
+        {"type": "click", "best_locator": "css:#b",
+         "element": _el(locators={"css": "css:#b"}),
+         "page": {"url": "https://b.com"}},   # 导航到 b.com
+    ]
+    result = recorder._export_playwright_sync_script(actions)
+    assert "expect(page).to_have_url('https://b.com')" in result
+    # first_url=a.com goto 后 prev=a.com → click a 动作 url=a.com 无变化
+    assert "to_have_url('https://a.com')" not in result
+
+
+@pytest.mark.unit
+def test_playwright_nav_multi_hops():
+    """多导航：url 每次变化都插同步点。"""
+    actions = [
+        {"type": "click", "element": _el(locators={"css": "css:#1"}),
+         "page": {"url": "https://a.com"}},
+        {"type": "click", "element": _el(locators={"css": "css:#2"}),
+         "page": {"url": "https://b.com"}},
+        {"type": "click", "element": _el(locators={"css": "css:#3"}),
+         "page": {"url": "https://c.com"}},
+    ]
+    result = recorder._export_playwright_sync_script(actions)
+    assert "to_have_url('https://b.com')" in result
+    assert "to_have_url('https://c.com')" in result
+    assert result.count("to_have_url") == 2   # a.com 是 goto 首点不插
+
+
+@pytest.mark.unit
+def test_playwright_async_nav_sync():
+    """async 版含 await expect + expect import。"""
+    actions = [{"type": "click",
+                "element": _el(locators={"css": "css:#x"}),
+                "page": {"url": "https://a.com"}},
+               {"type": "click",
+                "element": _el(locators={"css": "css:#y"}),
+                "page": {"url": "https://b.com"}}]
+    result = recorder._export_playwright_async_script(actions)
+    assert "from playwright.async_api import async_playwright, expect" in result
+    assert "await expect(page).to_have_url('https://b.com')" in result
+
+
+@pytest.mark.unit
+def test_playwright_no_url_change_no_assert():
+    """url 无变化/无 url 字段 → 不插断言。"""
+    actions = [_click(), _press()]
+    result = recorder._export_playwright_sync_script(actions)
+    # _click 的 page.url='https://example.com'==first_url → 无变化
+    assert "to_have_url" not in result
+
+
+@pytest.mark.unit
+def test_export_json_strips_final():
+    """_final 伪动作不进入 json 导出（程序化消费面干净）。"""
+    actions = [{"type": "click", "element": {"tag": "button"},
+                "page": {"url": "https://a.com"}},
+               {"type": "_final", "page": {"url": "https://b.com"}}]
+    parsed = json.loads(recorder.export_actions(actions, "json"))
+    assert [a["type"] for a in parsed] == ["click"]
+
+
+@pytest.mark.unit
+def test_pw_locator_id_css_metachars_quoted():
+    """id 含 CSS 元字符（JSF form:field 型）→ [id=\"...\"] 而非 #id。"""
+    action = {"type": "click",
+              "element": {"tag": "div", "attrs": {"id": "form:field.1"}}}
+    loc = recorder._pw_locator(action)
+    assert loc == "page.locator('[id=\"form:field.1\"]')"
+
+
+@pytest.mark.unit
+def test_record_export_count_excludes_final(monkeypatch, tmp_path):
+    """record-export 的 count 只计真实动作，不含 _final 伪标记。"""
+    import dp_cli.commands.record as record_mod
+    from click.testing import CliRunner
+    from dp_cli.main import cli
+
+    class P:
+        url = 'https://a.com/'
+
+    monkeypatch.setattr(record_mod, '_get_recording_page', lambda s: P())
+    monkeypatch.setattr(record_mod, 'get_recorded_actions',
+                        lambda p: [{"type": "click",
+                                    "element": {"tag": "button"},
+                                    "page": {"url": "https://a.com"}}])
+    monkeypatch.setattr(record_mod, 'load_session', lambda s: {})
+    monkeypatch.setattr(record_mod, 'save_session', lambda s, d: None)
+    out = tmp_path / 'r.py'
+    r = CliRunner().invoke(cli, ['record-export', '-f', 'playwright',
+                                 '-o', str(out)])
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.output)['data']['count'] == 1

@@ -59,9 +59,11 @@ def register(cli):
                   help='限制 a11y 树深度（传给 CDP getFullAXTree，省 token）')
     @click.option('--max-nodes', type=int, default=None,
                   help='节点总量上限（BFS 保留前 N 个，超限附 pruned 标记）')
+    @click.option('--pw-locators', is_flag=True, default=False,
+                  help='每个可交互元素附 pw_locator（Playwright 首选定位器，固化用）')
     def snapshot(session, mode, interactive, selector, fmt, filename,
                  no_clickables, include_low, viewport_only, locator_priority,
-                 max_depth, max_nodes):
+                 max_depth, max_nodes, pw_locators):
         """获取页面快照（a11y tree + Vimium 风格可交互元素补充）。
 
         \b
@@ -90,6 +92,7 @@ def register(cli):
           dp snapshot -p "data-testid,data-test-id,id"  # 自定义属性优先级
           dp snapshot --depth 3                # 只取 a11y 树前 3 层
           dp snapshot --max-nodes 200          # 总量上限，超出附 pruned 标记
+          dp snapshot --pw-locators            # 交互元素附 Playwright 首选定位器
         """
         # -i 选项覆盖 mode
         if interactive:
@@ -121,14 +124,16 @@ def register(cli):
         # brief 是 interactive 的别名，统一处理
         mode_effective = 'interactive' if mode == 'brief' else mode
         if fmt == 'json':
-            render_a11y_text(data, refs=refs)  # 触发编号分配
+            render_a11y_text(data, refs=refs, pw_locators=pw_locators)  # 触发编号分配
             output = _dump({'status': 'ok', 'data': data})
         elif mode_effective == 'text':
             output = render_a11y_plain_text(data, refs=refs)
         elif mode_effective == 'interactive':
-            output = render_a11y_text(data, brief=True, refs=refs)
+            output = render_a11y_text(data, brief=True, refs=refs,
+                                      pw_locators=pw_locators)
         else:
-            output = render_a11y_text(data, refs=refs)
+            output = render_a11y_text(data, refs=refs,
+                                      pw_locators=pw_locators)
 
         # 保存 refs 映射到 session（供 ref:N 解析使用）
         if refs:

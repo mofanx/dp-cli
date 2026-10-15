@@ -378,6 +378,58 @@ dp goto https://bot.sannysoft.com/
 - **不覆盖** TLS JA3/JA4 / IP 信誉（需要更底层方案）
 - 对 Cloudflare / Akamai / 阿里云 Anti-Bot 等重指纹检测效果有限
 
+### 场景十一：探查 → 固化 Playwright 用例
+
+**dp-cli 负责「探查与取证」，Playwright/pwtest 负责「固化与回归」——不要在 dp 里跑测试，要把探查结果翻译成 playwright 断言与定位器。**
+
+```bash
+# 1) 连用户真实浏览器（已登录态是 playwright codegen 拿不到的独占优势）
+dp open --auto-connect
+
+# 2) 语义探查：a11y 快照拿结构，expect-gen 拿即用断言
+dp snapshot --mode brief
+dp expect-gen --ele "ref:5"            # 单元素：稳定性排序定位器候选 + expect() 行
+dp expect-gen --all --limit 30         # 枚举全页可断言点
+
+# 3) 录制人工/agent 操作流，导出 playwright 脚本素材
+dp record-start
+dp click "pw:role=button[name=登录]"
+dp fill "pw:role=textbox[name=密码]" "x"
+dp record-stop -f playwright -o steps.py   # 产出 get_by_* + to_have_url 同步点
+
+# 4) 登录态交接：真人/stealth 过风控登录 → 导出 storageState
+dp state-save auth.json --format playwright
+# playwright 侧：browser.new_context(storage_state="auth.json")
+
+# 5) 固化：导出脚本拆进 pwtest Page Object，expect-gen 断言行直接粘贴
+```
+
+**dp ↔ Playwright 映射表**
+
+| dp 探查/操作 | Playwright 固化等价物 |
+|---|---|
+| `pw:role=button[name=登录]` | `page.get_by_role("button", name="登录")` |
+| `pw:testid=submit` | `page.get_by_test_id("submit")` |
+| `pw:text=...` / `pw:placeholder=...` / `pw:label=...` | `get_by_text(...)` / `get_by_placeholder(...)` / `get_by_label(...)` |
+| `dp wait --text X` | `expect(page.get_by_text("X")).to_be_visible()` |
+| `dp wait --locator S` | `expect(loc).to_be_visible()` / `loc.wait_for()` |
+| `dp assert-visible` / `assert-text` / `assert-url` / `assert-count` | `expect(loc).to_be_visible()` / `to_contain_text()` / `expect(page).to_have_url()` / `to_have_count()` |
+| `dp eval "expr"` | `page.evaluate("expr")` |
+| `dp intercept` | `page.route("**/*", handler)` |
+| `dp emulate` | `browser.new_context(viewport=/user_agent=/locale=...)` |
+| `dp throttle` | `context.new_cdp_session(page)` → `Network.emulateNetworkConditions` |
+| `dp listen` + `listen-stop` | `page.expect_response(...)` / `page.on("response")` |
+| `dp hook-set`（探查接口调用链） | `page.on("request")` / `page.expect_request` |
+| `dp state-save --format playwright` | `browser.new_context(storage_state=...)` |
+| `dp record-export -f playwright` | 用例骨架（含 `get_by_*` + `expect().to_have_url()` 同步点） |
+| `dp expect-gen` | 即用 `expect()` 断言行（输出 `code` 字段直接粘贴） |
+
+**要点：**
+- 固化用例优先 `pw:`/`get_by_*` 语义定位器，`css:` 仅兜底——脆弱 CSS 路径是用例腐烂主因
+- `record-export` 产出是**素材不是成品**：拆进 pwtest Page Object，断言由 `expect-gen` 补
+- `expect-gen --ele` 的 `data.target.candidates` 是按稳定性排序的全候选（取第一项）；`matches` 为命中数（1 = 唯一性背书）
+- 登录态走 storageState 桥：真人/stealth 登录 → `state-save --format playwright` → 测试 `new_context(storage_state=...)`
+
 ---
 
 ## 元素定位进阶

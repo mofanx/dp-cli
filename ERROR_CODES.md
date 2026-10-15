@@ -87,6 +87,7 @@
 | `STATE_FAILED` | 状态获取/保存失败 |
 | `INSPECT_FAILED` | 元素探测失败 |
 | `SNAPSHOT_FAILED` / `SCAN_FAILED` | 快照/clickable 扫描失败 |
+| `EXPECT_GEN_FAILED` | expect 断言生成失败 |
 | `EXTRACT_FAILED` / `FIND_FAILED` / `QUERY_FAILED` / `DOM_FAILED` | 数据提取/DOM 查询失败 |
 | `DEPENDENCY_MISSING` | 可选依赖未安装（如 curl_cffi/trafilatura，提示含安装命令） |
 | `COOKIE_FAILED` / `STORAGE_FAILED` | Cookie/Storage 操作失败 |

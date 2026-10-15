@@ -247,7 +247,7 @@ def register(cli):
         page = _get_page(session)
         try:
             result = page.run_js(
-                'return JSON.stringify(Object.fromEntries(Object.entries(localStorage)))',
+                'JSON.stringify(Object.fromEntries(Object.entries(localStorage)))',
                 as_expr=True)
             data = json.loads(result) if isinstance(result, str) else result or {}
             ok({'storage': data, 'count': len(data)})

@@ -366,6 +366,13 @@ const __dp_pw_result = (function() {
     if (!scope.length) break;
   }
 
+__PW_TAIL__
+})();
+return __dp_pw_result;
+"""
+
+# 打标尾部：命中首元素写 data-dp-ref 并回传 marker
+_TAIL_MARK = r"""
   if (!scope.length) return null;
   const el = scope[0];
 
@@ -376,13 +383,14 @@ const __dp_pw_result = (function() {
   } catch (e) {
     return null;
   }
-  return marker;
-})();
-return __dp_pw_result;
-"""
+  return marker;"""
+
+# 计数尾部：回传最终 scope 长度（0 命中返回 0 而非 null）
+_TAIL_COUNT = """
+  return scope.length;"""
 
 
-def build_pw_js(matchers: list) -> str:
+def _build(matchers: list, tail: str) -> str:
     """把 matcher 列表嵌入 JS 模板，返回可直接 page.run_js() 的脚本。
 
     做双 JSON 编码：
@@ -392,4 +400,16 @@ def build_pw_js(matchers: list) -> str:
     """
     matchers_json = json.dumps(matchers, ensure_ascii=False)
     js_literal = json.dumps(matchers_json, ensure_ascii=False)
-    return _PW_RESOLVE_JS_TEMPLATE.replace('__MATCHERS_JSON__', js_literal)
+    return (_PW_RESOLVE_JS_TEMPLATE
+            .replace('__MATCHERS_JSON__', js_literal)
+            .replace('__PW_TAIL__', tail))
+
+
+def build_pw_js(matchers: list) -> str:
+    """求值 pw matcher 链 → 命中首元素打标，返回 marker（未命中 null）。"""
+    return _build(matchers, _TAIL_MARK)
+
+
+def build_pw_count_js(matchers: list) -> str:
+    """求值 pw matcher 链 → 返回最终匹配数量（int）。"""
+    return _build(matchers, _TAIL_COUNT)

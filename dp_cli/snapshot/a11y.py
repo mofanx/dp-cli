@@ -195,7 +195,8 @@ def take_a11y_snapshot(page, selector=None, max_depth=None, attr_priority=None,
 
 
 def render_a11y_text(snapshot: dict, verbose: bool = False,
-                     brief: bool = False, refs: dict = None) -> str:
+                     brief: bool = False, refs: dict = None,
+                     pw_locators: bool = False) -> str:
     """
     将 a11y tree 数据渲染为人类/AI 可读文本。
 
@@ -203,14 +204,16 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
     :param verbose: True 时显示 ignored 节点和完整属性
     :param brief: True 时截断内容文本，保留结构+交互，省 token
     :param refs: 可选，传入空 dict 时会被填充为 {ref_id: {locator, role, name, backendNodeId}}
+    :param pw_locators: True 时每个 ref 附 pw_locator 字段 + 行末 pw= 段
     :return: 格式化的文本
     """
     lines = []
     page_info = snapshot.get('page', {})
     stats = snapshot.get('stats', {})
 
-    # 渲染上下文：编号计数器 + ref 映射收集
-    ctx = {'counter': 0, 'refs': {} if refs is None else refs}
+    # 渲染上下文：编号计数器 + ref 映射收集 + pw_locators 开关
+    ctx = {'counter': 0, 'refs': {} if refs is None else refs,
+           'pw_locators': pw_locators}
 
     mode_label = 'interactive' if brief else 'full'
     # 头部信息先占位，渲染完成后回填 ref 统计
@@ -870,21 +873,6 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     if not display_name and role in _CONTENT_ROLES:
         display_name = _collect_text(node)
 
-    # 跳过无意义的容器节点（generic/none 且没有名字）
-    if role in ('generic', 'none', '') and not name:
-        for child in children:
-            _render_node(child, lines, depth, verbose=verbose,
-                         parent_text=parent_text, brief=brief, ctx=ctx)
-        return
-
-    # 文本与父节点重复时，跳过纯文本包装节点（无结构子节点的小包装）
-    if (display_name and parent_text and display_name in parent_text
-            and role not in _INTERACTIVE_ROLES):
-        has_structural_child = any(
-            c.get('role', '') not in _TEXT_ROLES for c in children)
-        if not has_structural_child:
-            return
-
     # ── 判断是否分配 ref 编号 ──
     ref_label = ''
     loc = node.get('locator')
@@ -904,6 +892,35 @@ def _render_node(node: dict, lines: list, depth: int = 0,
                 'name': (display_name or name or '')[:100],
                 'backendNodeId': node.get('backendNodeId'),
             }
+            # --pw-locators：ref 附 Playwright 首选定位器
+            # （pw_candidates 首项 py——role+name > testid > ... > css）
+            if ctx.get('pw_locators'):
+                from dp_cli.locators.suggest import pw_candidates
+                info = {'role': role,
+                        'accname': display_name or name or '',
+                        'text': display_name or '',
+                        'attrs': {}}
+                cands = pw_candidates(info)
+                if cands:
+                    pw_expr = cands[0].get('py') or ''
+                    ctx['refs'][str(ref_id)]['pw_locator'] = pw_expr
+                    # 渲染行末附 pw= 段（agent 一眼可见）
+                    node['pw_locator'] = pw_expr
+
+    # 跳过无意义的容器节点（generic/none 且没有名字）
+    if role in ('generic', 'none', '') and not name:
+        for child in children:
+            _render_node(child, lines, depth, verbose=verbose,
+                         parent_text=parent_text, brief=brief, ctx=ctx)
+        return
+
+    # 文本与父节点重复时，跳过纯文本包装节点（无结构子节点的小包装）
+    if (display_name and parent_text and display_name in parent_text
+            and role not in _INTERACTIVE_ROLES):
+        has_structural_child = any(
+            c.get('role', '') not in _TEXT_ROLES for c in children)
+        if not has_structural_child:
+            return
 
     # 构建行内容
     indent = '  ' * depth
@@ -943,6 +960,11 @@ def _render_node(node: dict, lines: list, depth: int = 0,
     # 定位器
     if loc:
         parts.append(f'→ {loc}')
+
+    # --pw-locators：附 Playwright 首选定位器（agent 固化用）
+    pw = node.get('pw_locator')
+    if pw:
+        parts.append(f'pw={pw}')
 
     # ignored 标记
     if ignored:

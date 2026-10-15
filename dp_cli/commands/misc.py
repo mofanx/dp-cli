@@ -2,11 +2,67 @@
 """杂项命令: resize / maximize / state-save / state-load / config-set"""
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import click
 
 from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import session_option, _get_page
+
+_PW_SAME_SITE = {'strict': 'Strict', 'lax': 'Lax', 'none': 'None',
+                 'no_restriction': 'None'}
+
+
+def _pw_same_site(v):
+    """CDP sameSite → Playwright 枚举；缺失按现代浏览器默认 Lax。"""
+    return _PW_SAME_SITE.get(str(v or '').strip().lower(), 'Lax')
+
+
+def _pw_expires(c):
+    """会话 cookie（session 标志或 expires<=0/缺失）→ -1。"""
+    if c.get('session'):
+        return -1
+    try:
+        exp = float(c.get('expires'))
+    except (TypeError, ValueError):
+        return -1
+    return exp if exp > 0 else -1
+
+
+def _playwright_storage_state(page):
+    """采集 cookie + localStorage，输出 Playwright storageState 结构，
+    可直接 browser.new_context(storage_state=...)。"""
+    cookies = []
+    for c in page.cookies(all_domains=True, all_info=True) or []:
+        cookies.append({
+            'name': str(c.get('name') or ''),
+            'value': str(c.get('value') or ''),
+            'domain': str(c.get('domain') or ''),
+            'path': str(c.get('path') or '/'),
+            'expires': _pw_expires(c),
+            'httpOnly': bool(c.get('httpOnly')),
+            'secure': bool(c.get('secure')),
+            'sameSite': _pw_same_site(c.get('sameSite')),
+        })
+    origins = []
+    try:
+        u = urlparse(page.url or '')
+        if u.scheme in ('http', 'https'):
+            ls = page.run_js(
+                'JSON.stringify(Object.entries(localStorage)'
+                '.map(function(p){return {name:p[0],value:p[1]}}))',
+                as_expr=True)
+            items = json.loads(ls) if isinstance(ls, str) else ls
+            if items:
+                origins.append({
+                    'origin': f'{u.scheme}://{u.netloc}',
+                    'localStorage': [
+                        {'name': str(i.get('name', '')),
+                         'value': str(i.get('value', ''))}
+                        for i in items if isinstance(i, dict)]})
+    except Exception:
+        pass
+    return {'cookies': cookies, 'origins': origins}
 
 
 def register(cli):
@@ -43,32 +99,42 @@ def register(cli):
 
     @cli.command('state-save')
     @click.argument('filename', default='state.json')
+    @click.option('--format', 'fmt',
+                  type=click.Choice(['dp', 'playwright']), default='dp',
+                  show_default=True,
+                  help='输出格式：playwright 为 Playwright storageState 标准 '
+                       'JSON，可直接 new_context(storage_state=...)')
     @session_option
-    def state_save(filename, session):
+    def state_save(filename, fmt, session):
         """保存浏览器状态（Cookie + localStorage）到文件。
 
         \b
         示例:
           dp state-save
           dp state-save auth.json
+          dp state-save auth.json --format playwright  # 供 Playwright/pwtest 复用登录态
         """
         page = _get_page(session)
         try:
-            state = {
-                'cookies': page.cookies(all_domains=True).as_dict(),
-                'url': page.url,
-            }
-            try:
-                ls = page.run_js(
-                    'return JSON.stringify(Object.fromEntries(Object.entries(localStorage)))',
-                    as_expr=True)
-                state['localStorage'] = json.loads(ls) if isinstance(ls, str) else ls or {}
-            except Exception:
-                state['localStorage'] = {}
+            if fmt == 'playwright':
+                state = _playwright_storage_state(page)
+            else:
+                state = {
+                    'cookies': page.cookies(all_domains=True).as_dict(),
+                    'url': page.url,
+                }
+                try:
+                    ls = page.run_js(
+                        'JSON.stringify(Object.fromEntries(Object.entries(localStorage)))',
+                        as_expr=True)
+                    state['localStorage'] = json.loads(ls) if isinstance(ls, str) else ls or {}
+                except Exception:
+                    state['localStorage'] = {}
             Path(filename).write_text(
                 json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
             ok({'filename': str(Path(filename).absolute()),
-                'cookies_count': len(state['cookies'])}, msg='状态已保存')
+                'cookies_count': len(state['cookies']), 'format': fmt},
+               msg='状态已保存')
         except Exception as e:
             error(f'保存状态失败', code='STATE_FAILED', detail=str(e))
 

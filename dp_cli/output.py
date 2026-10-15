@@ -87,6 +87,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'STATE_FAILED':         (EXIT_RUNTIME, '状态获取失败'),
     'INSPECT_FAILED':       (EXIT_RUNTIME, '元素探测失败'),
     'SNAPSHOT_FAILED':      (EXIT_RUNTIME, '快照获取失败'),
+    'EXPECT_GEN_FAILED':    (EXIT_RUNTIME, 'expect 断言生成失败'),
     'SCAN_FAILED':          (EXIT_RUNTIME, 'clickable 扫描失败'),
     'EXTRACT_FAILED':       (EXIT_RUNTIME, '数据提取失败'),
     'DEPENDENCY_MISSING':   (EXIT_RUNTIME, '可选依赖缺失'),

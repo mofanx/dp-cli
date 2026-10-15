@@ -330,7 +330,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 类别 | 命令 | 参数 |
 |------|------|------|
 | 浏览器 | `bypass-csp` | [session], [off] |
-| 浏览器 | `cf-wait` | [session], [timeout], [poll] |
+| 浏览器 | `cf-wait` | [session], [timeout], [poll], [force_poll] |
 | 浏览器 | `clipboard-get` | [session] |
 | 浏览器 | `clipboard-set` | <text>, [session] |
 | 浏览器 | `close` | [session], [del_data], [force] |
@@ -351,7 +351,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 导航/页面 | `maximize` | [session] |
 | 导航/页面 | `resize` | <width>, <height>, [session] |
 | 导航/页面 | `state-load` | [filename], [session] |
-| 导航/页面 | `state-save` | [filename], [session] |
+| 导航/页面 | `state-save` | [filename], [fmt], [session] |
 | 快照 | `dom` | <locator>, [session], [direction], [depth], [index], [timeout] |
 | 快照 | `dom-snapshot` | [session], [loc], [styles], [no_rects], [no_paint], [output] |
 | 快照 | `extract` | [session], <container>, <fields_json>, [limit], [output_fmt], [filename] |
@@ -359,7 +359,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 快照 | `inspect` | <locator>, [session], [index], [include_rect], [include_style], [timeout] |
 | 快照 | `query` | [session], <selector>, [fields], [limit], [filename] |
 | 快照 | `scan` | [session], [viewport_only], [confidence], [max_elements], [fmt], [filename], [verbose] |
-| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes] |
+| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes], [pw_locators] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [timeout] |
 | 提取/交互 | `clear` | <locator>, [session], [index], [frame], [timeout] |
 | 提取/交互 | `click` | <locator>, [session], [index], [by_js], [human], [human_min], [human_max], [frame], [timeout] |
@@ -384,6 +384,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 断言 | `assert-text` | <text>, [session], [locator], [exact], [frame], [timeout] |
 | 断言 | `assert-url` | <text>, [session], [exact], [check_title] |
 | 断言 | `assert-visible` | <locator>, [session], [expect_hidden], [frame], [timeout] |
+| 断言 | `expect-gen` | [ele_loc], [gen_all], [limit], [no_count], [lang], [session], [frame] |
 | 模拟/下载/拦截 | `download` | [session], [download_dir], [timeout], [when_exists] |
 | 模拟/下载/拦截 | `emulate` | [session], [device], [viewport], [mobile], [ua], [locale], [timezone], [geolocation], [reset] |
 | 模拟/下载/拦截 | `intercept` | [session], [blocks], [headers], [mocks], [mock_status], [mock_body], [mock_headers], [mock_clear], [off] |
@@ -424,7 +425,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 页面 | `eval` | <script>, [session], [locator], [timeout] |
 | 页面 | `pdf` | [session], [filename] |
 | 页面 | `screenshot` | [session], [locator], [filename], [full_page], [fmt] |
-| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout] |
+| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout], [force_poll] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary] |
 | 批量 | `serve` | [session] |

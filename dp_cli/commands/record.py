@@ -98,7 +98,7 @@ def register(cli):
     @cli.command('record-stop')
     @session_option
     @click.option('-f', '--format', 'fmt',
-                  type=click.Choice(['dp', 'playwright', 'playwright-async', 'selenium', 'json', 'text']),
+                  type=click.Choice(['dp', 'playwright', 'playwright-async', 'playwright-ts', 'playwright-ts-async', 'selenium', 'json', 'text']),
                   default='dp', show_default=True, help='输出格式')
     @click.option('-o', '--output', default=None, help='保存输出到文件')
     @click.option('--filename', default=None, help='保存输出到文件（兼容旧参数）', hidden=True)
@@ -109,6 +109,14 @@ def register(cli):
         try:
             # 获取页面内操作记录（JS 录制的 click/fill/scroll/press 等）
             actions = stop_recorder(page)
+            count = len(actions)
+            # 补录终态 url：末次导航的着陆页（playwright 导出时
+            # 生成 to_have_url 同步点；其他格式跳过 _final 类型）
+            try:
+                actions.append({'type': '_final',
+                                'page': {'url': page.url or ''}})
+            except Exception:
+                pass
 
             sess = load_session(session) or {}
             sess['recording'] = False
@@ -121,8 +129,8 @@ def register(cli):
             content = format_actions_text(actions, raw=False) if fmt == 'text' else export_actions(actions, fmt)
             if target_file:
                 Path(target_file).write_text(content, encoding='utf-8')
-                ok({'count': len(actions), 'format': fmt},
-                   msg=f'操作录制已停止，共 {len(actions)} 条，已保存到 {target_file}')
+                ok({'count': count, 'format': fmt},
+                   msg=f'操作录制已停止，共 {count} 条，已保存到 {target_file}')
             else:
                 click.echo(content)
         except Exception as e:
@@ -174,7 +182,7 @@ def register(cli):
     @cli.command('record-export')
     @session_option
     @click.option('-f', '--format', 'fmt',
-                  type=click.Choice(['dp', 'playwright', 'playwright-async', 'selenium', 'json']),
+                  type=click.Choice(['dp', 'playwright', 'playwright-async', 'playwright-ts', 'playwright-ts-async', 'selenium', 'json']),
                   default='dp', show_default=True, help='导出格式')
     @click.option('-o', '--output', default=None, help='保存导出结果到文件')
     @click.option('--filename', default=None, help='保存导出结果到文件（兼容旧参数）', hidden=True)
@@ -183,11 +191,19 @@ def register(cli):
         page = _get_recording_page(session)
         try:
             actions = get_recorded_actions(page)
+            count = len(actions)
+            # 补录终态 url：末次导航的着陆页（playwright 导出时
+            # 生成 to_have_url 同步点；其他格式跳过 _final 类型）
+            try:
+                actions.append({'type': '_final',
+                                'page': {'url': page.url or ''}})
+            except Exception:
+                pass
             exported = export_actions(actions, fmt)
             target_file = output or filename
             if target_file:
                 Path(target_file).write_text(exported, encoding='utf-8')
-                ok({'count': len(actions), 'format': fmt},
+                ok({'count': count, 'format': fmt},
                    msg=f'录制脚本已导出到 {target_file}')
             else:
                 click.echo(exported)

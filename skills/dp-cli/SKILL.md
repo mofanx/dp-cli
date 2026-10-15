@@ -1,6 +1,9 @@
 ---
 name: dp-cli
 description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操作。当用户需要打开网页、点击元素、填写表单、截图、抓取列表数据、监听网络请求、操作 Cookie/Storage，或者需要连接自己已登录的浏览器进行操作时，使用这个技能。特别适合：批量提取结构化数据（商品/职位/新闻列表）、需要保留登录状态的自动化、需要穿透 shadow-root/iframe 的复杂页面操作。
+allowed-tools: "Bash(dp:*) Bash(python -m dp_cli:*) Bash(python -m dp_cli.catalog:*)"
+# dp_cli_version 由 `dp install --skills` 安装时写入当前包版本；repo 副本为占位
+dp_cli_version: "dev"
 ---
 
 # dp-cli
@@ -8,6 +11,14 @@ description: 使用 dp-cli 控制浏览器、提取网页数据、自动化操�
 基于 DrissionPage 的命令行浏览器自动化工具。天然反检测、描述性定位语法、直接穿透 shadow-root/iframe。
 
 **查看所有命令和参数：`dp --help` / `dp <command> --help`**
+
+## skill 版本自救
+
+若 `dp -V` 显示的版本新于本 skill 的 `dp_cli_version`（或本 skill 未安装），以 CLI 实时输出为准：
+
+- `python -m dp_cli.catalog` —— 全量命令 schema（JSON，含全部选项）
+- `dp install --skills` —— 安装/更新本 skill 到 agent 的 skill 目录
+- `dp <command> --help` —— 单命令参数速查
 
 ---
 
@@ -536,3 +547,7 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 - **需要 JS 兜底** → `dp eval "..."` 执行自定义 JavaScript
 - **会话状态混乱** → `dp close` 清理当前会话；`dp list` 查看所有会话；`dp close-all` 清空
 - **具体命令用法** → `dp <command> --help`
+
+## 维护约定（仓库贡献者）
+
+修改本 skill 文档后必跑 `scripts/sync-skill.sh` 同步到 `~/.claude/skills/dp-cli/`（脚本末尾 diff -r 自检）；新增/改命令选项后重跑 `python -m dp_cli.catalog --md` 刷新 `references/commands.md` 生成段。详见 TESTING.md 第 8 节。

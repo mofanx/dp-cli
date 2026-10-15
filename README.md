@@ -26,6 +26,18 @@ pip install dp-cli
 dp --help
 ```
 
+### Agent skill（可选，推荐）
+
+为 AI agent 安装完整使用指南（全部命令参考 + 工作流 playbook）：
+
+```bash
+dp install --skills                        # 装到 agent 的 skill 目录
+npx skills add mofanx/dp-cli               # 或走 skills CLI 渠道
+claude plugin marketplace add mofanx/dp-cli  # 或 Claude Code 插件市场
+```
+
+未安装也能用——skill 只是文档层；agent 可直接读 `dp --help` 或 `python -m dp_cli.catalog` 自举。
+
 ## Quick Start
 
 ```bash

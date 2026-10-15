@@ -26,6 +26,7 @@ CATEGORY = {
     'tab': '标签页', 'storage': '存储', 'record': '录制',
     'page': '页面', 'batch': '批量', 'rpc': '逆向',
     'extract': '提取', 'hook': '逆向', 'serve': '批量', 'sh': '批量',
+    'meta': '元信息',
 }
 
 

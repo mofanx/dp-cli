@@ -17,7 +17,7 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'], max_content_width=10
 
 
 @click.group(context_settings=CONTEXT_SETTINGS, invoke_without_command=True)
-@click.version_option(message='%(version)s')
+@click.version_option(None, '-V', '--version', message='%(version)s')
 @click.option('-v', '--verbose', is_flag=True, envvar='DP_DEBUG',
               help='输出 debug 日志到 stderr（也可设环境变量 DP_DEBUG=1）')
 @click.option('--compact', is_flag=True, envvar='DP_CLI_COMPACT',
@@ -35,6 +35,11 @@ def cli(ctx, verbose, compact):
       dp click "text:登录"
       dp fill "@name=username" admin
       dp close
+
+    \b
+    agent 文档:
+      dp catalog --md          完整命令表（实时生成，永不过期）
+      dp install --skills      安装 SKILL.md 到 ~/.claude/skills/
     """
     if verbose:
         from dp_cli.logs import set_debug
@@ -42,6 +47,8 @@ def cli(ctx, verbose, compact):
     if compact:
         from dp_cli.output import set_compact
         set_compact(True)
+    from dp_cli.skill_dist import warn_drift
+    warn_drift()
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

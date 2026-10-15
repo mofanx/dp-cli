@@ -439,3 +439,5 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 逆向 | `rpc-register` | <name>, <js>, [session], [persist] |
 | 逆向 | `rpc-unregister` | <name>, [session] |
 | 提取 | `read` | [session], [selector], [fmt], [output] |
+| 元信息 | `catalog` | [as_md], [as_json] |
+| 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |

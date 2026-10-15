@@ -120,3 +120,29 @@ def test_load_session_missing_returns_empty(tmp_path, monkeypatch):
    即为修复 `cdp_err` 作用域 bug 的回归测试)。
 3. **重构**前先保证测试通过,再改代码。
 4. 定期运行测试套件,关注执行时间,及时更新失效测试与依赖。
+
+## 8. skill 文档维护
+
+`skills/dp-cli/` 与 `~/.claude/skills/dp-cli/` 是两份副本,
+**修改 skill 文档(SKILL.md / references/*)后必跑**:
+
+```bash
+scripts/sync-skill.sh           # 同步 repo → ~/.claude + diff -r 校验
+scripts/sync-skill.sh --check   # 只校验(不一致 exit 1)
+```
+
+同时记得刷新命令表:`python -m dp_cli.catalog --md` 的生成段在
+`references/commands.md` 末尾(`<!-- GENERATED -->` 标记之后),
+`tests/test_docs.py` 守卫命令覆盖完整性,并对 ~/.claude 副本做
+软一致性检查(漂移只 warning 不 fail,CI 无 ~/.claude 时自动跳过)。
+
+### 发版 checklist（版本同步）
+
+`pyproject.toml` 的 `version` 是 source of truth；bump 时同步：
+- `.claude-plugin/plugin.json` 的 `version`
+- `.claude-plugin/marketplace.json` 的 `plugins[].version`
+- CHANGELOG.md
+
+`test_plugin_manifest_version_sync` 会拦住三处不一致（CI 强制）。
+`dp install --skills` 写入的 `dp_cli_version` 戳从包元数据取，无需手改；
+skill 文档的 `dp_cli_version: "dev"` 是 repo 占位，勿改成真版本。

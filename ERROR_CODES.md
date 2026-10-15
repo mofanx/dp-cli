@@ -88,6 +88,7 @@
 | `INSPECT_FAILED` | 元素探测失败 |
 | `SNAPSHOT_FAILED` / `SCAN_FAILED` | 快照/clickable 扫描失败 |
 | `EXPECT_GEN_FAILED` | expect 断言生成失败 |
+| `SKILL_NOT_FOUND` / `SKILL_DRIFT` | bundled skill 缺失 / 已装 skill 与包内副本不一致 |
 | `EXTRACT_FAILED` / `FIND_FAILED` / `QUERY_FAILED` / `DOM_FAILED` | 数据提取/DOM 查询失败 |
 | `DEPENDENCY_MISSING` | 可选依赖未安装（如 curl_cffi/trafilatura，提示含安装命令） |
 | `COOKIE_FAILED` / `STORAGE_FAILED` | Cookie/Storage 操作失败 |

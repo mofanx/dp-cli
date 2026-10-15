@@ -88,6 +88,8 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'INSPECT_FAILED':       (EXIT_RUNTIME, '元素探测失败'),
     'SNAPSHOT_FAILED':      (EXIT_RUNTIME, '快照获取失败'),
     'EXPECT_GEN_FAILED':    (EXIT_RUNTIME, 'expect 断言生成失败'),
+    'SKILL_NOT_FOUND':      (EXIT_RUNTIME, 'bundled skill 缺失'),
+    'SKILL_DRIFT':          (EXIT_RUNTIME, '已装 skill 与包内副本不一致'),
     'SCAN_FAILED':          (EXIT_RUNTIME, 'clickable 扫描失败'),
     'EXTRACT_FAILED':       (EXIT_RUNTIME, '数据提取失败'),
     'DEPENDENCY_MISSING':   (EXIT_RUNTIME, '可选依赖缺失'),

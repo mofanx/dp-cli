@@ -337,6 +337,23 @@ def test_cli_version(runner):
     from dp_cli.main import cli
     result = runner.invoke(cli, ["--version"])
     assert result.exit_code == 0
+    # 输出应为纯版本号（不含 Usage/帮助文本）
+    assert result.output.strip() and "Usage" not in result.output
+
+
+@pytest.mark.unit
+def test_cli_version_short_flag(runner):
+    """-V 与 --version 同义（pytest/git -V 大写惯例），-v 仍是 verbose。"""
+    from dp_cli.main import cli
+    r_long = runner.invoke(cli, ["--version"])
+    r_short = runner.invoke(cli, ["-V"])
+    assert r_short.exit_code == 0
+    assert r_short.output == r_long.output
+    # -v 不回归：仍走 verbose 分支（无子命令时输出 help，而非版本号）
+    r_verbose = runner.invoke(cli, ["-v"])
+    assert r_verbose.exit_code == 0
+    assert "Usage" in r_verbose.output
+    assert r_verbose.output.strip() != r_short.output.strip()
 
 
 @pytest.mark.unit

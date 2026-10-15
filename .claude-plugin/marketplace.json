@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "dp-cli",
+  "description": "dp-cli skill 分发渠道——DrissionPage 命令行浏览器自动化",
+  "owner": {
+    "name": "mofanx",
+    "email": "yanwuning@live.cn"
+  },
+  "plugins": [
+    {
+      "name": "dp-cli",
+      "source": "./",
+      "description": "DrissionPage 命令行浏览器自动化：控制真实已登录 Chrome、反检测、pw: 语义定位器、110+ JSON 命令、Playwright 用例固化",
+      "version": "0.7.0",
+      "category": "development"
+    }
+  ]
+}

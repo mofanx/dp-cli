@@ -41,9 +41,14 @@ class _RpcPage:
 
 
 def _patch(monkeypatch, page, sess=None, saved=None):
+    import dp_cli.commands._utils as _utils
     monkeypatch.setattr(rpc_mod, '_get_page', lambda s: page)
     monkeypatch.setattr(rpc_mod, 'load_session', lambda s: dict(sess or {}))
     monkeypatch.setattr(rpc_mod, 'save_session',
+                        lambda s, d: saved.update(d) if saved is not None
+                        else None)
+    # _replay_persist_scripts 走 _utils 命名空间
+    monkeypatch.setattr(_utils, 'save_session',
                         lambda s, d: saved.update(d) if saved is not None
                         else None)
 
@@ -209,12 +214,16 @@ def test_rpc_list_merges_persisted(monkeypatch):
 
 @pytest.mark.unit
 def test_rpc_unregister_removes_initjs_and_session(monkeypatch):
-    """delete 当前页 + remove_init_js(js_id) + sess['rpc'] pop。"""
+    """delete 当前页 + CDP remove init-js + sess['rpc'] pop。"""
     captured = {}
 
     class _P(_RpcPage):
         def run_cdp(self, cmd, **kw):
-            captured['expr'] = kw.get('expression')
+            if cmd == 'Runtime.evaluate':
+                captured['expr'] = kw.get('expression')
+            else:
+                captured.setdefault('rm', []).append(
+                    kw.get('identifier'))
             return {'result': {'value': True}}
     saved = {}
     sess = {'rpc': {'sign': {'body': 'x', 'js_id': 'j9'},
@@ -223,6 +232,7 @@ def test_rpc_unregister_removes_initjs_and_session(monkeypatch):
     r = runner.invoke(cli, ['rpc-unregister', 'sign'])
     assert r.exit_code == 0
     assert 'delete' in captured['expr'] and '"sign"' in captured['expr']
+    assert captured['rm'] == ['j9']
     assert saved['rpc'] == {'keep': {'body': 'y', 'js_id': 'j8'}}
 
 
@@ -296,3 +306,138 @@ def test_get_page_replay_bundle_isolates_bad_spec(monkeypatch):
     # 两个合法 spec 共享同一 bundle id
     assert sess['rpc']['good']['js_id'] == 'jsid-1'
     assert sess['hooks']['ok-1']['js_id'] == 'jsid-1'
+
+
+# ── _remove_init_js：跨进程清除（绕 _init_jss 门控）─────────────────────────
+
+@pytest.mark.unit
+def test_remove_init_js_bypasses_gate(monkeypatch):
+    """_init_jss 为空（跨进程）仍直接调 CDP——不静默失效。"""
+    from dp_cli.commands import _utils
+    page = _RpcPage()
+    page._init_jss = []            # 跨进程新对象，空注册表
+    calls = []
+    orig = page.run_cdp
+    page.run_cdp = lambda c, **kw: (calls.append((c, kw)), orig(c, **kw))[1]
+    assert _utils._remove_init_js(page, 'jsid-1') is True
+    assert calls == [('Page.removeScriptToEvaluateOnNewDocument',
+                      {'identifier': 'jsid-1'})]
+
+
+@pytest.mark.unit
+def test_remove_init_js_syncs_init_jss():
+    """本进程注册过的 id 移除后同步清 _init_jss。"""
+    from dp_cli.commands import _utils
+    page = _RpcPage()
+    page._init_jss = ['jsid-1', 'jsid-2']
+    assert _utils._remove_init_js(page, 'jsid-1') is True
+    assert page._init_jss == ['jsid-2']
+
+
+@pytest.mark.unit
+def test_remove_init_js_stale_id_best_effort():
+    """identifier 失效（session 已死）→ 吞异常返回 False，不抛。"""
+    from dp_cli.commands import _utils
+    page = _RpcPage()
+    page._init_jss = []
+    def boom(cmd, **kw):
+        raise RuntimeError('No script with given id')
+    page.run_cdp = boom
+    assert _utils._remove_init_js(page, 'jsid-dead') is False
+    assert _utils._remove_init_js(page, None) is False   # 空 id 短路
+    assert _utils._remove_init_js(page, '') is False
+
+
+@pytest.mark.unit
+def test_unregister_uses_remove_helper(monkeypatch):
+    """rpc-unregister 走 _remove_init_js：CDP 直达而非 DP remove_init_js。"""
+    page = _RpcPage()
+    cdp_calls = []
+    orig = page.run_cdp
+    page.run_cdp = lambda c, **kw: (cdp_calls.append(c),
+                                    orig(c, **kw))[1]
+    sess = {'rpc': {'add': {'body': '(a)=>a', 'js_id': 'jsid-9'}}}
+    saved = {}
+    _patch(monkeypatch, page, sess=sess, saved=saved)
+    r = runner.invoke(cli, ['rpc-unregister', 'add'])
+    assert r.exit_code == 0, r.output
+    # CDP removeScriptToEvaluateOnNewDocument 直达（不经 _init_jss 门控）
+    assert 'Page.removeScriptToEvaluateOnNewDocument' in cdp_calls
+
+
+@pytest.mark.unit
+def test_bundle_js_id_persisted_for_cross_process(monkeypatch):
+    """_get_page 重放后 spec['js_id']=bundle_id 落盘——跨进程 unregister
+    拿到当前生效 bundle id 才能移除整包。"""
+    from dp_cli.commands import _utils
+    page = _RpcPage()
+    sess = {'rpc': {'f': {'body': '()=>1', 'js_id': 'jsid-old'}}}
+    saved = {}
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: dict(sess))
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.update(d))
+    _utils._get_page('t')
+    # save_session 被调且 spec['js_id'] 持久化为 bundle_id
+    assert saved['rpc']['f']['js_id'] == 'jsid-1'
+
+
+@pytest.mark.unit
+def test_unregister_bundle_removes_whole_then_replay_restores(monkeypatch):
+    """bundle 移除整包语义：unregister 移除 bundle_id → 下次 _get_page
+    重放剩余段补回。"""
+    from dp_cli.commands import _utils
+    page = _RpcPage()
+    # sess 中 A/B 共享 bundle_id（重放后落盘态）
+    sess = {'rpc': {'a': {'body': '()=>1', 'js_id': 'bnd-1'},
+                    'b': {'body': '()=>2', 'js_id': 'bnd-1'}}}
+    calls = []
+    orig = page.run_cdp
+    page.run_cdp = lambda c, **kw: (calls.append(c), orig(c, **kw))[1]
+    # 模拟跨进程 unregister a：移除 bundle_id 整包
+    assert _utils._remove_init_js(page, sess['rpc']['a']['js_id']) is True
+    assert calls[-1] == 'Page.removeScriptToEvaluateOnNewDocument'
+    # B 的 spec 仍在 sess → 重放补回（bundle 重注册）
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session',
+                        lambda s: {'rpc': {'b': sess['rpc']['b']}})
+    monkeypatch.setattr(_utils, 'save_session', lambda s, d: None)
+    _utils._get_page('t')
+    # 新 bundle 只含 b 段
+    assert len(page.init_js) == 1
+    assert 'window.__dp_rpc["b"]' in page.init_js[0]
+    assert '"a"' not in page.init_js[0]
+
+
+@pytest.mark.unit
+def test_unregister_replays_survivors_immediately(monkeypatch):
+    """unregister 移除整包后同命令内重注册同包剩余段——不等下次
+    _get_page，消除间隔内导航丢失 persist init-js 的窗口。"""
+    page = _RpcPage()
+    sess = {'rpc': {'a': {'body': '()=>1', 'js_id': 'bnd-1'},
+                    'b': {'body': '()=>2', 'js_id': 'bnd-1'}}}
+    saved = {}
+    _patch(monkeypatch, page, sess=sess, saved=saved)
+    r = runner.invoke(cli, ['rpc-unregister', 'a'])
+    assert r.exit_code == 0, r.output
+    # 移除整包后立即重注册：新 bundle 只含 b 段
+    assert len(page.init_js) == 1
+    assert 'window.__dp_rpc["b"]' in page.init_js[0]
+    assert '"a"' not in page.init_js[0]
+    # 新 bundle_id 已回写
+    assert saved['rpc']['b']['js_id'] == 'jsid-1'
+
+
+@pytest.mark.unit
+def test_unregister_no_replay_for_foreign_js_id(monkeypatch):
+    """only_ids 限定：其它 js_id 的 spec 脚本仍存活，不重复注册。"""
+    page = _RpcPage()
+    sess = {'rpc': {'a': {'body': '()=>1', 'js_id': 'bnd-1'},
+                    'b': {'body': '()=>2', 'js_id': 'j-sep'}}}
+    saved = {}
+    _patch(monkeypatch, page, sess=sess, saved=saved)
+    r = runner.invoke(cli, ['rpc-unregister', 'a'])
+    assert r.exit_code == 0, r.output
+    # b 的 js_id 不在被移除包内 → 不重复注册
+    assert page.init_js == []
+    assert saved['rpc']['b']['js_id'] == 'j-sep'

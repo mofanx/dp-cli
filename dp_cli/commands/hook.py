@@ -21,6 +21,7 @@ import click
 from dp_cli.output import ok, error, debug
 from dp_cli.session import load_session, save_session
 from dp_cli.commands._utils import (session_option, _get_page,
+                                    _remove_init_js, _replay_persist_scripts,
                                     trim_options, shape_records)
 from dp_cli.commands.browser import _cdp_eval
 
@@ -349,6 +350,7 @@ def register(cli):
         orig_hooks = sess.get('hooks') or {}
         hooks_cfg = dict(orig_hooks)
         try:
+            removed_ids = set()
             if all_:
                 items = _cdp_eval(page, _list_js()) or []
                 ids = [i['id'] for i in items] + list(hooks_cfg)
@@ -357,10 +359,8 @@ def register(cli):
                     r = _cdp_eval(page, _clear_js(h))
                     spec = hooks_cfg.pop(h, None)
                     if spec and spec.get('js_id'):
-                        try:
-                            page.remove_init_js(spec['js_id'])
-                        except Exception:
-                            pass
+                        _remove_init_js(page, spec['js_id'])
+                        removed_ids.add(spec['js_id'])
                     (done if r == 'ok' or r == 'nf' else failed).append(h)
             else:
                 r = _cdp_eval(page, _clear_js(hid))
@@ -373,10 +373,8 @@ def register(cli):
                     return
                 done, failed = [hid], []
                 if spec and spec.get('js_id'):
-                    try:
-                        page.remove_init_js(spec['js_id'])
-                    except Exception:
-                        pass
+                    _remove_init_js(page, spec['js_id'])
+                    removed_ids.add(spec['js_id'])
             if buf:
                 _cdp_eval(page,
                           '(window.__dp_hook||{}).buf=[];'
@@ -387,6 +385,12 @@ def register(cli):
                 else:
                     sess.pop('hooks', None)
                 save_session(session, sess)
+            if removed_ids:
+                # 整包移除带走其中其余 persist 段（含 rpc），立即重注册，
+                # 避免到下次 _get_page 重放前的导航丢失 init-js；
+                # only_ids 限定同包 spec，不重复注册其它存活脚本。
+                _replay_persist_scripts(page, session, sess,
+                                        only_ids=removed_ids)
         except Exception as e:
             error('hook 移除失败', code='HOOK_FAILED', detail=str(e))
             return

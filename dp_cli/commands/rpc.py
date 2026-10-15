@@ -17,9 +17,10 @@ import re
 
 import click
 
-from dp_cli.output import ok, error, debug
+from dp_cli.output import ok, error
 from dp_cli.session import load_session, save_session
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import (session_option, _get_page,
+                                    _remove_init_js, _replay_persist_scripts)
 from dp_cli.commands.browser import _cdp_eval
 
 # 合法 JS 点路径（用于原生函数回落调用，如 JSON.stringify）
@@ -181,18 +182,22 @@ def register(cli):
             _cdp_eval(
                 page,
                 f'delete (window.__dp_rpc||{{}})[{json.dumps(name)}]')
-            # 持久化 init-script 移除（js_id 跨 attach 可能失效，best-effort）
-            if spec and spec.get('js_id'):
-                try:
-                    page.remove_init_js(spec['js_id'])
-                except Exception as e:
-                    debug(f'remove_init_js(js_id={spec["js_id"]}) 失败', e)
+            # 持久化 init-script 移除（identifier 失效时 best-effort）
+            removed_id = spec.get('js_id') if spec else None
+            if removed_id:
+                _remove_init_js(page, removed_id)
             if spec:
                 if rpc_cfg:
                     sess['rpc'] = rpc_cfg
                 else:
                     sess.pop('rpc', None)
                 save_session(session, sess)
+            if removed_id:
+                # 整包移除带走其中其余 persist 段，立即重注册，
+                # 避免到下次 _get_page 重放前的导航丢失 init-js；
+                # only_ids 限定同包 spec，不重复注册其它存活脚本。
+                _replay_persist_scripts(page, session, sess,
+                                        only_ids={removed_id})
             ok({'name': name, 'was_persisted': bool(spec)},
                msg='RPC 已移除' if spec else 'RPC 已从当前页移除（无持久化记录）')
         except Exception as e:

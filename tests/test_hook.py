@@ -22,6 +22,8 @@ class _HookPage:
         self._n = 0
 
     def run_cdp(self, cmd, **kw):
+        if cmd == 'Page.removeScriptToEvaluateOnNewDocument':
+            self.removed.append(kw.get('identifier'))
         self.cdp_exprs.append(kw.get('expression', ''))
         v = self.eval_value
         if isinstance(v, dict) and 'exceptionDetails' in v:
@@ -38,9 +40,14 @@ class _HookPage:
 
 
 def _patch(monkeypatch, page, sess=None, saved=None):
+    import dp_cli.commands._utils as _utils
     monkeypatch.setattr(hook_mod, '_get_page', lambda s: page)
     monkeypatch.setattr(hook_mod, 'load_session', lambda s: dict(sess or {}))
     monkeypatch.setattr(hook_mod, 'save_session',
+                        lambda s, d: saved.update(d) if saved is not None
+                        else None)
+    # _replay_persist_scripts 走 _utils 命名空间
+    monkeypatch.setattr(_utils, 'save_session',
                         lambda s, d: saved.update(d) if saved is not None
                         else None)
 
@@ -356,3 +363,22 @@ def test_hook_replay_restores(monkeypatch):
     assert 'Document.prototype' in js and 'sess' in js
     js = hook_mod._hook_js('x-1', 'xhr', {'url': '/a/', 'method': 'POST'})
     assert 'XMLHttpRequest' in js and 'fetch' in js
+
+
+@pytest.mark.unit
+def test_hook_clear_replays_survivors_immediately(monkeypatch):
+    """hook-clear 移除整包后同命令内重注册同包剩余段。"""
+    page = _HookPage()
+    sess = {'hooks': {
+        'c-1': {'type': 'cookie', 'spec': {'name': 'a'}, 'js_id': 'bnd-1'},
+        'x-1': {'type': 'xhr', 'spec': {'url': '/a/'}, 'js_id': 'bnd-1'}}}
+    saved = {}
+    _patch(monkeypatch, page, sess=sess, saved=saved)
+    r = runner.invoke(cli, ['hook-clear', '--id', 'c-1'])
+    assert r.exit_code == 0, r.output
+    assert page.removed == ['bnd-1']
+    # 立即重注册 x-1 剩余段
+    assert len(page.init_js) == 1
+    assert 'XMLHttpRequest' in page.init_js[0]
+    assert 'cookie' not in page.init_js[0]
+    assert saved['hooks']['x-1']['js_id'] == 'jsid-1'

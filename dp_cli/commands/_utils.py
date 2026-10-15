@@ -157,10 +157,28 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             _apply_browser_cdp(target, browser_cdp_cfg)
         except Exception as e:
             debug('browser_cdp 重放失败', e)
-    # persist 重放脚本打包：rpc/hooks 的 N 个 init-js 合并为单个 bundle
-    # 一次 addScriptToEvaluateOnNewDocument 注册，省 N-1 个 CDP RTT。
-    # 每段 try/catch 包裹隔离运行时异常（原独立注册语义）；
-    # 各段均为生成器模板 + json.dumps 插值，语法安全由生成器保证。
+    _replay_persist_scripts(target, session, sess)
+
+    return target
+
+
+def _replay_persist_scripts(target, session, sess, only_ids=None):
+    """重放会话持久化 init-js：rpc/hooks 的 N 个脚本合并为单个 bundle
+    一次 addScriptToEvaluateOnNewDocument 注册，省 N-1 个 CDP RTT。
+
+    每段 try/catch 包裹隔离运行时异常（原独立注册语义）；各段均为
+    生成器模板 + json.dumps 插值，语法安全由生成器保证。
+    js_id 共享 bundle id 并落盘：跨进程 unregister/clear 拿到当前
+    生效 id 才能移除整包（否则只见注册时单 id，bundle 残留无法清除）。
+
+    :param only_ids: 只重放 js_id 命中该集合的 spec——用于 unregister/
+                     clear 移除整包后精准补回其中剩余段；其它 js_id 的
+                     脚本仍在 target 上存活，不得重复注册。None 表示
+                     全量重放（_get_page 路径）。
+    """
+    def _wanted(spec):
+        return only_ids is None or spec.get('js_id') in only_ids
+
     bundle_parts = []
 
     rpc_cfg = sess.get('rpc')
@@ -168,6 +186,8 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
         try:
             from dp_cli.commands.rpc import _register_js
             for rpc_name, spec in rpc_cfg.items():
+                if not _wanted(spec):
+                    continue
                 try:
                     bundle_parts.append(_register_js(rpc_name, spec['body']))
                 except Exception as e:
@@ -179,6 +199,8 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
         try:
             from dp_cli.commands.hook import _hook_js
             for hid, spec in hooks_cfg.items():
+                if not _wanted(spec):
+                    continue
                 try:
                     bundle_parts.append(_hook_js(hid, spec['type'], spec['spec']))
                 except Exception as e:
@@ -186,21 +208,46 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
         except Exception as e:
             debug('hook 重放失败', e)
 
-    if bundle_parts:
+    if not bundle_parts:
+        return
+    try:
+        bundle_js = ';'.join(
+            f'try{{{s}}}catch(e){{}}' for s in bundle_parts)
+        bundle_id = target.add_init_js(bundle_js)
+        for spec in (rpc_cfg or {}).values():
+            if _wanted(spec):
+                spec['js_id'] = bundle_id
+        for spec in (hooks_cfg or {}).values():
+            if _wanted(spec):
+                spec['js_id'] = bundle_id
         try:
-            bundle_js = ';'.join(
-                f'try{{{s}}}catch(e){{}}' for s in bundle_parts)
-            bundle_id = target.add_init_js(bundle_js)
-            # js_id 共享 bundle id：unregister 移除整包后，
-            # 下次 _get_page 重放自动补回剩余段
-            for spec in (rpc_cfg or {}).values():
-                spec['js_id'] = bundle_id
-            for spec in (hooks_cfg or {}).values():
-                spec['js_id'] = bundle_id
+            save_session(session, sess)
         except Exception as e:
-            debug('persist 脚本打包注册失败', e)
+            debug('bundle js_id 回写失败', e)
+    except Exception as e:
+        debug('persist 脚本打包注册失败', e)
 
-    return target
+
+def _remove_init_js(page, js_id):
+    """移除 init-js，绕开 DrissionPage remove_init_js 的 _init_jss 门控。
+
+    DP 的 remove_init_js 只在 script_id in self._init_jss（本进程
+    实例属性，跨进程为空）时执行 CDP 调用——跨进程 unregister 静默
+    失效。直接调 Page.removeScriptToEvaluateOnNewDocument 绕过；
+    identifier 失效（session 已死/从未注册）吞异常返回 False。
+    """
+    if not js_id:
+        return False
+    try:
+        page.run_cdp('Page.removeScriptToEvaluateOnNewDocument',
+                     identifier=js_id)
+        # 同步清理 DP 内部注册表（若本进程注册过）
+        jss = getattr(page, '_init_jss', None)
+        if isinstance(jss, list) and js_id in jss:
+            jss.remove(js_id)
+        return True
+    except Exception:
+        return False
 
 
 _KNOWN_PREFIX = re.compile(

@@ -580,6 +580,45 @@ def test_close_browser_not_user_connected_with_port_exception(session_dir, monke
     assert not (session_dir / 'test.json').exists()
 
 
+@pytest.mark.unit
+def test_close_browser_user_connected_force_quits(session_dir, monkeypatch):
+    """user_connected + force=True → 真走 browser.quit()（修复 --force
+    死代码：此前 close_browser 内部仍按 user_connected 早退，Chrome
+    从不退出，仅报'已关闭'假成功）。"""
+    session.save_session('test', {
+        'user_connected': True, 'port': 9222, 'bridge_pid': 1234,
+    })
+    quit_calls = []
+    fake_page = Mock()
+    fake_page.browser.quit = lambda **kw: quit_calls.append(kw)
+
+    monkeypatch.setattr("DrissionPage.ChromiumPage",
+                        lambda *a, **k: fake_page)
+    monkeypatch.setattr(
+        "DrissionPage._configs.chromium_options.ChromiumOptions",
+        lambda *a, **k: Mock())
+    monkeypatch.setattr("dp_cli.bridge_manager.stop_bridge",
+                        lambda pid, timeout=None: True)
+
+    result = session.close_browser('test', force=True)
+    assert result is True
+    assert quit_calls == [{'del_data': False}]     # 真 quit 了用户浏览器
+    assert not (session_dir / 'test.json').exists()
+
+
+@pytest.mark.unit
+def test_close_browser_user_connected_no_force_no_quit(session_dir, monkeypatch):
+    """user_connected 无 force → 不 attach 不 quit，只断开（防回归）。"""
+    session.save_session('test', {'user_connected': True, 'port': 9222})
+    monkeypatch.setattr(
+        "DrissionPage.ChromiumPage",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError('不应 attach')))          # 被调用即炸
+    result = session.close_browser('test')
+    assert result is True
+    assert not (session_dir / 'test.json').exists()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # T3b 追加: 浏览器分支测试
 # ─────────────────────────────────────────────────────────────────────────────
@@ -699,6 +738,88 @@ def test_get_browser_auto_connect_failure_raises(session_dir, monkeypatch):
     
     with pytest.raises(ConnectionError, match="auto-connect 失败"):
         session.get_browser('test')
+
+
+@pytest.mark.unit
+def test_get_browser_user_connected_dead_port_raises(session_dir, monkeypatch):
+    """user_connected 会话 saved_port 已死 → ConnectionError，不静默
+    新建空浏览器顶替；会话文件保留（浏览器恢复后可重试重连）。"""
+    session.save_session('test', {'port': 9222, 'user_connected': True})
+
+    def fake_chromium_page(*args, **kwargs):
+        raise Exception("Browser not available")
+
+    monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        _fake_co_factory())
+    monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+
+    with pytest.raises(ConnectionError, match="用户浏览器已不可达"):
+        session.get_browser('test')
+    # 会话保留：重试语义成立；放弃需显式 dp close / dp open --new
+    assert session.load_session('test')['port'] == 9222
+
+
+@pytest.mark.unit
+def test_get_browser_user_connected_explicit_params_recreates(
+        session_dir, monkeypatch):
+    """user_connected 会话已死 + 显式建立参数（user_data_dir）→ 视为
+    用户主动要求新建，放行新建分支而非报错。"""
+    session.save_session('test', {'port': 9222, 'user_connected': True})
+    fake_page = Mock()
+    fake_page.browser.address = "127.0.0.1:9333"
+    calls = []
+
+    def fake_chromium_page(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise Exception("dead saved port")
+        return fake_page
+
+    monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        _fake_co_factory())
+    monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+
+    result = session.get_browser('test', user_data_dir='/x')
+    assert result == fake_page
+    assert session.load_session('test')['port'] == 9333
+
+
+@pytest.mark.unit
+def test_get_browser_dp_managed_dead_port_recreates(session_dir, monkeypatch):
+    """dp 自管会话（无 user_connected）saved_port 已死 → 保持原语义：
+    清会话并新建（不回归）。"""
+    session.save_session('test', {'port': 9222})
+    fake_page = Mock()
+    fake_page.browser.address = "127.0.0.1:9333"
+    calls = []
+
+    def fake_chromium_page(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise Exception("dead saved port")
+        return fake_page
+
+    monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        _fake_co_factory())
+    monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+
+    result = session.get_browser('test')
+    assert result == fake_page
+    assert session.load_session('test')['port'] == 9333
+
+
+@pytest.mark.unit
+def test_detect_headless_probe_failure_returns_false(monkeypatch):
+    """/json/version 探测失败（端口死/inspect 模式无 HTTP REST）→
+    返回 False 且不抛异常。"""
+    import sys
+    import types
+    monkeypatch.setitem(sys.modules, 'requests', types.SimpleNamespace(
+        get=Mock(side_effect=Exception('conn refused'))))
+    assert session._detect_headless(9) is False
 
 
 @pytest.mark.unit

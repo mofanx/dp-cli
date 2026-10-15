@@ -336,7 +336,7 @@ def register(cli):
             else:
                 error('断开失败', code='CLOSE_FAILED')
         else:
-            result = close_browser(session, del_data=del_data)
+            result = close_browser(session, del_data=del_data, force=force)
             if result:
                 ok(msg=f'会话 [{session}] 已关闭')
             else:

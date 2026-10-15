@@ -74,12 +74,20 @@ def list_sessions() -> list:
 
 
 def _detect_headless(port: int) -> bool:
-    """通过 /json/version 探测浏览器是否 headless 模式"""
+    """通过 /json/version 探测浏览器是否 headless 模式。
+
+    探测失败一律返回 False。注意此 False 可能是"探测失败"而非"确为
+    headed"：inspect 模式 Chrome 本身无 HTTP REST，且 headless 浏览器
+    被误判 headed 时 DrissionPage 可能执行 quit→restart。不引入 WS
+    级探测无法区分，故保守返回 False 并记 debug；浏览器不可达的危险
+    路径已由 _connect_browser 的 ConnectionError 分支覆盖。
+    """
     try:
         import requests
         resp = requests.get(f'http://127.0.0.1:{port}/json/version', timeout=3)
         return 'headless' in resp.json().get('User-Agent', '').lower()
-    except Exception:
+    except Exception as e:
+        debug(f'_detect_headless(port={port}) 探测失败，按非 headless 处理', e)
         return False
 
 
@@ -339,7 +347,8 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
 
     连接优先级：
     1. 指定 port → 直接连接该端口（失败则报错，不 fallback）
-    2. 已有会话记录的 port → 尝试复用（失败则新建）
+    2. 已有会话记录的 port → 尝试复用（user_connected/auto-connect
+       会话失败则报 ConnectionError；dp 自管会话失败则清记录新建）
     3. 新建浏览器实例
     """
     from DrissionPage import ChromiumPage
@@ -409,7 +418,28 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
                     f'  python -m dp_cli.bridge --user-data-dir {probe_dir} --listen 0 -v'
                 ) from e
 
-    # 所有复用路径都失败，清会话，落到新建分支
+    # 所有复用路径都失败。
+    # 会话 attach 的是用户自己的浏览器（--port/--auto-connect 写入
+    # user_connected/probe_dir）：静默新建空浏览器会让后续命令操作
+    # 完全错误的目标（且丢登录态），比报错更糟——与 auto_connect
+    # 分支同处理，直接报 ConnectionError。会话保留供重试；放弃可
+    # dp close 或 dp open --new。
+    # 例外：显式带建立参数（--user-data-dir/--headless/--proxy/
+    # --browser-path）的调用视为用户主动要求新建，放行新建分支。
+    want_new = bool(browser_path or user_data_dir or proxy or headless)
+    if (saved_port or probe_dir) and not want_new and \
+            (sess.get('user_connected') or probe_dir):
+        raise ConnectionError(
+            f'会话 [{session_name}] 连接的用户浏览器已不可达'
+            f'（port={saved_port}）。\n'
+            f'该会话 attach 的是用户自己的浏览器，不会用新实例顶替。\n'
+            f'处理建议：\n'
+            f'  - 重启浏览器（--remote-debugging-port / chrome://inspect '
+            f'远程调试）后重试\n'
+            f'  - 放弃会话：dp close -S {session_name}，再 dp open 新建'
+        )
+
+    # dp 自管会话：清会话记录，落到新建分支（profile 目录不变，登录态保留）
     if saved_port or probe_dir:
         delete_session(session_name)
 
@@ -475,11 +505,14 @@ def load_refs(session_name: str) -> dict:
         return {}
 
 
-def close_browser(session_name: str = 'default', del_data: bool = False) -> bool:
+def close_browser(session_name: str = 'default', del_data: bool = False,
+                  force: bool = False) -> bool:
     """关闭指定会话的浏览器。
 
-    - auto-connect / user_connected 模式：只停 bridge 子进程 + 清 session，
-      绝不 quit 真 Chrome（浏览器是用户的）。
+    - auto-connect / user_connected 模式（默认）：只停 bridge 子进程 +
+      清 session，不 quit 真 Chrome（浏览器是用户的）。
+    - ``force=True``：user_connected 会话也真正 quit 浏览器进程
+      （dp close --force 的语义）。
     - dp 自管模式：调用 page.browser.quit() 彻底结束浏览器进程。
     """
     from DrissionPage import ChromiumPage
@@ -493,8 +526,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
     bridge_pid = sess.get('bridge_pid')
     user_connected = sess.get('user_connected') or bool(sess.get('probe_dir'))
 
-    # auto-connect / user_connected：不 quit 真 Chrome
-    if user_connected:
+    # auto-connect / user_connected 且未 --force：不 quit 真 Chrome
+    if user_connected and not force:
         if bridge_pid:
             from dp_cli.bridge_manager import stop_bridge
             try:
@@ -504,6 +537,14 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
         delete_session(session_name)
         return True
 
+    # force 路径同样先停 bridge（auto-connect 会话），再走 quit
+    if bridge_pid:
+        from dp_cli.bridge_manager import stop_bridge
+        try:
+            stop_bridge(bridge_pid)
+        except Exception as e:
+            debug(f'stop_bridge(pid={bridge_pid}) 失败', e)
+
     if not port:
         delete_session(session_name)
         return False
@@ -512,6 +553,10 @@ def close_browser(session_name: str = 'default', del_data: bool = False) -> bool
         co = ChromiumOptions(read_file=False)
         co.set_local_port(port)
         co.existing_only(True)
+        # 与 _connect_browser 同理：探测 headless 同步到 options，
+        # 否则对 headless 浏览器 attach 会因模式不匹配失败
+        if _detect_headless(port):
+            co.headless(True)
         page = ChromiumPage(co)
         page.browser.quit(del_data=del_data)
     except Exception as e:

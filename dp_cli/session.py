@@ -461,6 +461,13 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     if headless:
         co.headless(True)
 
+    # CI/容器环境 Chrome 沙箱常起不来：root 用户或 CI 环境变量时补
+    # --no-sandbox/--disable-dev-shm-usage（dev shm 在容器里默认 64MB）
+    import os
+    if os.environ.get('CI') or (hasattr(os, 'geteuid') and os.geteuid() == 0):
+        co.set_argument('--no-sandbox')
+        co.set_argument('--disable-dev-shm-usage')
+
     co.auto_port(True)
 
     page = ChromiumPage(co)

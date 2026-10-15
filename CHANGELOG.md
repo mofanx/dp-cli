@@ -2,6 +2,36 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.8.0] - 2026-10-15
+
+### 新增
+
+- 批量执行：`batch`/`exec` 进程内串行执行命令 + JSONL 输出，省逐命令启动开销。
+- 常驻会话：`serve`/`sh` JSONL 协议（命令/argv 双形态、请求 ID 透传、可选 `--session` 注入、EOF/quit/Ctrl-C 优雅退出）。
+- JSRPC 桥：`rpc-register`/`rpc-call`/`rpc-list`/`rpc-unregister`；`hook` 工具链与 DOM snapshot；`read` 正文提取；`cf-wait` CF 挑战等待。
+- 拟人输入：`click`/`dblclick`/`fill`/`type`/`press` 拟人化 flag。
+- 网络/存储增强：`listen-stop` 捕获字段与落盘、Netscape cookie 导出（域名过滤）、可选 `curl_cffi` 指纹模拟。
+- 设备与 CDP：`stealth` 检查、设备预设、权限/剪贴板/媒体/CSP 绕过/网络节流/文件选择器。
+- `wait`/`cf-wait` 事件化：`CdpWaitGate` 事件驱动取代纯轮询（保留轮询回退）。
+- Playwright 用例固化链路：`record-export --format playwright(-async)` 语义定位器（`get_by_role`/`get_by_text`/`get_by_test_id`）+ 导航同步点；新增 `playwright-ts`/`playwright-ts-async` TypeScript 导出与 `expect-gen --lang ts`；`expect-gen` 断言物化；`state-save --format playwright` 输出标准 storageState；`snapshot --pw-locators` 交互节点附语义定位器。
+- skill 随包分发：`dp install --skills [--dir/--all/--check]` 覆盖主流 agent harness（Claude/Devin/Windsurf/Cursor/OpenCode/Codex），commands.md 安装时现场生成；多目标版本戳漂移检测（stderr 告警、stdout 零污染）；`dp catalog [--md|--json]`；`dp -V/--version`。
+- 输出层：`--compact`/`--fields`/`--head` 裁剪；`.claude-plugin/` marketplace 分发渠道；`scripts/sync-skill.sh` 开发期同步。
+
+### 修复
+
+- DrissionPage `remove_init_js` 跨进程 `_init_jss` 门控静默失效：新增 `_remove_init_js` 直发 CDP 绕门控，js_id 经 bundle_id 落盘使跨进程 unregister/clear 生效；移整包后立即精准重注册幸存 persist 段（修复延迟恢复缺口）。
+- 会话生命周期：`user_connected`/`probe_dir` 复用失败改 raise ConnectionError（杜绝静默新浏览器顶替丢登录态）；`close --force` 死代码修复；quit 前补 `_detect_headless` 修 headless 会话 close 假成功。
+- `serve --session` 注入仅限支持该选项的命令（修复 `No such option: --session`）。
+- `cf-wait` `detect_js` 顶层 return 表达式语法修复；导航中断误报修正。
+- `read --format html` 返回提取后 HTML（原误返回原始 HTML）；trafilatura 非 ImportError 失败回退 readability。
+- `emulate` 移动端→桌面端切换残留 touch 模拟修复；`batch` 嵌套命令保护修复全局 flag 绕过；`har-dump` 版本号动态读取。
+- `localstorage-list` 顶层 return 致真机必败修复；`record-export` `_final` 伪动作泄漏/count 虚报/id 元字符转义/`data-*` attr 降级修复。
+
+### 其他
+
+- 文档守卫体系：commands.md freshness 逐行比对、SKILL.md 引用扫描、ERROR_CODES 注册表↔文档同步、frontmatter schema 与版本同步守卫（`test_docs.py` 8 项）。
+- 测试 297 → 641；命令面 86 → 112。
+
 ## [0.7.0] - 2026-10-14
 
 ### 新增

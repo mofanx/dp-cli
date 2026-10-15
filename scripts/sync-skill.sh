@@ -32,7 +32,8 @@ if [ "$check_only" = 1 ]; then
         exit 0
     fi
     echo "OUT OF SYNC: $SRC != $DST" >&2
-    $DIFF "$SRC" "$DST" | head -30 >&2
+    DIFF_OUT="$($DIFF "$SRC" "$DST" 2>&1 || true)"
+    printf '%s\n' "$DIFF_OUT" | head -30 >&2
     echo "→ 请运行 scripts/sync-skill.sh 同步" >&2
     exit 1
 fi
@@ -50,6 +51,7 @@ if $DIFF "$SRC" "$DST" >/dev/null 2>&1; then
     echo "SYNCED & VERIFIED: $SRC -> $DST"
 else
     echo "VERIFY FAILED: rsync 后仍有差异" >&2
-    $DIFF "$SRC" "$DST" | head -30 >&2
+    DIFF_OUT="$($DIFF "$SRC" "$DST" 2>&1 || true)"
+    printf '%s\n' "$DIFF_OUT" | head -30 >&2
     exit 1
 fi

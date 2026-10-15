@@ -26,6 +26,14 @@ def _skill_dir(home):
     return home / '.claude' / 'skills' / 'dp-cli'
 
 
+def _sep_runner():
+    """stderr 分离的 CliRunner；click>=8.2 移除了 mix_stderr 参数（默认即分离）。"""
+    try:
+        return CliRunner(mix_stderr=False)
+    except TypeError:
+        return CliRunner()
+
+
 @pytest.mark.unit
 def test_install_skills_default_target(runner, fake_home):
     """默认装到 ~/.claude/skills/dp-cli，frontmatter 写入 CLI 版本戳。"""
@@ -86,7 +94,7 @@ def test_install_skills_check(runner, fake_home):
     assert r.exit_code == 0
     # 改版本戳 → 漂移
     md = _skill_dir(fake_home) / 'SKILL.md'
-    md.write_text(md.read_text().replace('dp_cli_version: 0.7.0',
+    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
                                          'dp_cli_version: 9.9.9'))
     r = runner.invoke(cli, ['install', '--skills', '--check'])
     assert r.exit_code == 1
@@ -117,10 +125,10 @@ def test_install_refresh_commands_md(runner, fake_home, monkeypatch):
 @pytest.mark.unit
 def test_warn_drift_stderr_only(fake_home):
     """漂移警告只去 stderr，stdout 纯净；once-per-version 防刷屏。"""
-    sep = CliRunner(mix_stderr=False)
+    sep = _sep_runner()
     sep.invoke(cli, ['install', '--skills'])
     md = _skill_dir(fake_home) / 'SKILL.md'
-    md.write_text(md.read_text().replace('dp_cli_version: 0.7.0',
+    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
                                          'dp_cli_version: 0.0.1'))
     (fake_home / '.dp_cli').mkdir(exist_ok=True)
     r = sep.invoke(cli, ['catalog'])
@@ -132,7 +140,7 @@ def test_warn_drift_stderr_only(fake_home):
 
 
 @pytest.mark.unit
-def test_catalog_md_and_json(runner):
+def test_catalog_md_and_json(runner, fake_home):
     """dp catalog 默认 JSON schema，--md 出命令表（裸输出可重定向）。"""
     r = runner.invoke(cli, ['catalog'])
     assert r.exit_code == 0
@@ -153,7 +161,7 @@ def test_stamp_version_three_states():
 
 
 @pytest.mark.unit
-def test_install_without_skills_flag(runner):
+def test_install_without_skills_flag(runner, fake_home):
     """dp install 无 --skills → INVALID_ARGS。"""
     r = runner.invoke(cli, ['install'])
     assert r.exit_code != 0
@@ -264,14 +272,14 @@ def test_drift_multi_target(runner, fake_home, monkeypatch):
 @pytest.mark.unit
 def test_warn_drift_multi_target_message(fake_home, monkeypatch):
     """多目标漂移：stderr 警告列出漂移目标路径，stdout 纯净。"""
-    sep = CliRunner(mix_stderr=False)
+    sep = _sep_runner()
     (fake_home / '.claude').mkdir()
     (fake_home / '.config' / 'devin').mkdir(parents=True)
     monkeypatch.chdir(fake_home)
     sep.invoke(cli, ['install', '--skills', '--all'])
     md = (fake_home / '.config' / 'devin' / 'skills' / 'dp-cli'
           / 'SKILL.md')
-    md.write_text(md.read_text().replace('dp_cli_version: 0.7.0',
+    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
                                          'dp_cli_version: 0.0.1'))
     (fake_home / '.dp_cli').mkdir(exist_ok=True)
     r = sep.invoke(cli, ['catalog'])

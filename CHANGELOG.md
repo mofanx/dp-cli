@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.8.1] - 2026-10-15
+
+### 修复
+
+- CI/容器环境 Chrome 启动补 `--no-sandbox`/`--disable-dev-shm-usage`（root 或 `CI` 环境变量时自动附加，修复 runner 上 `BROWSER_START_FAILED`）。
+- 测试兼容性：`CliRunner(mix_stderr=)` 在 click>=8.2 已移除，改兼容垫片；版本戳断言改动态 `cli_version()`；`sync-skill.sh` 管道 SIGPIPE（rc=141）修复；CLI invoke 测试补 HOME 隔离。
+
 ## [0.8.0] - 2026-10-15
 
 ### 新增

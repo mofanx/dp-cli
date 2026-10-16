@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.10.0] - 2026-10-16
+
+### 变更（契约）
+
+- **入口统一改名 `dpx`**：`dpc`/`dpcli` 候选名评估后定 `dpx` 为规范入口——DrissionPage 4.1.1.4 起自带 `dp` console script（浏览器配置工具），后装者静默抢占；`dp` 入口保留兼容（未被抢时可用），`check_dp_entry()` 双入口归属检测并在 `install --check` 输出抢占预警；所有文档/skill 改用 `dpx`。
+
+### 修复
+
+- `install --skills --check` 漂移检测补内容双检：版本戳相同但内容过期的场景（改名批实证漏检）现在报 `SKILL_DRIFT` 并定位差异文件；`read_text` 加 `errors=replace` 二进制容错。
+- `snapshot --since` churn 配对改位置邻近确定性算法，多对多场景计数守恒、role 隔离不误并。
+- 测试环境根治 flake：conftest autouse 三维隔离（session 目录/`_PAGE_CACHE`/env），session 残留不再污染用例。
+
 ## [0.9.1] - 2026-10-16
 
 ### 修复

@@ -322,3 +322,15 @@ def test_pkg_version_dynamic():
         assert nmod._pkg_version() == 'unknown'
     finally:
         m.version = orig
+
+
+@pytest.mark.unit
+def test_human_min_max_semantics_documented():
+    """--human-min/max 语义明确：停顿（点击前停留/逐字符间隔）随机区间，
+    帮助字符串必须点明适用对象，避免歧义。"""
+    import inspect
+    src = inspect.getsource(human.human_options)
+    assert '点击前停留' in src and '逐字符' in src
+    assert '随机' in src
+    # 模块 docstring 同步澄清不含移动分段时长
+    assert '停顿' in human.__doc__ and '移动分段' in human.__doc__

@@ -61,9 +61,12 @@ def register(cli):
                   help='节点总量上限（BFS 保留前 N 个，超限附 pruned 标记）')
     @click.option('--pw-locators', is_flag=True, default=False,
                   help='每个可交互元素附 pw_locator（Playwright 首选定位器，固化用）')
+    @click.option('--since', default=None, metavar='ts|last',
+                  help='增量模式：与基线快照比对输出 added/removed/changed；'
+                       'last 用最近一次，或指定 ISO 时间戳')
     def snapshot(session, mode, interactive, selector, fmt, filename,
                  no_clickables, include_low, viewport_only, locator_priority,
-                 max_depth, max_nodes, pw_locators):
+                 max_depth, max_nodes, pw_locators, since):
         """获取页面快照（a11y tree + Vimium 风格可交互元素补充）。
 
         \b
@@ -117,6 +120,36 @@ def register(cli):
             )
         except Exception as e:
             error('获取页面快照失败', code='SNAPSHOT_FAILED', detail=str(e))
+            return
+
+        # --since 增量模式：与基线比对，输出 diff 后保存当前为新基线
+        if since:
+            from dp_cli.snapshot.diff import (fingerprint, save_baseline,
+                                              get_baseline, diff_items,
+                                              render_diff_text)
+            url = data.get('page', {}).get('url', '')
+            cur = fingerprint(data)
+            base = get_baseline(session, since)
+            ts = save_baseline(session, url, cur)
+            if base is None:
+                error('无匹配基线快照（本次已存为基线）',
+                      code='SNAPSHOT_FAILED',
+                      detail=f'baseline={ts}; 可用的基线请见 sessions/snaps/')
+                return
+            diff = diff_items(base['items'], cur)
+            if fmt == 'json':
+                output = _dump({'status': 'ok', 'data': {
+                    'since': base['ts'], 'now': ts, 'url': url,
+                    **diff,
+                    'summary': {k: len(v) for k, v in diff.items()},
+                }})
+            else:
+                output = render_diff_text(diff, url, base['ts'])
+            if filename:
+                Path(filename).write_text(output, encoding='utf-8')
+                ok(msg=f'增量快照已保存到 {filename}')
+            else:
+                click.echo(output)
             return
 
         # 收集 ref 映射（所有模式都收集，便于后续 ref:N 引用）

@@ -136,6 +136,44 @@ def test_gate_wait_poll_fallback_timeout():
     gate.disarm()
 
 
+@pytest.mark.unit
+def test_watcher_self_cleanup_on_done():
+    """完成态后 watcher 必须自停：命中即 clearInterval + observer.disconnect，
+    不再空转（修复 done 后 interval/observer 持续占资源）。"""
+    w = CdpWaitGate._WATCHER
+    # 命中路径先 fin() 自清理再上报
+    assert 'clearInterval' in w and 'disconnect' in w
+    assert 'window.__dp_wait_ob' in w          # observer 持有引用以便断开
+    assert 'window.__dp_wait_iv' in w          # interval 持有引用以便清除
+    assert 'done=true' in w                    # done 标记仍在（防重入）
+
+
+@pytest.mark.unit
+def test_gate_disarm_injects_page_cleanup():
+    """disarm：除摘除 CDP 回调外，还向页面注入清理脚本——
+    超时/放弃场景下 watcher 不残留空转。"""
+    page = _GatePage()
+    gate = CdpWaitGate(page)
+    gate.arm('window.ready===true')
+    page.js_calls.clear()
+    gate.disarm()
+    assert any('clearInterval' in s and 'disconnect' in s
+               for s in page.js_calls)
+    assert not page.driver.callbacks
+
+
+@pytest.mark.unit
+def test_gate_disarm_cleanup_failure_tolerated():
+    """页面已死时 disarm 清理注入失败不抛（watcher 随文档销毁）。"""
+    page = _GatePage()
+    gate = CdpWaitGate(page)
+    gate.arm('window.ready===true')
+    page.run_js = lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError('page dead'))
+    gate.disarm()           # 不应抛
+    assert gate.armed is False
+
+
 # ── wait --js 集成 ─────────────────────────────────────────────────────
 
 @pytest.mark.unit

@@ -359,7 +359,7 @@ full 预设修补：`webdriver` / `UA` / `chrome.runtime` / `permissions` / `plu
 | 快照 | `inspect` | <locator>, [session], [index], [include_rect], [include_style], [timeout] |
 | 快照 | `query` | [session], <selector>, [fields], [limit], [filename] |
 | 快照 | `scan` | [session], [viewport_only], [confidence], [max_elements], [fmt], [filename], [verbose] |
-| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes], [pw_locators] |
+| 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes], [pw_locators], [since] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [timeout] |
 | 提取/交互 | `clear` | <locator>, [session], [index], [frame], [timeout] |
 | 提取/交互 | `click` | <locator>, [session], [index], [by_js], [human], [human_min], [human_max], [frame], [timeout] |

@@ -283,10 +283,19 @@ def register(cli):
         page = _get_page(session)
         if not hid:
             try:
-                n = _cdp_eval(
+                keys = _cdp_eval(
                     page,
-                    'Object.keys((window.__dp_hook||{}).hooks||{}).length')
-                hid = f'{htype}-{int(n or 0) + 1}'
+                    'JSON.stringify(Object.keys('
+                    '(window.__dp_hook||{}).hooks||{}))')
+                # 页内现存 + 会话持久化记录均占号——防止 remove/导航后
+                # 计数法撞存活 id 或覆盖会话里仍登记的持久化 hook
+                used = set(json.loads(keys or '[]'))
+                used |= set((load_session(session) or {}).get('hooks')
+                            or {})
+                i = 1
+                while f'{htype}-{i}' in used:
+                    i += 1
+                hid = f'{htype}-{i}'
             except Exception:
                 hid = f'{htype}-1'
         script = _hook_js(hid, htype, spec)

@@ -4,7 +4,8 @@
 底层走 DrissionPage Actions 链（CDP Input.dispatchMouseEvent/dispatchKeyEvent），
 在原生 move()/type() 之上叠加：
   - 移动轨迹按三次贝塞尔曲线分段，带垂直方向随机扰动（非直线匀速）
-  - 每段/每字符间隔在 [human_min, human_max] 区间内随机
+  - human_min/human_max = **停顿随机区间**（秒）：作用于点击前停留
+    与逐字符输入的字符间隔；不含移动分段时长（固定 0.01-0.05s）
 """
 import random
 from math import hypot
@@ -20,10 +21,12 @@ def human_options(f):
     """click 选项组：--human / --human-min / --human-max。"""
     f = click.option(
         '--human-max', 'human_max', default=DEFAULT_MAX, type=float,
-        show_default=True, help='--human 随机间隔上限（秒）')(f)
+        show_default=True, help='--human 停顿上限（秒）：点击前停留/逐字符'
+                                '输入间隔的随机上界')(f)
     f = click.option(
         '--human-min', 'human_min', default=DEFAULT_MIN, type=float,
-        show_default=True, help='--human 随机间隔下限（秒）')(f)
+        show_default=True, help='--human 停顿下限（秒）：点击前停留/逐字符'
+                                '输入间隔的随机下界')(f)
     f = click.option(
         '--human', is_flag=True,
         help='拟人模式：贝塞尔轨迹移动 + 随机间隔输入（弱化自动化指纹）')(f)
@@ -88,7 +91,7 @@ def _ele_point(ele):
 
 def human_click(page, ele, human_min=DEFAULT_MIN, human_max=DEFAULT_MAX,
                 times=1):
-    """拟人点击：贝塞尔移动到元素中点 → 随机停留 → 点击。"""
+    """拟人点击：贝塞尔移动到元素中点 → [min,max] 随机停留 → 点击。"""
     pt = _ele_point(ele)
     act = page.actions
     if pt is not None:
@@ -98,7 +101,7 @@ def human_click(page, ele, human_min=DEFAULT_MIN, human_max=DEFAULT_MAX,
 
 
 def human_type(page, text, human_min=DEFAULT_MIN, human_max=DEFAULT_MAX):
-    """逐字符输入，字符间随机停顿。"""
+    """逐字符输入，字符间 [human_min, human_max] 随机停顿。"""
     act = page.actions
     for ch in text:
         act.type(ch)

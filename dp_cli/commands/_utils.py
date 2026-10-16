@@ -437,14 +437,25 @@ class CdpWaitGate:
     _WATCHER = (
         '(function(){if(window.__dp_wait_armed)return"armed";'
         'window.__dp_wait_armed=1;var done=false;'
+        'function fin(){done=true;'
+        'try{clearInterval(window.__dp_wait_iv)}catch(e){}'
+        'try{if(window.__dp_wait_ob)window.__dp_wait_ob.disconnect()}'
+        'catch(e){}}'
         'function chk(){if(done)return;var v=false;'
         'try{v=!!(__COND__)}catch(e){}'
-        'if(v){done=true;try{window.__dp_wait("hit")}catch(e){}}}'
-        'try{new MutationObserver(chk).observe('
+        'if(v){fin();try{window.__dp_wait("hit")}catch(e){}}}'
+        'try{window.__dp_wait_ob=new MutationObserver(chk);'
+        'window.__dp_wait_ob.observe('
         'document.documentElement||document,'
         '{subtree:true,childList:true,attributes:true,characterData:true})}'
         'catch(e){}'
         'window.__dp_wait_iv=setInterval(chk,250);chk();return "ok"})()')
+    # disarm 时页内清理：撤掉 interval/observer/armed 标记（等待超时/放弃
+    # 场景下 watcher 否则会空转到导航销毁）
+    _WATCHER_CLEAN = (
+        '(function(){try{clearInterval(window.__dp_wait_iv)}catch(e){}'
+        'try{if(window.__dp_wait_ob)window.__dp_wait_ob.disconnect()}'
+        'catch(e){}window.__dp_wait_armed=0;return"clean"})()')
     _PAGE_EVENTS = ('Page.frameNavigated', 'Page.domContentEventFired',
                     'Page.loadEventFired')
     _EVENTS = ('Runtime.bindingCalled',) + _PAGE_EVENTS
@@ -499,7 +510,7 @@ class CdpWaitGate:
         return fired
 
     def disarm(self):
-        """摘除全部回调（binding 留在会话内无副作用）。"""
+        """摘除全部回调 + 页内 watcher 清理（binding 留会话内无副作用）。"""
         if self._driver is not None:
             for ev in self._EVENTS:
                 try:
@@ -507,6 +518,12 @@ class CdpWaitGate:
                 except Exception:
                     pass
             self._driver = None
+        if self.armed and self._cond:
+            try:
+                self.page.run_js(self._WATCHER_CLEAN)
+            except Exception as e:
+                # 页面已死/导航瞬断时清理失败无碍——watcher 随文档销毁
+                debug('watcher 页内清理失败', e)
         self.armed = False
 
     def _on_binding(self, **kw):

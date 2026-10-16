@@ -382,3 +382,56 @@ def test_hook_clear_replays_survivors_immediately(monkeypatch):
     assert 'XMLHttpRequest' in page.init_js[0]
     assert 'cookie' not in page.init_js[0]
     assert saved['hooks']['x-1']['js_id'] == 'jsid-1'
+
+
+class _KeysAwarePage(_HookPage):
+    """按表达式区分返回：keys 探针返回 JSON 键集，其余返回 ok。"""
+
+    def __init__(self, keys):
+        super().__init__('ok')
+        self._keys = keys
+
+    def run_cdp(self, cmd, **kw):
+        expr = kw.get('expression', '')
+        if 'Object.keys' in expr:
+            return {'result': {'value': json.dumps(self._keys)}}
+        return super().run_cdp(cmd, **kw)
+
+
+@pytest.mark.unit
+def test_hook_auto_id_fills_gap_no_collision(monkeypatch):
+    """碰撞修复：cookie-1/cookie-3 存活（中间曾 clear）时，自动 id
+    应选首个空闲 cookie-2 而非按总数+1 生成 cookie-4 或误撞 cookie-3。"""
+    page = _KeysAwarePage(['cookie-1', 'cookie-3'])
+    _patch(monkeypatch, page)
+    r = runner.invoke(cli, ['hook-set', '--type', 'cookie'])
+    assert r.exit_code == 0, r.output
+    d = _out(r)
+    assert d['data']['id'] == 'cookie-2'
+
+
+@pytest.mark.unit
+def test_hook_auto_id_reserves_persisted_ids(monkeypatch):
+    """会话持久化记录占号：页内 hooks 为空但会话登记了 cookie-1
+    （持久化 hook 导航后未回放/另一页签）→ 新 hook 不得复用 cookie-1
+    覆盖会话记录。"""
+    page = _KeysAwarePage([])
+    saved = {}
+    _patch(monkeypatch, page,
+           sess={'hooks': {'cookie-1': {'type': 'cookie', 'spec': {}}}},
+           saved=saved)
+    r = runner.invoke(cli, ['hook-set', '--type', 'cookie', '--persist'])
+    assert r.exit_code == 0, r.output
+    d = _out(r)
+    assert d['data']['id'] == 'cookie-2'
+    assert 'cookie-1' in saved['hooks'] and 'cookie-2' in saved['hooks']
+
+
+@pytest.mark.unit
+def test_hook_auto_id_still_unique_same_type_sequence(monkeypatch):
+    """连续同类型 auto-id 递增生效：cookie-1 存活 → 新 hook = cookie-2。"""
+    page = _KeysAwarePage(['cookie-1'])
+    _patch(monkeypatch, page)
+    r = runner.invoke(cli, ['hook-set', '--type', 'cookie'])
+    assert r.exit_code == 0
+    assert _out(r)['data']['id'] == 'cookie-2'

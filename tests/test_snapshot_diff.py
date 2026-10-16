@@ -68,3 +68,35 @@ def test_render_diff_text_marks():
     out = render_diff_text(d, 'u', 't0')
     assert '+ button "new"' in out and '- link "gone"' in out
     assert '~ div "old" ⇒ div "new"' in out
+
+
+@pytest.mark.unit
+def test_diff_churn_pairs_bid_rekey():
+    """innerHTML 重建换血：同一 sig 在 removed+added 成对 → churn，
+    不计入真实增删。"""
+    old = {'10': 'link|a2|css:a', '20': 'StaticText|a2|', '30': 'b|x|'}
+    new = {'41': 'link|a2|css:a', '42': 'StaticText|a2|', '30': 'b|x|'}
+    d = diff_items(old, new)
+    assert d['added'] == [] and d['removed'] == []
+    assert sorted((c['old_key'], c['new_key']) for c in d['churn']) == [
+        ('10', '41'), ('20', '42')]
+
+
+@pytest.mark.unit
+def test_diff_churn_mixed_with_real_changes():
+    """换血与真实增删并存：配对部分进 churn，未配对部分仍计增删。"""
+    old = {'1': 'link|keep|', '2': 'button|gone|', '3': 'div|stay|'}
+    new = {'9': 'link|keep|', '7': 'link|fresh|', '3': 'div|stay|'}
+    d = diff_items(old, new)
+    assert [i['key'] for i in d['added']] == ['7']
+    assert [i['key'] for i in d['removed']] == ['2']
+    assert len(d['churn']) == 1 and d['churn'][0]['old_key'] == '1'
+
+
+@pytest.mark.unit
+def test_render_diff_text_churn_marker():
+    d = {'added': [], 'removed': [], 'changed': [],
+         'churn': [{'old_key': '1', 'new_key': '9', 'sig': 'link|a|css:x'}]}
+    out = render_diff_text(d, 'u', 't0')
+    assert '↻ link "a"' in out and '重建换血' in out
+    assert '（无变化）' not in out   # 仅 churn 也要如实显示

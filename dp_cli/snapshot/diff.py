@@ -62,12 +62,30 @@ def get_baseline(session: str, since: str):
 
 
 def diff_items(old: dict, new: dict) -> dict:
-    """{key: sig} 两表比对 → added/removed/changed（元素级）。"""
+    """{key: sig} 两表比对 → added/removed/changed/churn（元素级）。
+
+    churn：innerHTML 重建等导致 backendNodeId 换血——同一逻辑元素
+    （sig 一致）在 removed+added 中成对出现，归类为换血而非真实增删。
+    """
     added = [{'key': k, 'sig': v} for k, v in new.items() if k not in old]
     removed = [{'key': k, 'sig': v} for k, v in old.items() if k not in new]
     changed = [{'key': k, 'old': old[k], 'new': new[k]}
                for k in new if k in old and new[k] != old[k]]
-    return {'added': added, 'removed': removed, 'changed': changed}
+
+    add_by_sig = {}
+    for it in added:
+        add_by_sig.setdefault(it['sig'], []).append(it)
+    churn, keep_removed = [], []
+    for it in removed:
+        pool = add_by_sig.get(it['sig'])
+        if pool:
+            churn.append({'old_key': it['key'],
+                          'new_key': pool.pop()['key'], 'sig': it['sig']})
+        else:
+            keep_removed.append(it)
+    added = [it for pool in add_by_sig.values() for it in pool]
+    return {'added': added, 'removed': keep_removed,
+            'changed': changed, 'churn': churn}
 
 
 def render_diff_text(diff: dict, url: str, base_ts: str) -> str:
@@ -84,6 +102,8 @@ def render_diff_text(diff: dict, url: str, base_ts: str) -> str:
         lines.append(f'- {fmt(it["sig"])}')
     for it in diff['changed']:
         lines.append(f'~ {fmt(it["old"])} ⇒ {fmt(it["new"])}')
+    for it in diff.get('churn', []):
+        lines.append(f'↻ {fmt(it["sig"])}（重建换血）')
     if not any(diff.values()):
         lines.append('（无变化）')
     return '\n'.join(lines)

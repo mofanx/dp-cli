@@ -399,11 +399,35 @@ def test_click_command_no_session_errors(runner, monkeypatch):
     def boom(s):
         raise ConnectionError("no browser")
     monkeypatch.setattr(_utils, "get_browser", boom)
+    monkeypatch.setattr(_utils, "load_session", lambda s: {})
     result = runner.invoke(cli, ["click", "text:x"])
     assert result.exit_code == 3
     out = json.loads(result.output)
     assert out["status"] == "error"
     assert out["code"] == "SESSION_NOT_FOUND"
+
+
+@pytest.mark.unit
+def test_session_disconnected_when_session_exists(runner, monkeypatch):
+    """会话文件存在但 get_browser 抛错 → SESSION_DISCONNECTED（与
+    会话不存在分流）。"""
+    from dp_cli.main import cli
+
+    monkeypatch.setattr(_utils, "load_session",
+                        lambda s: {'port': 9222, 'user_connected': True})
+    monkeypatch.setattr(_utils, "get_browser",
+                        lambda s: (_ for _ in ()).throw(
+                            ConnectionError("user browser dead")))
+    result = runner.invoke(cli, ["click", "text:x"])
+    assert result.exit_code == 3
+    out = json.loads(result.output)
+    assert out["code"] == "SESSION_DISCONNECTED"
+
+
+@pytest.mark.unit
+def test_session_disconnected_exit_code(runner):
+    """SESSION_DISCONNECTED 注册为 EXIT_CONNECT=3（连接类）。"""
+    assert output._exit_code_for('SESSION_DISCONNECTED') == 3
 
 
 # ─────────────────────────────────────────────────────────────────────────────

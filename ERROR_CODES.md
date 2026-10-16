@@ -38,6 +38,7 @@
 | code | 说明 |
 |---|---|
 | `SESSION_NOT_FOUND` | 无法连接浏览器会话（需先 `dp open`） |
+| `SESSION_DISCONNECTED` | 会话存在但浏览器连接不可达（重启浏览器后重试，或 `dp close` 清理后 `dp open` 新建） |
 | `BROWSER_START_FAILED` | 浏览器启动/连接失败 |
 | `AUTOCONNECT_FAILED` | auto-connect 自动发现失败 |
 | `NAVIGATE_FAILED` | 页面导航失败 |

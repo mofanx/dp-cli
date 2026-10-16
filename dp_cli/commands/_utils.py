@@ -88,8 +88,12 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     try:
         page = get_browser(session)
     except Exception as e:
+        # 分流：会话文件存在但浏览器不可达（断连）→ SESSION_DISCONNECTED；
+        # 会话本就不存在 → SESSION_NOT_FOUND（提示先 dp open）
+        code = ('SESSION_DISCONNECTED' if load_session(session)
+                else 'SESSION_NOT_FOUND')
         error(f'无法连接浏览器会话 [{session}]，请先执行 dp open',
-              code='SESSION_NOT_FOUND', detail=str(e))
+              code=code, detail=str(e))
         return
 
     sess = load_session(session) or {}
@@ -339,7 +343,9 @@ def _resolve_pw(expr: str, session: str, page) -> str:
         except SystemExit:
             raise
         except Exception as e:
-            error('无法连接浏览器会话', code='SESSION_NOT_FOUND', detail=str(e))
+            code = ('SESSION_DISCONNECTED' if load_session(session)
+                    else 'SESSION_NOT_FOUND')
+            error('无法连接浏览器会话', code=code, detail=str(e))
             raise SystemExit(1)
 
     js = build_pw_js(matchers)

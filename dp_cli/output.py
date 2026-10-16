@@ -36,6 +36,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
 
     # ── connect（退出码 3）──
     'SESSION_NOT_FOUND':    (EXIT_CONNECT, '无法连接浏览器会话'),
+    'SESSION_DISCONNECTED': (EXIT_CONNECT, '会话存在但浏览器连接不可达'),
     'BROWSER_START_FAILED': (EXIT_CONNECT, '浏览器启动/连接失败'),
     'AUTOCONNECT_FAILED':   (EXIT_CONNECT, 'auto-connect 自动发现失败'),
     'NAVIGATE_FAILED':      (EXIT_CONNECT, '页面导航失败'),

@@ -2,6 +2,12 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.9.1] - 2026-10-16
+
+### 修复
+
+- `_lazydeps` 兼容 DrissionPage 4.1.1.3+：上游将 `DataRecorder` 包改名为 `DrissionRecord`，桩按候选名集合（`DrissionRecord`/`DataRecorder`）双覆盖——DownloadKit 2.0.7 仍依赖老包名，DP 核心用新名，两者共存时分别装桩；引用点钉住测试改为包名无关（上游改名/结构调整时变红不绿炸）。
+
 ## [0.9.0] - 2026-10-16
 
 ### 新增

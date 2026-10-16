@@ -20,6 +20,7 @@ EOF（stdin 关闭）→ 优雅退出 0；Ctrl-C 中断当前命令不崩 daemon
 import json
 import shlex
 import sys
+import threading
 
 import click
 
@@ -130,6 +131,20 @@ def _serve(session: str = None, tty: bool = False) -> int:
         _emit(seq, req_id, code, result)
 
 
+def _prewarm():
+    """预 import DrissionPage（~260ms）——serve 启动空窗摊销，
+    让第一条浏览器命令零等待。失败静默（真用到时再兜底报错）。"""
+    try:
+        import DrissionPage  # noqa: F401
+    except Exception:
+        pass
+
+
+def _warmup_imports():
+    """daemon 线程后台预热——不阻塞 serve 主循环启动。"""
+    threading.Thread(target=_prewarm, daemon=True).start()
+
+
 @click.command('serve')
 @click.option('--session', default=None,
               help='绑定默认会话名（子命令未指定 --session 时注入）')
@@ -154,6 +169,7 @@ def serve(session):
       dp serve --session my             # 默认会话注入
       dp sh                             # 交互别名（TTY 下提示符）
     """
+    _warmup_imports()
     return _serve(session=session, tty=sys.stdin.isatty())
 
 

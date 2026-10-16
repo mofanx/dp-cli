@@ -171,3 +171,36 @@ def test_serve_session_injected_only_when_supported(monkeypatch):
     assert argv_log[0] == ['snapshot', '--session', 'my']
     assert argv_log[1] == ['config-set']           # 未注入
     assert argv_log[2] == ['list']                 # 未注入
+
+
+@pytest.mark.unit
+def test_serve_warmup_starts_daemon_thread(monkeypatch):
+    """serve 启动时后台线程预 import DrissionPage（daemon，不阻塞主循环）。"""
+    rec = {}
+
+    class _T:
+        def __init__(self, target=None, daemon=None, **kw):
+            rec['target'], rec['daemon'] = target, daemon
+        def start(self):
+            rec['started'] = True
+    monkeypatch.setattr(serve_mod.threading, 'Thread', _T)
+    serve_mod._warmup_imports()
+    assert rec.get('started') and rec['daemon'] is True
+    assert rec['target'] is serve_mod._prewarm
+
+
+@pytest.mark.unit
+def test_prewarm_fault_tolerant(monkeypatch):
+    """预热容错：import 失败静默不抛（真用到时由命令自身报错）。"""
+    monkeypatch.setitem(sys.modules, 'DrissionPage', None)  # import 必炸
+    serve_mod._prewarm()   # 不应抛出
+
+
+@pytest.mark.unit
+def test_serve_command_invokes_warmup(monkeypatch):
+    """dp serve 命令体调用预热（EOF 即退的 stdin 下）。"""
+    calls = []
+    monkeypatch.setattr(serve_mod, '_warmup_imports',
+                        lambda: calls.append(1))
+    r = CliRunner().invoke(cli, ['serve'], input='')
+    assert r.exit_code == 0 and calls == [1]

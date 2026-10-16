@@ -504,6 +504,24 @@ dp eval "el => el.getBoundingClientRect()" --locator "ref:5"
 
 ---
 
+## 性能：循环/批量操作默认 `dp batch`
+
+每条 `dp` 命令是独立进程，固定开销 ≈0.4-0.5s（Python 启动 + DrissionPage
+import + CDP attach）——**单发命令这个延迟属正常预期，不是 bug**。
+循环或连续多步操作时逐条调用会把固定税乘上 N 倍，必须改用摊销入口：
+
+| 场景 | 用法 | 开销模型 |
+| --- | --- | --- |
+| 多步操作（提取/填表/翻页循环） | `dp batch cmds.txt` 或 `printf ... \| dp batch -` | 单进程内顺序执行，import+attach 只付一次；实测 3 条 eval 总 0.43s vs 逐条 1.2s+ |
+| 交互式探索多步操作 | `dp sh`（REPL） | 常驻进程，命令边际成本 ~10ms 级 |
+| 长驻服务/多 agent 共用 | `dp serve` | HTTP 常驻，一次 attach 服务所有请求 |
+| 需要在浏览器上下文跑自定义逻辑 | `dp exec 'python 代码'` | 单进程执行，复用同一 attach |
+
+`dp batch` 输入每行一条子命令（可省略 `dp ` 前缀），`#` 开头为注释，
+逐行输出 JSON 结果；`-S` 会话参数写在每行命令里。
+
+---
+
 ## 关键原则
 
 1. **先连接用户浏览器** — 默认 `dp open --auto-connect`，失败再降级到 `--port 9222`

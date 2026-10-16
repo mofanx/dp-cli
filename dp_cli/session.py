@@ -394,7 +394,15 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
             co = ChromiumOptions(read_file=False)
             co.set_local_port(saved_port)
             co.existing_only(True)
-            if _detect_headless(saved_port):
+            # headless 优先读会话缓存：dp 自管会话创建时已记录，
+            # 命中可省一次 /json/version HTTP 探测。user_connected /
+            # probe_dir 路径保持探测——用户的浏览器模式不由我们控制。
+            cached_hl = sess.get('headless')
+            if cached_hl is not None and not sess.get('user_connected') \
+                    and not probe_dir:
+                if cached_hl:
+                    co.headless(True)
+            elif _detect_headless(saved_port):
                 co.headless(True)
             page = ChromiumPage(co)
             return page

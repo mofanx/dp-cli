@@ -925,3 +925,76 @@ def test_close_browser_quit_success(session_dir, monkeypatch):
     assert result is True
     fake_browser.quit.assert_called_once()
     assert not (session_dir / 'test.json').exists()
+
+@pytest.mark.unit
+def test_saved_port_headless_cached_skips_probe(session_dir, monkeypatch):
+    """dp 自管会话已存 headless → saved_port 直连跳过 _detect_headless。"""
+    session._evict_browser_cache('test')
+    session.save_session('test', {'port': 9222, 'headless': True})
+    probes = []
+    monkeypatch.setattr(session, '_detect_headless',
+                        lambda p: probes.append(p) or False)
+    applied = []
+    fake_page = Mock()
+
+    def fake_opts(*a, **k):
+        co = Mock()
+        co.set_local_port = Mock()
+        co.existing_only = Mock()
+        co.headless = lambda v: applied.append(v)
+        return co
+    monkeypatch.setattr("DrissionPage.ChromiumPage", lambda *a, **k: fake_page)
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        fake_opts)
+    page = session.get_browser('test')
+    assert page is fake_page
+    assert probes == []              # 无 HTTP 探测
+    assert applied == [True]         # 用了缓存的 headless=True
+
+
+@pytest.mark.unit
+def test_saved_port_headless_uncached_probes(session_dir, monkeypatch):
+    """会话无 headless 字段 → 仍走 HTTP 探测。"""
+    session._evict_browser_cache('test')
+    session.save_session('test', {'port': 9222})
+    probes = []
+    monkeypatch.setattr(session, '_detect_headless',
+                        lambda p: probes.append(p) or True)
+    applied = []
+
+    def fake_opts(*a, **k):
+        co = Mock()
+        co.set_local_port = Mock()
+        co.existing_only = Mock()
+        co.headless = lambda v: applied.append(v)
+        return co
+    monkeypatch.setattr("DrissionPage.ChromiumPage", lambda *a, **k: Mock())
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        fake_opts)
+    session.get_browser('test')
+    assert probes == [9222] and applied == [True]
+
+
+@pytest.mark.unit
+def test_saved_port_user_connected_still_probes(session_dir, monkeypatch):
+    """user_connected 会话即使有 headless 缓存也仍探测——用户浏览器
+    模式不由我们控制（--port open 时存的 headless=False 与实际可能不符）。"""
+    session._evict_browser_cache('test')
+    session.save_session('test', {'port': 9222, 'headless': False,
+                                  'user_connected': True})
+    probes = []
+    monkeypatch.setattr(session, '_detect_headless',
+                        lambda p: probes.append(p) or True)
+    applied = []
+
+    def fake_opts(*a, **k):
+        co = Mock()
+        co.set_local_port = Mock()
+        co.existing_only = Mock()
+        co.headless = lambda v: applied.append(v)
+        return co
+    monkeypatch.setattr("DrissionPage.ChromiumPage", lambda *a, **k: Mock())
+    monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
+                        fake_opts)
+    session.get_browser('test')
+    assert probes == [9222] and applied == [True]   # 探测的真实值生效

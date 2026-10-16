@@ -2,6 +2,26 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.9.0] - 2026-10-16
+
+### 新增
+
+- `dp snapshot --since ts|last`：元素级增量 diff（backendNodeId/hash 键控、近 5 基线、churn 维度归类 innerHTML 换血）。
+- 新错误码 `SESSION_DISCONNECTED`（EXIT_CONNECT=3）：会话文件存在但连接不可达时与新会话不存在的 `SESSION_NOT_FOUND` 分流，附恢复指引；契约新增非破坏。
+
+### 性能
+
+- `_lazydeps` 自愈式 DataRecorder 懒代理：`import DrissionPage` -46%（324→176ms），单发浏览器命令冷启动 -38%；`DP_CLI_NO_STUB=1` 逃生，运行期 heal 回载真模块。
+- `serve`/`sh` 启动后台 daemon 预 import DrissionPage：首条浏览器命令 0.396→0.033s（-92%）。
+- session headless 状态缓存：非 user_connected 会话跳过重复探测。
+- `test_import_budget.py`：非浏览器命令零 DrissionPage 加载守卫。
+
+### 修复
+
+- `watch` 命中后 JS 自清理（clearInterval+disconnect）+ `disarm` 页内清理注入，修复 done 后空跑。
+- `hook` 自动 id 计数法改键集选空位（页内+会话双命名空间），修复 remove 后误撞与持久化覆盖。
+- `human` min/max 语义澄清为停顿时长。
+
 ## [0.8.1] - 2026-10-15
 
 ### 修复

@@ -80,12 +80,13 @@ def test_reference_points_pin():
             f'from {p}.tools import' in src and (symbol is None or symbol in src)
             for p in pkgs
         ), f'{rel} 不再引用 {pkgs} tools {symbol or ""}'
-    dk_root = Path(importlib.util.find_spec('DownloadKit')
-                   .submodule_search_locations[0])
-    msrc = (dk_root / 'mission.py').read_text(encoding='utf-8')
-    assert any(f'from {p} import ByteRecorder' in msrc for p in pkgs)
-    ssrc = (dk_root / 'setter.py').read_text(encoding='utf-8')
-    assert any(f'from {p} import Recorder' in ssrc for p in pkgs)
+    dk_spec = importlib.util.find_spec('DownloadKit')
+    if dk_spec is not None:
+        dk_root = Path(dk_spec.submodule_search_locations[0])
+        msrc = (dk_root / 'mission.py').read_text(encoding='utf-8')
+        assert any(f'from {p} import ByteRecorder' in msrc for p in pkgs)
+        ssrc = (dk_root / 'setter.py').read_text(encoding='utf-8')
+        assert any(f'from {p} import Recorder' in ssrc for p in pkgs)
 
 
 # ── 子进程探针：桩行为必须在干净进程里验证（pytest 进程已装桩）──

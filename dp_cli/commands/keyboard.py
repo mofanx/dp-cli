@@ -43,11 +43,11 @@ def register(cli):
 
         \b
         示例:
-          dp press Enter
-          dp press "Control+A"
-          dp press "Control+Shift+Delete"
-          dp press F5
-          dp press Escape
+          dpx press Enter
+          dpx press "Control+A"
+          dpx press "Control+Shift+Delete"
+          dpx press F5
+          dpx press Escape
         """
         page = _get_page(session)
         try:
@@ -117,9 +117,9 @@ def register(cli):
 
         \b
         示例:
-          dp type "hello world"
-          dp type "search query"
-          dp type "hello" --human   # 逐字符随机间隔输入
+          dpx type "hello world"
+          dpx type "search query"
+          dpx type "hello" --human   # 逐字符随机间隔输入
         """
         page = _get_page(session)
         try:
@@ -145,13 +145,13 @@ def register(cli):
 
         \b
         示例:
-          dp scroll --y 300
-          dp scroll --y -200
-          dp scroll --top
-          dp scroll --bottom
-          dp scroll --locator "css:.scroll-container" --y 100
-          dp scroll --locator "css:.scroll-container" --bottom
-          dp scroll --y 100 --mouse-x 500 --mouse-y 600
+          dpx scroll --y 300
+          dpx scroll --y -200
+          dpx scroll --top
+          dpx scroll --bottom
+          dpx scroll --locator "css:.scroll-container" --y 100
+          dpx scroll --locator "css:.scroll-container" --bottom
+          dpx scroll --y 100 --mouse-x 500 --mouse-y 600
         """
         locator = resolve_locator(locator, session) if locator else None
         page = _get_page(session)
@@ -258,8 +258,8 @@ def register(cli):
 
         \b
         示例:
-          dp scroll-to "#footer"
-          dp scroll-to "ref:20"
+          dpx scroll-to "#footer"
+          dpx scroll-to "ref:20"
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -308,13 +308,13 @@ def register(cli):
 
         \b
         示例:
-          dp autoscroll --locator ".item"            # 按元素数量判断
-          dp autoscroll                              # 按页面高度判断
-          dp autoscroll --container "#feed" --idle 3 # 容器内滚动
-          dp autoscroll --step 800 --max 50          # 每轮滚动 800px
-          dp autoscroll --fast --max 100             # 速度优先，快速滚到底
-          dp autoscroll --mouse-x 500 --mouse-y 600  # 按坐标查找滚动容器
-          dp autoscroll --max 50 --stable 3          # 更耐心的配置
+          dpx autoscroll --locator ".item"            # 按元素数量判断
+          dpx autoscroll                              # 按页面高度判断
+          dpx autoscroll --container "#feed" --idle 3 # 容器内滚动
+          dpx autoscroll --step 800 --max 50          # 每轮滚动 800px
+          dpx autoscroll --fast --max 100             # 速度优先，快速滚到底
+          dpx autoscroll --mouse-x 500 --mouse-y 600  # 按坐标查找滚动容器
+          dpx autoscroll --max 50 --stable 3          # 更耐心的配置
         """
         if locator:
             locator = resolve_locator(locator, session)

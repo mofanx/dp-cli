@@ -30,16 +30,16 @@ def cli(ctx, verbose, compact):
 
     \b
     快速开始:
-      dp open https://example.com
-      dp snapshot
-      dp click "text:登录"
-      dp fill "@name=username" admin
-      dp close
+      dpx open https://example.com
+      dpx snapshot
+      dpx click "text:登录"
+      dpx fill "@name=username" admin
+      dpx close
 
     \b
     agent 文档:
-      dp catalog --md          完整命令表（实时生成，永不过期）
-      dp install --skills      安装 SKILL.md 到 ~/.claude/skills/
+      dpx catalog --md          完整命令表（实时生成，永不过期）
+      dpx install --skills      安装 SKILL.md 到 ~/.claude/skills/
     """
     if verbose:
         from dp_cli.logs import set_debug

@@ -24,7 +24,7 @@ from dp_cli.logs import debug
 # ===== JS 补丁脚本 =====
 
 _JS_MARKER_HEAD = r"""
-// 调试 marker，用 `dp eval "return window.__stealth__"` 验证注入是否生效
+// 调试 marker，用 `dpx eval "return window.__stealth__"` 验证注入是否生效
 (() => {
   window.__stealth__ = window.__stealth__ || { applied: [], errors: {}, at: Date.now() };
 })();
@@ -478,7 +478,7 @@ def build_init_script(
 
     生成脚本在最开头创建 window.__stealth__ marker，每个 feature 执行后
     push 到 applied 列表；异常时 errors[feature] 记录错误。
-    可用 `dp eval "return window.__stealth__"` 验证是否生效。
+    可用 `dpx eval "return window.__stealth__"` 验证是否生效。
     """
     parts = [_JS_MARKER_HEAD]
 

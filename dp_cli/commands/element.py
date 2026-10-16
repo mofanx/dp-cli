@@ -24,12 +24,12 @@ def register(cli):
 
         \b
         示例:
-          dp click "text:登录"
-          dp click "#submit-btn"
-          dp click "ref:5"              # 使用快照编号
-          dp click "css:.btn-primary" --by-js
-          dp click "css:li" --index 3
-          dp click "ref:5" --human      # 拟人：贝塞尔轨迹+随机停顿
+          dpx click "text:登录"
+          dpx click "#submit-btn"
+          dpx click "ref:5"              # 使用快照编号
+          dpx click "css:.btn-primary" --by-js
+          dpx click "css:li" --index 3
+          dpx click "ref:5" --human      # 拟人：贝塞尔轨迹+随机停顿
         """
         if human and by_js:
             error('--human 与 --by-js 互斥（JS 点击无轨迹可言）',
@@ -66,8 +66,8 @@ def register(cli):
 
         \b
         示例:
-          dp dblclick "#editable-cell"
-          dp dblclick "ref:5"
+          dpx dblclick "#editable-cell"
+          dpx dblclick "ref:5"
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -101,10 +101,10 @@ def register(cli):
 
         \b
         示例:
-          dp fill "@name=username" admin
-          dp fill "ref:15" "Python"     # 使用快照编号
-          dp fill "css:textarea" "多行\\n文本"
-          dp fill "ref:15" "secret" --human   # 拟人：点击聚焦+逐字符随机间隔
+          dpx fill "@name=username" admin
+          dpx fill "ref:15" "Python"     # 使用快照编号
+          dpx fill "css:textarea" "多行\\n文本"
+          dpx fill "ref:15" "secret" --human   # 拟人：点击聚焦+逐字符随机间隔
         """
         if human and by_js:
             error('--human 与 --by-js 互斥', code='INVALID_ARGS')
@@ -163,9 +163,9 @@ def register(cli):
 
         \b
         示例:
-          dp select "@name=city" beijing
-          dp select "ref:12" admin          # 用快照编号
-          dp select "#size" "" --by-index 2
+          dpx select "@name=city" beijing
+          dpx select "ref:12" admin          # 用快照编号
+          dpx select "#size" "" --by-index 2
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -198,8 +198,8 @@ def register(cli):
 
         \b
         示例:
-          dp hover "css:.menu-item"
-          dp hover "ref:8"                   # 用快照编号
+          dpx hover "css:.menu-item"
+          dpx hover "ref:8"                   # 用快照编号
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -226,8 +226,8 @@ def register(cli):
 
         \b
         示例:
-          dp drag "#draggable" "#droptarget"
-          dp drag "ref:3" "ref:7"          # 用快照编号
+          dpx drag "#draggable" "#droptarget"
+          dpx drag "ref:3" "ref:7"          # 用快照编号
         """
         from_locator = resolve_locator(from_locator, session)
         to_locator = resolve_locator(to_locator, session)
@@ -258,9 +258,9 @@ def register(cli):
 
         \b
         示例:
-          dp check "#agree-terms"
-          dp check "ref:10"                  # 用快照编号
-          dp check "@name=remember" --uncheck
+          dpx check "#agree-terms"
+          dpx check "ref:10"                  # 用快照编号
+          dpx check "@name=remember" --uncheck
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -288,8 +288,8 @@ def register(cli):
 
         \b
         示例:
-          dp upload "@name=avatar" /path/to/image.png
-          dp upload "ref:15" ./document.pdf   # 用快照编号
+          dpx upload "@name=avatar" /path/to/image.png
+          dpx upload "ref:15" ./document.pdf   # 用快照编号
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -314,21 +314,21 @@ def register(cli):
 
         \b
         懒加载检测工作流:
-          dp count ".item"              → 20
-          dp scroll --bottom && dp wait --idle
-          dp count ".item"              → 40
-          dp scroll --bottom && dp wait --idle
-          dp count ".item"              → 40  (不变，加载完毕)
+          dpx count ".item"              → 20
+          dpx scroll --bottom && dpx wait --idle
+          dpx count ".item"              → 40
+          dpx scroll --bottom && dpx wait --idle
+          dpx count ".item"              → 40  (不变，加载完毕)
 
         \b
         支持的选择器（可省略 css:/xpath: 前缀）:
-          dp count ".card"              → css（自动识别 . 开头）
-          dp count "#list li"           → css（自动识别 # 开头）
-          dp count "div.item"           → css（自动识别 tag.class）
-          dp count "a[href]"            → css（自动识别 [attr]）
-          dp count "//ul/li"            → xpath（自动识别 // 开头）
-          dp count "tag:img"            → DrissionPage 原生语法
-          dp count "css:tr"             → 显式 css 前缀
+          dpx count ".card"              → css（自动识别 . 开头）
+          dpx count "#list li"           → css（自动识别 # 开头）
+          dpx count "div.item"           → css（自动识别 tag.class）
+          dpx count "a[href]"            → css（自动识别 [attr]）
+          dpx count "//ul/li"            → xpath（自动识别 // 开头）
+          dpx count "tag:img"            → DrissionPage 原生语法
+          dpx count "css:tr"             → 显式 css 前缀
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)

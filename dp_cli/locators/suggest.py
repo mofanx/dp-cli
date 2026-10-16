@@ -8,7 +8,7 @@
     > text > role(无名) > css
 
 每项 {'kind', 'expr', 'py'}：
-  - expr：pw: 表达式体（可回喂 dp 命令验证，如 dp click "pw:<expr>"）
+  - expr：pw: 表达式体（可回喂 dpx 命令验证，如 dpx click "pw:<expr>"）
   - py：playwright python 片段（可直接贴进用例/POM）
 """
 import json
@@ -126,7 +126,7 @@ def pw_candidates(info: dict) -> list:
                 css = f'[{a}={_ps(attrs[a])}]'
                 py = f'page.locator({_ps(css)})'
                 # pw 引擎 testid 只查 data-testid/-test-id/-test；
-                # data-qa/data-cy 走 css 表达式才可在 dp 侧回验
+                # data-qa/data-cy 走 css 表达式才可在 dpx 侧回验
                 expr = (f'testid={_ps(attrs[a])}'
                         if a in ('data-test-id', 'data-test')
                         else f'css={css}')

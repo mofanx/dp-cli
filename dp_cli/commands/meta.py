@@ -13,6 +13,34 @@ from dp_cli.skill_dist import (bundled_skill_dir, install_skill,
 _SKILL_NAME = 'dp-cli'
 
 
+def check_dp_entry():
+    """检测 PATH 上 `dpx` 主入口与 `dp` 兼容入口的归属。
+
+    DrissionPage 4.1.1.4+ 也注册了 `dp` 命令（浏览器路径配置工具，
+    非自动化 CLI）——pip 装包/升级顺序可静默抢占；`dpx` 为独占命名。
+    返回 {'dpx': {...}, 'dp': {...}}，各含 status/owner/fix。
+    """
+    return {'dpx': _entry_status('dpx'), 'dp': _entry_status('dp')}
+
+
+def _entry_status(name: str) -> dict:
+    import shutil
+    p = shutil.which(name)
+    if not p:
+        return {'status': 'missing', 'path': None,
+                'fix': 'pip 安装 dp-cli 或检查 PATH'}
+    try:
+        head = open(p, encoding='utf-8', errors='ignore').read(4096)
+    except OSError as e:
+        return {'status': 'unreadable', 'path': p, 'fix': str(e)}
+    if 'dp_cli' in head:
+        return {'status': 'ours', 'path': p}
+    return {'status': 'stolen', 'path': p,
+            'owner': 'DrissionPage' if 'DrissionPage' in head else 'unknown',
+            'fix': 'pip install --force-reinstall dp-cli；'
+                   '或改用 dpx / python -m dp_cli.main'}
+
+
 def _targets(directory, all_layouts):
     """安装目标列表。--dir > --all 全 harness 探测 > 默认 ~/.claude/skills。"""
     if directory:
@@ -43,11 +71,11 @@ def register(cli):
 
         \b
         示例:
-          dp install --skills                 # ~/.claude/skills/dp-cli
-          dp install --skills --all           # 全部已知 harness 目录探测
-          dp install --skills --dir ./.cursor # 自定义根目录
-          dp install --skills --check         # 校验 bundled vs installed
-          dp install --skills --agents-md     # 顺带更新 ./AGENTS.md 指针段
+          dpx install --skills                 # ~/.claude/skills/dp-cli
+          dpx install --skills --all           # 全部已知 harness 目录探测
+          dpx install --skills --dir ./.cursor # 自定义根目录
+          dpx install --skills --check         # 校验 bundled vs installed
+          dpx install --skills --agents-md     # 顺带更新 ./AGENTS.md 指针段
         """
         if not with_skills:
             error('请指定安装内容: --skills（agent 使用文档）',
@@ -60,7 +88,13 @@ def register(cli):
             return
         if check_only:
             targets = _targets(directory, all_layouts)
-            copies, cur, drift = check_drift()
+            copies, cur, drift, diffs = check_drift()
+            ep = check_dp_entry()
+            stolen = {n: e for n, e in ep.items()
+                      if e.get('status') == 'stolen'}
+            ep_warn = ('；⚠ 入口被抢占: '
+                       + ','.join(f'{n}→{e["path"]}' for n, e in stolen.items())
+                       + ' ' + next(iter(stolen.values()))['fix']) if stolen else ''
             # 内容不一致 或 任一已装副本版本戳≠CLI 版本都算漂移
             stale = [str(t) for t in targets
                      if not skill_dirs_equal(src, t)]
@@ -69,12 +103,18 @@ def register(cli):
                       f' installed={ {str(t): v for t, v in copies.items()} }'
                       f' cli={cur}',
                       code='SKILL_DRIFT',
-                      detail='修复: dp install --skills')
+                      detail='修复: dpx install --skills' + ep_warn
+                             + ('；内容差异: '
+                                + json.dumps({str(k): v
+                                              for k, v in diffs.items()},
+                                             ensure_ascii=False)
+                                if diffs else ''))
                 return
             ok({'targets': [str(t) for t in targets],
                 'cli_version': cur,
+                'entrypoint': ep,
                 'installed': {str(t): v for t, v in copies.items()}},
-               msg='skill 与包内副本一致')
+               msg='skill 与包内副本一致' + ep_warn)
             return
         installed = []
         for dst in _targets(directory, all_layouts):
@@ -98,8 +138,8 @@ def register(cli):
 
         \b
         示例:
-          dp catalog          # tool schema JSON
-          dp catalog --md     # commands.md 风格命令表
+          dpx catalog          # tool schema JSON
+          dpx catalog --md     # commands.md 风格命令表
         """
         from dp_cli.catalog import iter_commands, to_markdown
         cmds = list(iter_commands())

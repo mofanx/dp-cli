@@ -79,9 +79,9 @@ def register(cli):
 
         \b
         示例:
-          dp read                          # 整页正文 → markdown
-          dp read --selector "css:article" # 只提取指定区域
-          dp read --format text --output article.txt
+          dpx read                          # 整页正文 → markdown
+          dpx read --selector "css:article" # 只提取指定区域
+          dpx read --format text --output article.txt
         """
         page = _get_page(session)
         try:

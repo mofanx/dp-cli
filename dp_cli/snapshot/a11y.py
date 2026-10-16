@@ -294,7 +294,7 @@ def render_a11y_text(snapshot: dict, verbose: bool = False,
         stats_line += f" (含 {len(extras)} 个 a11y 外可交互)"
     lines[stats_idx] = stats_line
     if ref_count > 0:
-        lines[stats_idx] += f" — 使用 ref:N 引用元素，如 dp click \"ref:1\""
+        lines[stats_idx] += f" — 使用 ref:N 引用元素，如 dpx click \"ref:1\""
 
     # 如果调用方传了 refs dict，确保数据已填充
     if refs is not None:
@@ -688,7 +688,7 @@ def _generate_locators_batch(page, interactive_nodes: list, frame_id: str = None
                     n['locator'] = loc
     else:
         # iframe frame 下使用 DrissionPage
-        # ponytail: iframe frame 下使用 dp find 获取真实 DOM 属性生成 locator
+        # ponytail: iframe frame 下使用 dpx find 获取真实 DOM 属性生成 locator
         # DrissionPage 可以在 iframe 内查找元素，利用其能力生成真正的 locator
         for n in interactive_nodes:
             text = (n.get('name') or '')[:50]

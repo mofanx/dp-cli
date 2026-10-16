@@ -70,10 +70,10 @@ def _skill_referenced_commands():
     # 只扫代码段（围栏块 + 行内反引号）——prose 里的 dp/-V/skill 字样不算命令引用
     snippets = re.findall(r'```[\s\S]*?```|`[^`\n]+`', src)
     text = '\n'.join(snippets)
-    # `dp <opts> <cmd>` / `dp-cli <cmd>`，水平空白限定不跨行；
-    # 前导选项按 `-x <值>` 成对跳过（如 dp -s work open）
+    # `dpx <opts> <cmd>` / `dp <cmd>` / `dp-cli <cmd>`（兼容写法仍合法），
+    # 水平空白限定不跨行；前导选项按 `-x <值>` 成对跳过
     names = re.findall(
-        r'\bdp(?:-cli)?[ \t]+(?:-{1,2}\S+[ \t]+\S+[ \t]+)*'
+        r'\b(?:dpx|dp-cli|dp)[ \t]+(?:-{1,2}\S+[ \t]+\S+[ \t]+)*'
         r'([a-z][a-z0-9-]*)', text)
     allowed = {w[:-1] for w in _SKILL_CMD_WHITELIST if w.endswith('*')}
     return {n for n in names

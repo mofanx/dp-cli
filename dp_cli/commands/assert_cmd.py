@@ -156,9 +156,9 @@ def register(cli):
 
         \b
         示例:
-          dp assert-text "登录成功"
-          dp assert-text "订单已提交" --locator "#msg"
-          dp assert-text "Hello" --locator "#title" --exact
+          dpx assert-text "登录成功"
+          dpx assert-text "订单已提交" --locator "#msg"
+          dpx assert-text "Hello" --locator "#title" --exact
         """
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
@@ -193,9 +193,9 @@ def register(cli):
 
         \b
         示例:
-          dp assert-url "dashboard"
-          dp assert-url "https://example.com/home" --exact
-          dp assert-url "搜索结果" --title
+          dpx assert-url "dashboard"
+          dpx assert-url "https://example.com/home" --exact
+          dpx assert-url "搜索结果" --title
         """
         page = _get_page(session)
         try:
@@ -223,9 +223,9 @@ def register(cli):
 
         \b
         示例:
-          dp assert-visible "#result"
-          dp assert-visible "ref:5"
-          dp assert-visible ".loading" --hidden   # 等待加载指示器消失后断言
+          dpx assert-visible "#result"
+          dpx assert-visible "ref:5"
+          dpx assert-visible ".loading" --hidden   # 等待加载指示器消失后断言
         """
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
@@ -262,10 +262,10 @@ def register(cli):
 
         \b
         示例:
-          dp assert-count ".item" 20          # 恰好 20 个
-          dp assert-count ".item" --min 1     # 至少 1 个
-          dp assert-count ".error" 0          # 无错误元素
-          dp assert-count "li" --min 3 --max 10
+          dpx assert-count ".item" 20          # 恰好 20 个
+          dpx assert-count ".item" --min 1     # 至少 1 个
+          dpx assert-count ".error" 0          # 无错误元素
+          dpx assert-count "li" --min 3 --max 10
         """
         if expected is not None and (min_count is not None
                                      or max_count is not None):
@@ -300,7 +300,7 @@ def register(cli):
 
     @cli.command('expect-gen')
     @click.option('--ele', 'ele_loc', default=None,
-                  help='对指定元素生成断言（任意 dp 定位器，含 pw:/ref:）')
+                  help='对指定元素生成断言（任意 dpx 定位器，含 pw:/ref:）')
     @click.option('--all', 'gen_all', is_flag=True,
                   help='枚举页面上全部可断言元素（a11y 交互节点 + clickable 补充）')
     @click.option('--limit', type=int, default=50, show_default=True,
@@ -322,11 +322,11 @@ def register(cli):
 
         \b
         示例:
-          dp expect-gen                          # 页面级：url + title
-          dp expect-gen --ele "ref:5"            # 元素级断言
-          dp expect-gen --ele "pw:role=button[name=登录]"
-          dp expect-gen --all --limit 30         # 枚举全部可断言点
-          dp expect-gen --lang ts                # TypeScript 断言输出
+          dpx expect-gen                          # 页面级：url + title
+          dpx expect-gen --ele "ref:5"            # 元素级断言
+          dpx expect-gen --ele "pw:role=button[name=登录]"
+          dpx expect-gen --all --limit 30         # 枚举全部可断言点
+          dpx expect-gen --lang ts                # TypeScript 断言输出
         """
         if ele_loc and gen_all:
             error('--ele 与 --all 互斥', code='INVALID_ARGS')

@@ -558,21 +558,21 @@ def _export_dp_script(actions: list) -> str:
             continue                # 伪动作：终态 url 标记
         locator = _action_locator(action)
         if typ == 'click' and locator:
-            lines.append(f'dp click {shlex.quote(locator)}')
+            lines.append(f'dpx click {shlex.quote(locator)}')
         elif typ == 'fill' and locator:
-            lines.append(f'dp fill {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
+            lines.append(f'dpx fill {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
         elif typ == 'select' and locator:
-            lines.append(f'dp select {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
+            lines.append(f'dpx select {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
         elif typ == 'check' and locator:
             lines.append(f'# check: {locator} -> {action.get("checked")}')
-            lines.append(f'dp click {shlex.quote(locator)}')
+            lines.append(f'dpx click {shlex.quote(locator)}')
         elif typ == 'press':
             key = action.get('key') or ''
-            lines.append(f'dp press {shlex.quote(key)}')
+            lines.append(f'dpx press {shlex.quote(key)}')
         elif typ == 'scroll':
             delta = action.get('delta') or {}
             mouse = action.get('mouse') or {}
-            cmd = f'dp scroll --x {int(delta.get("x", 0) or 0)} --y {int(delta.get("y", 0) or 0)}'
+            cmd = f'dpx scroll --x {int(delta.get("x", 0) or 0)} --y {int(delta.get("y", 0) or 0)}'
             if locator:
                 cmd += f' --locator {shlex.quote(locator)}'
             if mouse.get('x') is not None and mouse.get('y') is not None:

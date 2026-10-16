@@ -6,7 +6,7 @@ delete-data / stealth / permissions / clipboard-get / clipboard-set /
 media / bypass-csp / throttle / file-chooser
 
 media / bypass-csp / throttle 的配置写入 session['browser_cdp']，
-由 _get_page 每条命令重放（每个 dp 进程是独立 CDP session，必须重放）。
+由 _get_page 每条命令重放（每个 dpx 进程是独立 CDP session，必须重放）。
 """
 import json
 from pathlib import Path
@@ -143,8 +143,8 @@ def register(cli):
         【复用用户自己的浏览器 - 方式 A：--remote-debugging-port 启动】
         第一步：用调试模式启动你自己的 Chrome/Chromium：
           google-chrome --remote-debugging-port=9222
-        第二步：用 dp 接管：
-          dp open --port 9222
+        第二步：用 dpx 接管：
+          dpx open --port 9222
 
         \b
         【复用用户自己的浏览器 - 方式 B：--auto-connect（Chrome/Edge 144+ 推荐）】
@@ -153,17 +153,17 @@ def register(cli):
              - Chrome：访问 chrome://inspect/#remote-debugging
              - Edge:   访问 edge://inspect/#devices
           2. 勾选 "Allow remote debugging for this browser instance"
-          3. dp open --auto-connect            # 默认 auto：先嗅探 Chrome，再 Edge
-             dp open --auto-connect --channel edge   # 强制使用 Edge stable
-             dp open --auto-connect --channel beta   # 使用 Chrome beta
-             dp open --auto-connect --probe-dir ~/my-profile   # 自定义 profile
+          3. dpx open --auto-connect            # 默认 auto：先嗅探 Chrome，再 Edge
+             dpx open --auto-connect --channel edge   # 强制使用 Edge stable
+             dpx open --auto-connect --channel beta   # 使用 Chrome beta
+             dpx open --auto-connect --probe-dir ~/my-profile   # 自定义 profile
 
         \b
-        【dp 自动管理浏览器】
-          dp open
-          dp open https://example.com
-          dp open https://example.com --headless
-          dp -s work open https://github.com
+        【dpx 自动管理浏览器】
+          dpx open
+          dpx open https://example.com
+          dpx open https://example.com --headless
+          dpx -s work open https://github.com
 
         \b
         【连接远程 headless VPS Chrome 并反检测】
@@ -172,7 +172,7 @@ def register(cli):
                    --disable-blink-features=AutomationControlled \\
                    --user-data-dir=~/.config/google-chrome
           本地:  ssh -NL 9322:127.0.0.1:9222 vps-host
-                 dp open --port 9322 --stealth
+                 dpx open --port 9322 --stealth
         """
         if new:
             delete_session(session)
@@ -231,8 +231,8 @@ def register(cli):
         if stealth:
             try:
                 stealth_info = apply_stealth(page, features=PRESETS['full'])
-                # 记录到 session，使 _get_page 在后续每次 dp 命令自动重注册
-                # （CDP init_js 绑定到 CDP session，每个 dp 命令需要重新注册）
+                # 记录到 session，使 _get_page 在后续每次 dpx 命令自动重注册
+                # （CDP init_js 绑定到 CDP session，每个 dpx 命令需要重新注册）
                 sess = load_session(session) or {}
                 sess['stealth'] = {
                     'preset': 'full',
@@ -265,9 +265,9 @@ def register(cli):
 
         \b
         示例:
-          dp goto https://example.com
-          dp goto example.com
-          dp goto example.com --timeout 60
+          dpx goto https://example.com
+          dpx goto example.com
+          dpx goto example.com --timeout 60
         """
         page = _get_page(session)
         try:
@@ -389,10 +389,10 @@ def register(cli):
 
         \b
         典型用法:
-          dp stealth                         # full 预设（推荐）
-          dp stealth --preset mild           # 最小改动
-          dp stealth --ua "Mozilla/5.0 ..."  # 自定义 UA
-          dp stealth --feature webdriver --feature plugins  # 只开部分
+          dpx stealth                         # full 预设（推荐）
+          dpx stealth --preset mild           # 最小改动
+          dpx stealth --ua "Mozilla/5.0 ..."  # 自定义 UA
+          dpx stealth --feature webdriver --feature plugins  # 只开部分
 
         \b
         修补的特征（full）:
@@ -422,8 +422,8 @@ def register(cli):
                 page, features=features, ua=ua, langs=langs_list,
                 webgl_vendor=webgl_vendor, webgl_renderer=webgl_renderer,
             )
-            # 保存到 session，使 _get_page 在后续每个 dp 命令自动重注册
-            # （CDP init_js 绑定到 CDP session，每个 dp 命令需要重新注册）
+            # 保存到 session，使 _get_page 在后续每个 dpx 命令自动重注册
+            # （CDP init_js 绑定到 CDP session，每个 dpx 命令需要重新注册）
             sess = load_session(session) or {}
             cfg = {
                 'preset': preset if not feature else 'custom',
@@ -457,10 +457,10 @@ def register(cli):
 
         \b
         示例:
-          dp permissions --list
-          dp permissions --grant geolocation,notifications
-          dp permissions --grant clipboard-read --origin https://example.com
-          dp permissions --reset
+          dpx permissions --list
+          dpx permissions --grant geolocation,notifications
+          dpx permissions --grant clipboard-read --origin https://example.com
+          dpx permissions --reset
         """
         if list_names:
             ok({'permissions': sorted(PERMISSION_NAMES)})
@@ -515,7 +515,7 @@ def register(cli):
 
         \b
         示例:
-          dp clipboard-get
+          dpx clipboard-get
         """
         page = _get_page(session)
         try:
@@ -533,7 +533,7 @@ def register(cli):
 
         \b
         示例:
-          dp clipboard-set "hello world"
+          dpx clipboard-set "hello world"
         """
         import json as _json
         page = _get_page(session)
@@ -560,10 +560,10 @@ def register(cli):
 
         \b
         示例:
-          dp media --color-scheme dark
-          dp media --type print
-          dp media --color-scheme dark --reduced-motion
-          dp media --off
+          dpx media --color-scheme dark
+          dpx media --type print
+          dpx media --color-scheme dark --reduced-motion
+          dpx media --off
         """
         page = _get_page(session)
         sess = load_session(session) or {}
@@ -606,8 +606,8 @@ def register(cli):
 
         \b
         示例:
-          dp bypass-csp          # 开启
-          dp bypass-csp --off    # 关闭
+          dpx bypass-csp          # 开启
+          dpx bypass-csp --off    # 关闭
         """
         page = _get_page(session)
         sess = load_session(session) or {}
@@ -643,14 +643,14 @@ def register(cli):
     def cmd_throttle(session, profile, latency, down, up, cpu, off):
         """网络/CPU 节流（Network.emulateNetworkConditions + CPUThrottlingRate）。
 
-        设置写入会话，后续 dp 命令自动重放。
+        设置写入会话，后续 dpx 命令自动重放。
 
         \b
         示例:
-          dp throttle --profile slow-3g
-          dp throttle --latency 200 --down 1024 --up 512
-          dp throttle --cpu 4
-          dp throttle --off
+          dpx throttle --profile slow-3g
+          dpx throttle --latency 200 --down 1024 --up 512
+          dpx throttle --cpu 4
+          dpx throttle --off
         """
         page = _get_page(session)
         sess = load_session(session) or {}
@@ -713,13 +713,13 @@ def register(cli):
         """拦截文件选择对话框并喂入文件（Page.setInterceptFileChooserDialog）。
 
         用于 click 触发系统文件对话框的场景（非 input[type=file] 直传，
-        那种用 dp upload）。流程：开启拦截 → 点击元素 → 等
+        那种用 dpx upload）。流程：开启拦截 → 点击元素 → 等
         Page.fileChooserOpened → DOM.setFileInputFiles。
 
         \b
         示例:
-          dp file-chooser ~/pic.png --locator "css:.upload-btn"
-          dp file-chooser a.png b.png --locator "ref:12"   # multiple 输入
+          dpx file-chooser ~/pic.png --locator "css:.upload-btn"
+          dpx file-chooser a.png b.png --locator "ref:12"   # multiple 输入
         """
         paths = []
         for f in files:
@@ -798,7 +798,7 @@ def register(cli):
 
         \b
         示例:
-          dp open https://site --stealth && dp cf-wait --timeout 60
+          dpx open https://site --stealth && dpx cf-wait --timeout 60
         """
         import re as _re
         page = _get_page(session)
@@ -848,7 +848,7 @@ def register(cli):
                     break
                 if perf_counter() >= end:
                     error(f'Cloudflare 挑战未在 {timeout}s 内通过'
-                          f'（title={last_title!r}）。建议先 dp stealth '
+                          f'（title={last_title!r}）。建议先 dpx stealth '
                           f'或检查代理/指纹', code='WAIT_TIMEOUT')
                     return
                 if armed:

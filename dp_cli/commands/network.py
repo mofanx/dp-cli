@@ -192,8 +192,8 @@ def register(cli):
 
         \b
         示例:
-          dp listen --filter "api/login"
-          dp listen --method POST
+          dpx listen --filter "api/login"
+          dpx listen --method POST
         """
         page = _get_page(session)
         try:
@@ -287,8 +287,8 @@ def register(cli):
 
         \b
         示例:
-          dp har-dump --seconds 10 --output trace.har
-          dp har-dump --seconds 8 --filter "api/" --body
+          dpx har-dump --seconds 10 --output trace.har
+          dpx har-dump --seconds 8 --filter "api/" --body
         """
         page = _get_page(session)
         entries = {}
@@ -426,10 +426,10 @@ def register(cli):
 
         \b
         示例:
-          dp http-get https://api.example.com/users
-          dp http-get https://example.com --output page.html
-          dp http-get https://api.example.com --headers '{"Authorization":"Bearer xxx"}'
-          dp http-get https://example.com --impersonate chrome131
+          dpx http-get https://api.example.com/users
+          dpx http-get https://example.com --output page.html
+          dpx http-get https://api.example.com --headers '{"Authorization":"Bearer xxx"}'
+          dpx http-get https://example.com --impersonate chrome131
         """
         try:
             hdrs = json.loads(headers) if headers else None
@@ -458,9 +458,9 @@ def register(cli):
 
         \b
         示例:
-          dp http-post https://api.example.com/login --data '{"user":"admin","pass":"123"}'
-          dp http-post https://example.com/form --form '{"field":"value"}'
-          dp http-post https://api.example.com --impersonate chrome131 --data '{}'
+          dpx http-post https://api.example.com/login --data '{"user":"admin","pass":"123"}'
+          dpx http-post https://example.com/form --form '{"field":"value"}'
+          dpx http-post https://api.example.com --impersonate chrome131 --data '{}'
         """
         try:
             hdrs = json.loads(headers) if headers else None

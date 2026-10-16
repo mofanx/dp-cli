@@ -1,14 +1,14 @@
 # 数据提取参考
 
-> 完整参数：`dp extract --help` / `dp query --help`
+> 完整参数：`dpx extract --help` / `dpx query --help`
 
 ## 提取流程（最佳实践）
 
 ```
-1. dp snapshot                         → 识别列表结构，找到一个列表项的 ref 编号
-2. dp dom "ref:21" -d parent --depth 3 → 追溯父节点链，找到最佳容器类名
-3. dp query "css:.card" --fields "text,loc" --limit 2  → 小量验证选择器
-4. dp extract "css:.card" '{"title":"css:.name",...}'   → 批量提取
+1. dpx snapshot                         → 识别列表结构，找到一个列表项的 ref 编号
+2. dpx dom "ref:21" -d parent --depth 3 → 追溯父节点链，找到最佳容器类名
+3. dpx query "css:.card" --fields "text,loc" --limit 2  → 小量验证选择器
+4. dpx extract "css:.card" '{"title":"css:.name",...}'   → 批量提取
 ```
 
 **关键：用 dom 命令向上追溯找容器，比猜 CSS 更准确。**
@@ -35,17 +35,17 @@
 
 ```bash
 # 1. 快照 → 找到职位名的 ref 编号（如 ref:21）
-dp snapshot -i
+dpx snapshot -i
 
 # 2. 追溯容器
-dp dom "ref:21" -d parent --depth 5
+dpx dom "ref:21" -d parent --depth 5
 # 输出: a.job-name → div.job-title → div.job-info → li.job-card-box → div.card-area
 
 # 3. 小量验证
-dp query "css:.card-area .job-name" --fields "text,loc" --limit 2
+dpx query "css:.card-area .job-name" --fields "text,loc" --limit 2
 
 # 4. 批量提取
-dp extract "css:.card-area" \
+dpx extract "css:.card-area" \
   '{"title":"css:.job-name",
     "salary":"css:.job-salary",
     "company":"css:.company-location",
@@ -57,9 +57,9 @@ dp extract "css:.card-area" \
 
 ```bash
 for page in 1 2 3:
-  dp extract "css:.card" '{"title":"css:.title"}' --filename p${page}.csv
-  dp click "css:.next-page"    # 或 dp click "ref:N"
-  dp wait --loaded
+  dpx extract "css:.card" '{"title":"css:.title"}' --filename p${page}.csv
+  dpx click "css:.next-page"    # 或 dpx click "ref:N"
+  dpx wait --loaded
 ```
 
 ## 无限滚动提取
@@ -67,16 +67,16 @@ for page in 1 2 3:
 **推荐 `autoscroll`（自动检测懒加载终止）：**
 
 ```bash
-dp autoscroll --locator "css:.item"   # 按元素数量判断，自动滚到底
-dp extract "css:.item" '{"title":"css:.title"}' --filename all.csv
+dpx autoscroll --locator "css:.item"   # 按元素数量判断，自动滚到底
+dpx extract "css:.item" '{"title":"css:.title"}' --filename all.csv
 ```
 
 **手动滚动 + 提取：**
 
 ```bash
 for i in range(max_rounds):
-  dp extract "css:.item" '{"title":"css:.title"}' --filename batch_${i}.csv
-  dp scroll --y 3000
-  dp wait --idle 2
-  dp count "css:.item"   # 检测是否还有新内容
+  dpx extract "css:.item" '{"title":"css:.title"}' --filename batch_${i}.csv
+  dpx scroll --y 3000
+  dpx wait --idle 2
+  dpx count "css:.item"   # 检测是否还有新内容
 ```

@@ -90,7 +90,7 @@ def register(cli):
             data['tab'] = _page_info(page)
             tab_url = (data['tab']['url'] or '')[:40]
             msg = (f'操作录制已开始，已绑定标签页: {tab_url}...\n'
-                   f'  提示: 如果绑定不正确，请先执行 "dp tab-select <序号>" 选择正确标签，再录制')
+                   f'  提示: 如果绑定不正确，请先执行 "dpx tab-select <序号>" 选择正确标签，再录制')
             ok(data, msg=msg)
         except Exception as e:
             error('启动录制失败', code='RECORD_START_FAILED', detail=str(e))

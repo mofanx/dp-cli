@@ -61,6 +61,47 @@ def test_baseline_roundtrip_and_last(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_churn_conservation_and_asymmetric():
+    """多对多配对守恒：多出侧回落真实增删，总数守恒。"""
+    old = {'a': 'X', 'b': 'X', 'k': 'stay|'}
+    new = {'p': 'X', 'q': 'X', 'r': 'X', 'k': 'stay|'}
+    d = diff_items(old, new)
+    # 守恒：removed(2) = churn(2) + keep_removed(0)；added(3) = churn(2) + keep_added(1)
+    assert len(d['churn']) == 2
+    assert len(d['removed']) == 0 and len(d['added']) == 1
+    assert len(old) - len([i for i in d['removed']]) - len(d['churn']) == \
+        len([k for k in old if k in new])  # 净守恒
+
+
+@pytest.mark.unit
+def test_churn_same_name_diff_role_not_paired():
+    """同 name 不同 role（sig 前缀不同）不误并 churn——真实增删。"""
+    old = {'1': 'button|go|'}
+    new = {'2': 'link|go|'}
+    d = diff_items(old, new)
+    assert len(d['churn']) == 0
+    assert d['added'][0]['sig'] == 'link|go|'
+    assert d['removed'][0]['sig'] == 'button|go|'
+
+
+@pytest.mark.unit
+def test_churn_position_adjacent_deterministic():
+    """重复 sig 配对确定性：位置邻近配对（DFS 序就近）。"""
+    old = {'A1': 'ic|x|', 'mid': 'div|m|', 'A9': 'ic|x|'}
+    new = {'B0': 'ic|x|', 'mid2': 'div|m|', 'B8': 'ic|x|'}
+    d = diff_items(old, new)
+    # mid→mid2 同 sig 也配对 → churn 共 3
+    assert len(d['churn']) == 3
+    # 序对序配对：A1→B0（前位）、A9→B8（后位）——确定性
+    pairs = {(c['old_key'], c['new_key']) for c in d['churn']}
+    assert pairs == {('A1', 'B0'), ('A9', 'B8'), ('mid', 'mid2')}
+    # 单对同 sig 换键即配对
+    d2 = diff_items({'mid': 'div|m|'}, {'mid2': 'div|m|'})
+    assert d2['churn'] == [{'old_key': 'mid', 'new_key': 'mid2',
+                            'sig': 'div|m|'}]
+
+
+@pytest.mark.unit
 def test_render_diff_text_marks():
     d = {'added': [{'key': '1', 'sig': 'button|new|css:.b'}],
          'removed': [{'key': '2', 'sig': 'link|gone|'}],

@@ -76,8 +76,8 @@ def register(cli):
 
         \b
         示例:
-          dp resize 1920 1080
-          dp resize 375 812
+          dpx resize 1920 1080
+          dpx resize 375 812
         """
         page = _get_page(session)
         try:
@@ -110,9 +110,9 @@ def register(cli):
 
         \b
         示例:
-          dp state-save
-          dp state-save auth.json
-          dp state-save auth.json --format playwright  # 供 Playwright/pwtest 复用登录态
+          dpx state-save
+          dpx state-save auth.json
+          dpx state-save auth.json --format playwright  # 供 Playwright/pwtest 复用登录态
         """
         page = _get_page(session)
         try:
@@ -146,8 +146,8 @@ def register(cli):
 
         \b
         示例:
-          dp state-load
-          dp state-load auth.json
+          dpx state-load
+          dpx state-load auth.json
         """
         page = _get_page(session)
         try:
@@ -181,9 +181,9 @@ def register(cli):
 
         \b
         示例:
-          dp config-set --browser-path /usr/bin/google-chrome
-          dp config-set --user-path /home/user/.chrome-data
-          dp config-set --copy-config
+          dpx config-set --browser-path /usr/bin/google-chrome
+          dpx config-set --user-path /home/user/.chrome-data
+          dpx config-set --copy-config
         """
         from DrissionPage._configs.chromium_options import ChromiumOptions
         from DrissionPage._functions.tools import configs_to_here

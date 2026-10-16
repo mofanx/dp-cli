@@ -298,7 +298,7 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
     return page
 
 
-# 进程内浏览器缓存：dp batch/exec 单进程顺序执行多条命令时复用 attach
+# 进程内浏览器缓存：dpx batch/exec 单进程顺序执行多条命令时复用 attach
 # 结果，消除每条命令重新建立 CDP websocket 的开销。普通 CLI 每个进程
 # 只调用一次 get_browser，缓存写入后即退出，无行为变化。
 _PAGE_CACHE: dict = {}
@@ -348,7 +348,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     连接优先级：
     1. 指定 port → 直接连接该端口（失败则报错，不 fallback）
     2. 已有会话记录的 port → 尝试复用（user_connected/auto-connect
-       会话失败则报 ConnectionError；dp 自管会话失败则清记录新建）
+       会话失败则报 ConnectionError；dpx 自管会话失败则清记录新建）
     3. 新建浏览器实例
     """
     from DrissionPage import ChromiumPage
@@ -394,7 +394,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
             co = ChromiumOptions(read_file=False)
             co.set_local_port(saved_port)
             co.existing_only(True)
-            # headless 优先读会话缓存：dp 自管会话创建时已记录，
+            # headless 优先读会话缓存：dpx 自管会话创建时已记录，
             # 命中可省一次 /json/version HTTP 探测。user_connected /
             # probe_dir 路径保持探测——用户的浏览器模式不由我们控制。
             cached_hl = sess.get('headless')
@@ -410,7 +410,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
             debug(f'saved_port={saved_port} 直连失败，尝试其他复用路径', e)
 
     # 2b) auto-connect 模式：重新发现端口，必要时自动起 bridge
-    # 用户重启 Chrome 后端口会变，此路径让 dp 命令无缝继续工作
+    # 用户重启 Chrome 后端口会变，此路径让 dpx 命令无缝继续工作
     if probe_dir:
         auto_connect_flag = sess.get('auto_connect')
         try:
@@ -431,7 +431,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     # user_connected/probe_dir）：静默新建空浏览器会让后续命令操作
     # 完全错误的目标（且丢登录态），比报错更糟——与 auto_connect
     # 分支同处理，直接报 ConnectionError。会话保留供重试；放弃可
-    # dp close 或 dp open --new。
+    # dpx close 或 dpx open --new。
     # 例外：显式带建立参数（--user-data-dir/--headless/--proxy/
     # --browser-path）的调用视为用户主动要求新建，放行新建分支。
     want_new = bool(browser_path or user_data_dir or proxy or headless)
@@ -444,10 +444,10 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
             f'处理建议：\n'
             f'  - 重启浏览器（--remote-debugging-port / chrome://inspect '
             f'远程调试）后重试\n'
-            f'  - 放弃会话：dp close -S {session_name}，再 dp open 新建'
+            f'  - 放弃会话：dpx close -S {session_name}，再 dpx open 新建'
         )
 
-    # dp 自管会话：清会话记录，落到新建分支（profile 目录不变，登录态保留）
+    # dpx 自管会话：清会话记录，落到新建分支（profile 目录不变，登录态保留）
     if saved_port or probe_dir:
         delete_session(session_name)
 
@@ -527,8 +527,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
     - auto-connect / user_connected 模式（默认）：只停 bridge 子进程 +
       清 session，不 quit 真 Chrome（浏览器是用户的）。
     - ``force=True``：user_connected 会话也真正 quit 浏览器进程
-      （dp close --force 的语义）。
-    - dp 自管模式：调用 page.browser.quit() 彻底结束浏览器进程。
+      （dpx close --force 的语义）。
+    - dpx 自管模式：调用 page.browser.quit() 彻底结束浏览器进程。
     """
     from DrissionPage import ChromiumPage
     from DrissionPage._configs.chromium_options import ChromiumOptions

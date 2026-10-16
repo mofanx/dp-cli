@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""dp serve / dp sh —— 常驻会话模式：stdin/stdout JSONL 协议。
+"""dpx serve / dpx sh —— 常驻会话模式：stdin/stdout JSONL 协议。
 
 与 batch 的差异：serve 是长驻进程、逐行增量应答（非一次性读全部），
 浏览器 attach / page 对象在进程内跨命令复用（_PAGE_CACHE），
@@ -55,7 +55,7 @@ def _parse_request(raw: str) -> tuple:
     else:
         return None, req_id, '请求缺 "cmd"（字符串）或 "argv"（数组）'
 
-    if argv and argv[0] in ('dp', 'dp-cli'):
+    if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
         argv = argv[1:]
     return argv, req_id, None
 
@@ -164,15 +164,15 @@ def serve(session):
 
     \b
     示例:
-      dp serve                          # stdin/stdout JSONL 长驻
-      echo '{"cmd":"snapshot"}' | dp serve
-      dp serve --session my             # 默认会话注入
-      dp sh                             # 交互别名（TTY 下提示符）
+      dpx serve                          # stdin/stdout JSONL 长驻
+      echo '{"cmd":"snapshot"}' | dpx serve
+      dpx serve --session my             # 默认会话注入
+      dpx sh                             # 交互别名（TTY 下提示符）
     """
     _warmup_imports()
     return _serve(session=session, tty=sys.stdin.isatty())
 
 
 def register(cli):
-    cli.add_command(serve)               # dp serve
-    cli.add_command(serve, 'sh')         # dp sh（交互别名）
+    cli.add_command(serve)               # dpx serve
+    cli.add_command(serve, 'sh')         # dpx sh（交互别名）

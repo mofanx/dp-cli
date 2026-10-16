@@ -1,12 +1,12 @@
 # -*- coding:utf-8 -*-
-"""dp batch / dp exec —— 单进程内顺序执行多条 dp 子命令。
+"""dpx batch / dpx exec —— 单进程内顺序执行多条 dpx 子命令。
 
 价值：
 - 消除每条命令独立 Python 进程 + CDP attach 的开销（get_browser 进程内缓存复用）
 - 输出 JSONL：每行 {"seq","line","cmd","exit","result"}，AI/脚本易解析
 - 默认 fail-fast（首条失败即停），--keep-going 继续执行完
 
-输入：文件路径或 '-'（stdin，缺省）。每行一条 dp 子命令（'dp ' 前缀可省），
+输入：文件路径或 '-'（stdin，缺省）。每行一条 dpx 子命令（'dpx ' 前缀可省），
       '# ' 开头为注释，空行跳过。禁止嵌套 batch/exec。
 """
 import io
@@ -27,7 +27,7 @@ def _read_lines(src: str) -> list:
     """读取批处理命令行，返回 [(lineno, text)]。src='-' 时读 stdin。"""
     if src == '-':
         if sys.stdin.isatty():
-            error('批处理需要文件参数或管道输入（dp batch cmds.txt / cat cmds.txt | dp batch）',
+            error('批处理需要文件参数或管道输入（dpx batch cmds.txt / cat cmds.txt | dpx batch）',
                   code='INVALID_ARGS')
             return []
         raw = sys.stdin.read()
@@ -48,7 +48,7 @@ def _read_lines(src: str) -> list:
 
 
 def _invoke(argv: list) -> tuple:
-    """进程内执行一条 dp 子命令，返回 (exit_code, result_dict)。
+    """进程内执行一条 dpx 子命令，返回 (exit_code, result_dict)。
 
     捕获子命令的 stdout 并解析为 JSON 嵌入 result；非 JSON 输出（如
     --version/--help/click 用法错误）包装为 {'status','output'}。
@@ -59,7 +59,7 @@ def _invoke(argv: list) -> tuple:
     code = 0
     with redirect_stdout(buf):
         try:
-            cli.main(args=argv, prog_name='dp', standalone_mode=False)
+            cli.main(args=argv, prog_name='dpx', standalone_mode=False)
         except click.exceptions.Exit as e:
             code = e.exit_code or 0          # --help / ctx.exit() 正常路径
         except SystemExit as e:
@@ -99,10 +99,10 @@ def _invalid(msg: str) -> tuple:
 @click.option('--no-summary', is_flag=True,
               help='不在末尾输出统计行')
 def batch(file, keep_going, verbose, no_summary):
-    """批量顺序执行 dp 子命令（FILE 或 stdin，每行一条）。
+    """批量顺序执行 dpx 子命令（FILE 或 stdin，每行一条）。
 
     同一进程内执行，浏览器 attach 结果在各命令间复用，远快于逐条
-    调用 dp。输入每行为一条子命令（可省略 'dp ' 前缀），'# ' 开头
+    调用 dp。输入每行为一条子命令（可省略 'dpx ' 前缀），'# ' 开头
     为注释。每条结果输出一行 JSON：
 
     \b
@@ -117,9 +117,9 @@ def batch(file, keep_going, verbose, no_summary):
       snapshot --brief
       click "text:更多"
       EOF
-      dp batch cmds.txt            # 文件输入
-      cat cmds.txt | dp batch      # stdin
-      dp batch -k cmds.txt         # 失败继续
+      dpx batch cmds.txt            # 文件输入
+      cat cmds.txt | dpx batch      # stdin
+      dpx batch -k cmds.txt         # 失败继续
     """
     lines = _read_lines(file)
     if not lines:
@@ -136,7 +136,7 @@ def batch(file, keep_going, verbose, no_summary):
             code, result = _invalid(f'第 {lineno} 行命令解析失败: {e}')
             argv = None
         else:
-            if argv and argv[0] in ('dp', 'dp-cli'):
+            if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
                 argv = argv[1:]
             # 跳过全局 flag 定位真实命令名，防止 "-v batch f.txt" 绕过嵌套防护
             cmd_name = next(
@@ -174,5 +174,5 @@ def batch(file, keep_going, verbose, no_summary):
 
 
 def register(cli):
-    cli.add_command(batch)          # dp batch
-    cli.add_command(batch, 'exec')  # dp exec（别名）
+    cli.add_command(batch)          # dpx batch
+    cli.add_command(batch, 'exec')  # dpx exec（别名）

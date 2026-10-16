@@ -9,12 +9,12 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
 - **Hybrid snapshot** — a11y tree + Vimium-style clickable detection, catches icon-only buttons
   and custom menu items the a11y tree misses; every element gets an `[N]` ref with
   confidence markers (`⚡` medium, `?` low)
-- **`dp scan`** — fast Vimium-style listing of interactive elements (viewport-only mode available)
+- **`dpx scan`** — fast Vimium-style listing of interactive elements (viewport-only mode available)
 - **Powerful locator syntax** — descriptive strings stable across navigation, plus
   Playwright-style `pw:role=button[name="Submit"] >> nth=2` chains
 - **Structured data extraction** — `extract` + `query` + `snapshot` for scraping list pages
 - **Network listening** — capture XHR/Fetch requests and response bodies
-- **Stealth patches** — `dp stealth` bypasses common automation detections
+- **Stealth patches** — `dpx stealth` bypasses common automation detections
 - **Dual mode** — browser control + pure HTTP requests
 - **Shadow-root / iframe** — traverse directly without switching context
 - **JSON output** — all commands output JSON, AI-friendly
@@ -23,36 +23,38 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
 
 ```bash
 pip install dp-cli
-dp --help
+dpx --help
 ```
+
+> **入口冲突提示**：DrissionPage 4.1.1.4+ 也注册了 `dp` 命令（浏览器路径配置工具）。若 `dp` 被抢占（装包/升级顺序所致），用主入口 **`dpx`**（独占命名）或 `python -m dp_cli.main`；`pip install --force-reinstall dp-cli` 可夺回 `dp`。归属检测：`dpx install --skills --check` 输出的 `entrypoint` 字段。
 
 ### Agent skill（可选，推荐）
 
 为 AI agent 安装完整使用指南（全部命令参考 + 工作流 playbook）：
 
 ```bash
-dp install --skills                        # 装到 agent 的 skill 目录
+dpx install --skills                        # 装到 agent 的 skill 目录
 npx skills add mofanx/dp-cli               # 或走 skills CLI 渠道
 claude plugin marketplace add mofanx/dp-cli  # 或 Claude Code 插件市场
 ```
 
-未安装也能用——skill 只是文档层；agent 可直接读 `dp --help` 或 `python -m dp_cli.catalog` 自举。
+未安装也能用——skill 只是文档层；agent 可直接读 `dpx --help` 或 `python -m dp_cli.catalog` 自举。
 
 ## Quick Start
 
 ```bash
 # Auto-managed browser
-dp open https://example.com
-dp snapshot
-dp click "text:Login"
-dp fill "@name=username" admin
-dp press Enter
-dp close
+dpx open https://example.com
+dpx snapshot
+dpx click "text:Login"
+dpx fill "@name=username" admin
+dpx press Enter
+dpx close
 
 # Connect to your own logged-in browser
 google-chrome --remote-debugging-port=9222
-dp open https://example.com --port 9222
-dp snapshot
+dpx open https://example.com --port 9222
+dpx snapshot
 ```
 
 ## Connect to a Normally-Launched Chrome/Edge (Chrome/Edge 144+)
@@ -63,13 +65,13 @@ via `chrome://inspect` (Chrome) or `edge://inspect/#devices` (Edge):
 1. Open your Chrome or Edge as usual (no special flags)
 2. Visit `chrome://inspect/#remote-debugging` (Chrome) or `edge://inspect/#devices` (Edge)
 3. Check **"Allow remote debugging for this browser instance"**
-4. Run `dp open --auto-connect`
+4. Run `dpx open --auto-connect`
 
 ```bash
-dp open --auto-connect                              # auto channel: sniffs Chrome stable → Edge stable
-dp open --auto-connect --channel edge              # force Edge stable
-dp open --auto-connect --channel beta               # Chrome beta
-dp open --auto-connect --probe-dir ~/my-profile     # custom user-data-dir
+dpx open --auto-connect                              # auto channel: sniffs Chrome stable → Edge stable
+dpx open --auto-connect --channel edge              # force Edge stable
+dpx open --auto-connect --channel beta               # Chrome beta
+dpx open --auto-connect --probe-dir ~/my-profile     # custom user-data-dir
 ```
 
 ### How it works
@@ -86,20 +88,20 @@ depend on. `dp-cli` transparently handles this:
      via `Target.attachToTarget(flatten=True)`
 4. Points DrissionPage at the bridge. Subsequent `dp` commands reuse the same bridge.
 
-The bridge subprocess and its port are tracked in the session file; `dp close` stops
+The bridge subprocess and its port are tracked in the session file; `dpx close` stops
 the bridge automatically and never quits your browser (it's your browser, not dp's).
 
 ### Caveats
 
 - Chrome/Edge always shows an **"Allow remote debugging"** dialog per new WebSocket client.
-  Since bridge maintains one WebSocket and dp commands share it, you confirm at most
-  once per `dp open --auto-connect`.
+  Since bridge maintains one WebSocket and dpx commands share it, you confirm at most
+  once per `dpx open --auto-connect`.
 - Works with whatever profile Chrome/Edge is actually using — same cookies, logins, history.
-- Classic `--remote-debugging-port=9222` mode still works unchanged via `dp open --port 9222`.
+- Classic `--remote-debugging-port=9222` mode still works unchanged via `dpx open --port 9222`.
 
 ## Hybrid Snapshot (a11y + Vimium-style)
 
-The default `dp snapshot` fuses two element-discovery paths:
+The default `dpx snapshot` fuses two element-discovery paths:
 
 1. **Browser a11y tree** via CDP — the structural skeleton (headings, lists, form roles,
    explicit `<a>`/`<button>`, any `role="..."` element).
@@ -120,31 +122,31 @@ Output includes helpful context:
 - `(icon)` — icon-only button (no visible label, has `<svg>` / `<img>` child)
 - Shadow DOM is traversed automatically (open shadow roots)
 
-Every element gets an `[N]` ref usable in any command: `dp click "ref:5"`.
+Every element gets an `[N]` ref usable in any command: `dpx click "ref:5"`.
 
 ```bash
-dp snapshot                     # a11y + clickable (default); high + medium markers
-dp snapshot -i                  # interactive mode: only interactive elements
-dp snapshot -s ".main"          # limit to specific area
-dp snapshot -p "data-test"      # custom locator priority
-dp scan --viewport              # only elements currently in viewport
-dp scan --confidence all        # include low-confidence heuristics
-dp scan --confidence high       # only the sure-thing clickables
+dpx snapshot                     # a11y + clickable (default); high + medium markers
+dpx snapshot -i                  # interactive mode: only interactive elements
+dpx snapshot -s ".main"          # limit to specific area
+dpx snapshot -p "data-test"      # custom locator priority
+dpx scan --viewport              # only elements currently in viewport
+dpx scan --confidence all        # include low-confidence heuristics
+dpx scan --confidence high       # only the sure-thing clickables
 ```
 
-### `dp scan` — fast clickable-only listing
+### `dpx scan` — fast clickable-only listing
 
 When you only need "what can I click next?" without the full a11y tree:
 
 ```bash
-dp scan                         # full page, high+medium
-dp scan --viewport              # only elements currently in viewport
-dp scan --confidence all        # include low-confidence heuristics
-dp scan --confidence high       # only the sure-thing clickables
+dpx scan                         # full page, high+medium
+dpx scan --viewport              # only elements currently in viewport
+dpx scan --confidence all        # include low-confidence heuristics
+dpx scan --confidence high       # only the sure-thing clickables
 ```
 
 Both `snapshot` and `scan` share the same `[N]` ref numbering per session, so
-`dp click "ref:N"` works regardless of which one produced the snapshot.
+`dpx click "ref:N"` works regardless of which one produced the snapshot.
 
 ## Playwright-style locators (`pw:` prefix)
 
@@ -153,29 +155,29 @@ Use the `pw:` prefix. Syntax mirrors Playwright, and chains with `>>`:
 
 ```bash
 # By ARIA role (with accessible name — exact / substring / regex)
-dp click 'pw:role=button[name="Submit"]'
-dp click 'pw:role=button[name=/^Sign/i]'
-dp click 'pw:role=link[name=More]'         # substring
+dpx click 'pw:role=button[name="Submit"]'
+dpx click 'pw:role=button[name=/^Sign/i]'
+dpx click 'pw:role=link[name=More]'         # substring
 
 # By visible text (exact / substring / regex)
-dp click 'pw:text="Login"'                 # exact
-dp click 'pw:text=Login'                   # substring (case-insensitive)
-dp click 'pw:text=/^log/i'                 # regex
+dpx click 'pw:text="Login"'                 # exact
+dpx click 'pw:text=Login'                   # substring (case-insensitive)
+dpx click 'pw:text=/^log/i'                 # regex
 
 # By form affordances
-dp fill  'pw:placeholder=Search…' "chatgpt"
-dp fill  'pw:label="Email"' "a@b.com"
-dp click 'pw:alt="Logo"'
-dp click 'pw:title="Close"'
-dp click 'pw:testid=submit-btn'            # data-testid / data-test-id / data-test
+dpx fill  'pw:placeholder=Search…' "chatgpt"
+dpx fill  'pw:label="Email"' "a@b.com"
+dpx click 'pw:alt="Logo"'
+dpx click 'pw:title="Close"'
+dpx click 'pw:testid=submit-btn'            # data-testid / data-test-id / data-test
 
 # Chain with >> (each step narrows the scope)
-dp click 'pw:css=.sidebar >> role=listitem[name="Chat"] >> nth=2'
-dp click 'pw:css=li >> has-text="Python"'
-dp click 'pw:role=list >> nth=-1'          # negative index = from end
+dpx click 'pw:css=.sidebar >> role=listitem[name="Chat"] >> nth=2'
+dpx click 'pw:css=li >> has-text="Python"'
+dpx click 'pw:role=list >> nth=-1'          # negative index = from end
 
 # Raw css/xpath chunks mix freely
-dp click 'pw:xpath=//nav >> role=link[name=Docs]'
+dpx click 'pw:xpath=//nav >> role=link[name=Docs]'
 ```
 
 **Matchers**: `role` / `text` / `label` / `placeholder` / `alt` / `title` /
@@ -200,14 +202,14 @@ Bypass `navigator.webdriver`, `HeadlessChrome` UA, empty `plugins`, SwiftShader 
 
 ```bash
 # One-shot: connect + apply full stealth patches
-dp open --port 9322 --stealth
-dp goto https://bot.sannysoft.com/
+dpx open --port 9322 --stealth
+dpx goto https://bot.sannysoft.com/
 
 # Or apply manually on an existing session (full preset by default)
-dp stealth
-dp stealth --preset mild                       # webdriver + UA only
-dp stealth --ua "Mozilla/5.0 ..."              # custom UA
-dp stealth --feature webdriver --feature webgl # fine-grained
+dpx stealth
+dpx stealth --preset mild                       # webdriver + UA only
+dpx stealth --ua "Mozilla/5.0 ..."              # custom UA
+dpx stealth --feature webdriver --feature webgl # fine-grained
 ```
 
 ### Recommended VPS Chrome flags (when connecting via SSH tunnel)
@@ -219,7 +221,7 @@ google-chrome --headless=new --remote-debugging-port=9222 \
   --user-data-dir=~/.config/google-chrome
 # Then on local:
 ssh -NL 9322:127.0.0.1:9222 vps
-dp open --port 9322 --stealth
+dpx open --port 9322 --stealth
 ```
 
 Patched features (full preset): `webdriver`, `UA`, `chrome.runtime`, `permissions`,
@@ -233,13 +235,13 @@ GPU or Xvfb environment.
 
 ```bash
 # 1. Discover CSS class names via noise-filtered content tree
-dp snapshot -i -s ".main"
+dpx snapshot -i -s ".main"
 
 # 2. Verify field selectors
-dp query "css:.item-title" --fields "text,loc"
+dpx query "css:.item-title" --fields "text,loc"
 
 # 3. Batch extract to CSV
-dp extract "css:.item-card" \
+dpx extract "css:.item-card" \
   '{"title":"css:.item-title",
     "price":"css:.item-price",
     "tags":{"selector":"css:.tag","multi":true},

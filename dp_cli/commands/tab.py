@@ -15,7 +15,7 @@ def register(cli):
         """列出所有标签页。
 
         \b
-        绑定的标签页会显示 [pinned] 标记，后续所有 dp 命令只在该标签页中执行。
+        绑定的标签页会显示 [pinned] 标记，后续所有 dpx 命令只在该标签页中执行。
         """
         page = _get_page(session, raw=True)
         if not page:
@@ -49,15 +49,15 @@ def register(cli):
         """新建标签页并自动绑定。
 
         \b
-        新标签页会自动绑定到当前会话，后续 dp 命令在该标签页中执行。
+        新标签页会自动绑定到当前会话，后续 dpx 命令在该标签页中执行。
         使用 --background 时不绑定。
         使用 --new-window 在独立窗口中打开（适合自动化与手动浏览分离）。
 
         \b
         示例:
-          dp tab-new https://example.com
-          dp tab-new https://example.com --new-window
-          dp tab-new https://example.com --background
+          dpx tab-new https://example.com
+          dpx tab-new https://example.com --new-window
+          dpx tab-new https://example.com --background
         """
         page = _get_page(session, raw=True)
         if not page:
@@ -74,7 +74,7 @@ def register(cli):
                 sess = load_session(session)
                 sess['active_tab'] = new_tid
                 save_session(session, sess)
-                msg += '（已绑定，dp 命令将在此标签页执行）'
+                msg += '（已绑定，dpx 命令将在此标签页执行）'
 
             ok({'id': new_tid, 'url': new_tab.url,
                 'title': new_tab.title, 'pinned': not background},
@@ -86,14 +86,14 @@ def register(cli):
     @click.argument('target')
     @session_option
     def tab_select(target, session):
-        """绑定到指定标签页，后续 dp 命令在该标签页中执行。
+        """绑定到指定标签页，后续 dpx 命令在该标签页中执行。
 
         \b
         TARGET 支持：
-          序号    dp tab-select 0        （按标签页序号）
-          tab_id  dp tab-select ABC123   （按标签页 ID）
-          URL     dp tab-select example  （按 URL 关键词匹配）
-          none    dp tab-select none     （解除绑定，恢复默认行为）
+          序号    dpx tab-select 0        （按标签页序号）
+          tab_id  dpx tab-select ABC123   （按标签页 ID）
+          URL     dpx tab-select example  （按 URL 关键词匹配）
+          none    dpx tab-select none     （解除绑定，恢复默认行为）
         """
         # 解除绑定
         if target.lower() == 'none':
@@ -126,7 +126,7 @@ def register(cli):
                 except Exception as e:
                     debug('新标签页注入录制器失败', e)
             ok({'id': tab_id, 'url': tab.url, 'title': tab.title},
-               msg='已绑定，dp 命令将在此标签页执行')
+               msg='已绑定，dpx 命令将在此标签页执行')
         except Exception as e:
             error(f'切换标签页失败', code='TAB_FAILED', detail=str(e))
 

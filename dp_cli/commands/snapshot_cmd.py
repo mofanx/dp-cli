@@ -84,18 +84,18 @@ def register(cli):
 
         \b
         示例:
-          dp snapshot                          # 完整快照（默认含 clickable 补充）
-          dp snapshot -i                       # 只显示交互元素（最简洁，推荐）
-          dp snapshot -m interactive           # 只显示交互元素（明确）
-          dp snapshot -m brief                 # 精简模式（interactive 别名）
-          dp snapshot --viewport-only          # 只扫视口内，更快
-          dp snapshot --include-low            # 启用 low 置信度（可能假阳性）
-          dp snapshot --no-clickables          # 纯 a11y tree，旧版本行为
-          dp snapshot -s ".main"               # 只获取指定区域
-          dp snapshot -p "data-testid,data-test-id,id"  # 自定义属性优先级
-          dp snapshot --depth 3                # 只取 a11y 树前 3 层
-          dp snapshot --max-nodes 200          # 总量上限，超出附 pruned 标记
-          dp snapshot --pw-locators            # 交互元素附 Playwright 首选定位器
+          dpx snapshot                          # 完整快照（默认含 clickable 补充）
+          dpx snapshot -i                       # 只显示交互元素（最简洁，推荐）
+          dpx snapshot -m interactive           # 只显示交互元素（明确）
+          dpx snapshot -m brief                 # 精简模式（interactive 别名）
+          dpx snapshot --viewport-only          # 只扫视口内，更快
+          dpx snapshot --include-low            # 启用 low 置信度（可能假阳性）
+          dpx snapshot --no-clickables          # 纯 a11y tree，旧版本行为
+          dpx snapshot -s ".main"               # 只获取指定区域
+          dpx snapshot -p "data-testid,data-test-id,id"  # 自定义属性优先级
+          dpx snapshot --depth 3                # 只取 a11y 树前 3 层
+          dpx snapshot --max-nodes 200          # 总量上限，超出附 pruned 标记
+          dpx snapshot --pw-locators            # 交互元素附 Playwright 首选定位器
         """
         # -i 选项覆盖 mode
         if interactive:
@@ -197,7 +197,7 @@ def register(cli):
         """Vimium 风格扫描当前页面的可交互元素（纯 DOM 遍历，不依赖 a11y tree）。
 
         \b
-        与 dp snapshot 的区别:
+        与 dpx snapshot 的区别:
           snapshot  返回完整 a11y tree + clickable 补充（大、慢、全面）
           scan      只返回可交互元素清单（小、快、适合执行脚本）
 
@@ -209,16 +209,16 @@ def register(cli):
           默认只返回 high + medium；用 --confidence all 看全部
 
         \b
-        输出的每个元素都有 [N] 编号，可直接 dp click "ref:N" 引用。
+        输出的每个元素都有 [N] 编号，可直接 dpx click "ref:N" 引用。
         输出中 ⚡ 标记 medium 置信度，? 标记 low 置信度。
 
         \b
         示例:
-          dp scan                                # 扫全页，high + medium
-          dp scan --viewport                     # 只扫视口内
-          dp scan --confidence high              # 只要高置信度
-          dp scan --confidence all               # 包含 low 置信度
-          dp scan --format json                  # JSON 输出
+          dpx scan                                # 扫全页，high + medium
+          dpx scan --viewport                     # 只扫视口内
+          dpx scan --confidence high              # 只要高置信度
+          dpx scan --confidence all               # 包含 low 置信度
+          dpx scan --format json                  # JSON 输出
         """
         # 解析 confidence 过滤
         conf_str = (confidence or '').strip().lower()
@@ -352,8 +352,8 @@ def register(cli):
 
         \b
         示例:
-          dp extract "css:.card" '{"title":"css:.title","url":{"selector":"css:a","attr":"href"}}'
-          dp extract "ref:30" '{"title":"css:h3"}'  # 用快照编号定位容器
+          dpx extract "css:.card" '{"title":"css:.title","url":{"selector":"css:a","attr":"href"}}'
+          dpx extract "ref:30" '{"title":"css:h3"}'  # 用快照编号定位容器
 
         \b
         先用 snapshot 了解页面结构，再用 extract 定位容器和字段。
@@ -409,11 +409,11 @@ def register(cli):
 
         \b
         用法示例:
-          dp query "css:.job-name"                           # 默认返回文本+定位器
-          dp query "ref:57"                                  # 用快照编号查询
-          dp query "ref:57" --fields "text,css,tag,class"   # 获取精确 CSS 路径
-          dp query "css:a[href]" --fields "text,href"
-          dp query "css:.desc" --fields "text,html"         # 获取 innerHTML
+          dpx query "css:.job-name"                           # 默认返回文本+定位器
+          dpx query "ref:57"                                  # 用快照编号查询
+          dpx query "ref:57" --fields "text,css,tag,class"   # 获取精确 CSS 路径
+          dpx query "css:a[href]" --fields "text,href"
+          dpx query "css:.desc" --fields "text,html"         # 获取 innerHTML
         """
         selector = resolve_locator(selector, session)
         page = _get_page(session)
@@ -440,9 +440,9 @@ def register(cli):
 
         \b
         示例:
-          dp find "css:a"
-          dp find "css:a" --all
-          dp find "ref:5"
+          dpx find "css:a"
+          dpx find "css:a" --all
+          dpx find "ref:5"
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -483,9 +483,9 @@ def register(cli):
 
         \b
         示例:
-          dp inspect "#submit-btn"
-          dp inspect "ref:5" --include-rect
-          dp inspect "css:input" --include-style
+          dpx inspect "#submit-btn"
+          dpx inspect "ref:5" --include-rect
+          dpx inspect "css:input" --include-style
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -564,12 +564,12 @@ def register(cli):
 
         \b
         示例:
-          dp dom "ref:21"                         # 查看父/子/兄弟全部
-          dp dom "ref:21" -d parent               # 只看父节点链
-          dp dom "ref:21" -d parent --depth 3     # 向上追溯 3 层
-          dp dom "ref:21" -d children             # 只看子节点
-          dp dom "ref:21" -d siblings             # 只看兄弟节点
-          dp dom "css:.job-name" -d all           # 用 CSS 选择器
+          dpx dom "ref:21"                         # 查看父/子/兄弟全部
+          dpx dom "ref:21" -d parent               # 只看父节点链
+          dpx dom "ref:21" -d parent --depth 3     # 向上追溯 3 层
+          dpx dom "ref:21" -d children             # 只看子节点
+          dpx dom "ref:21" -d siblings             # 只看兄弟节点
+          dpx dom "css:.job-name" -d all           # 用 CSS 选择器
         """
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -656,9 +656,9 @@ def register(cli):
 
         \b
         示例:
-          dp dom-snapshot -o snap.json            # 整页取证
-          dp dom-snapshot --selector "css:main"   # 子树快照
-          dp dom-snapshot --styles "display,color,font-size"
+          dpx dom-snapshot -o snap.json            # 整页取证
+          dpx dom-snapshot --selector "css:main"   # 子树快照
+          dpx dom-snapshot --styles "display,color,font-size"
         """
         page = _get_page(session)
         style_list = ([s.strip() for s in styles.split(',') if s.strip()]

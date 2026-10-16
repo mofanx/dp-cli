@@ -72,19 +72,29 @@ def diff_items(old: dict, new: dict) -> dict:
     changed = [{'key': k, 'old': old[k], 'new': new[k]}
                for k in new if k in old and new[k] != old[k]]
 
+    # churn 配对：sig 全同者按文档位置序（指纹 dict 的 DFS 序）就近配对——
+    # 确定性且倾向邻近元素；多对多场景多出侧仍回落真实增删。
+    pos_old = {k: i for i, k in enumerate(old)}
+    pos_new = {k: i for i, k in enumerate(new)}
+    rem_by_sig = {}
+    for it in removed:
+        rem_by_sig.setdefault(it['sig'], []).append(it)
     add_by_sig = {}
     for it in added:
         add_by_sig.setdefault(it['sig'], []).append(it)
-    churn, keep_removed = [], []
-    for it in removed:
-        pool = add_by_sig.get(it['sig'])
-        if pool:
-            churn.append({'old_key': it['key'],
-                          'new_key': pool.pop()['key'], 'sig': it['sig']})
-        else:
-            keep_removed.append(it)
-    added = [it for pool in add_by_sig.values() for it in pool]
-    return {'added': added, 'removed': keep_removed,
+    churn, keep_removed, keep_added = [], [], []
+    for sig, rks in rem_by_sig.items():
+        aks = add_by_sig.pop(sig, [])
+        rks.sort(key=lambda it: pos_old[it['key']])
+        aks.sort(key=lambda it: pos_new[it['key']])
+        for rk, ak in zip(rks, aks):
+            churn.append({'old_key': rk['key'],
+                          'new_key': ak['key'], 'sig': sig})
+        keep_removed.extend(rks[len(aks):])
+        keep_added.extend(aks[len(rks):])
+    for pool in add_by_sig.values():
+        keep_added.extend(pool)
+    return {'added': keep_added, 'removed': keep_removed,
             'changed': changed, 'churn': churn}
 
 

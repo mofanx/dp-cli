@@ -134,7 +134,7 @@ def test_warn_drift_stderr_only(fake_home):
     r = sep.invoke(cli, ['catalog'])
     assert r.exit_code == 0
     assert 'tools' in json.loads(r.stdout)         # stdout 纯 JSON
-    assert 'dp install --skills' in r.stderr       # 警告在 stderr
+    assert 'dpx install --skills' in r.stderr       # 警告在 stderr
     r2 = sep.invoke(cli, ['catalog'])              # marker 已存在 → 静默
     assert 'install --skills' not in r2.stderr
 
@@ -256,17 +256,42 @@ def test_drift_multi_target(runner, fake_home, monkeypatch):
     (fake_home / '.config' / 'devin').mkdir(parents=True)
     monkeypatch.chdir(fake_home)
     runner.invoke(cli, ['install', '--skills', '--all'])
-    copies, cur, drift = sd.check_drift()
-    assert not drift and len(copies) == 2
+    copies, cur, drift, diffs = sd.check_drift()
+    assert not drift and not diffs and len(copies) == 2
     # 只改 devin 目标的版本戳 → 仍检出
     md = (fake_home / '.config' / 'devin' / 'skills' / 'dp-cli'
           / 'SKILL.md')
     md.write_text(md.read_text().replace(
         f'dp_cli_version: {cur}', 'dp_cli_version: 0.0.1'))
-    copies, cur, drift = sd.check_drift()
+    copies, cur, drift, diffs = sd.check_drift()
     assert drift
     stale = [str(t) for t, v in copies.items() if v != cur]
     assert len(stale) == 1 and 'devin' in stale[0]
+
+
+@pytest.mark.unit
+def test_drift_same_stamp_stale_content(runner, fake_home, monkeypatch):
+    """盲区用例：版本戳相同但内容过期/被篡改 → 必须报漂移并给差异清单。"""
+    (fake_home / '.claude').mkdir()
+    monkeypatch.chdir(fake_home)
+    runner.invoke(cli, ['install', '--skills'])
+    dst = fake_home / '.claude' / 'skills' / 'dp-cli'
+    copies, cur, drift, diffs = sd.check_drift()
+    assert not drift
+    # 篡改正文但保留版本戳（改名批场景：旧内容盖了新戳）
+    md = dst / 'SKILL.md'
+    md.write_text(md.read_text() + '\n过期内容 marker\n',
+                  encoding='utf-8')
+    copies, cur, drift, diffs = sd.check_drift()
+    assert drift                          # 戳相同也检出
+    assert copies[dst] == cur             # 版本戳确实没变
+    assert diffs[dst] == ['SKILL.md']     # 差异清单指出文件
+    # --check 输出含差异清单且 stdout 仍纯净 JSON（告警走 stderr）
+    r = _sep_runner().invoke(cli, ['install', '--skills', '--check'])
+    assert r.exit_code != 0
+    import json as _j
+    out = _j.loads(r.stdout)
+    assert out['status'] == 'error' and 'SKILL.md' in out.get('detail', '')
 
 
 @pytest.mark.unit
@@ -300,7 +325,7 @@ def test_install_agents_md_flag(runner, fake_home, monkeypatch):
     assert r.exit_code == 0
     assert json.loads(r.output)['data']['agents_md'] == 'created'
     md = (proj / 'AGENTS.md').read_text()
-    assert 'dp-cli-skill' in md and 'dp catalog --md' in md
+    assert 'dp-cli-skill' in md and 'dpx catalog --md' in md
     # 二次 → unchanged（幂等）
     r = runner.invoke(cli, ['install', '--skills', '--agents-md'])
     assert json.loads(r.output)['data']['agents_md'] == 'unchanged'
@@ -320,3 +345,81 @@ def test_install_agents_md_off_by_default(runner, fake_home, monkeypatch):
     monkeypatch.chdir(proj)
     runner.invoke(cli, ['install', '--skills'])
     assert not (proj / 'AGENTS.md').exists()
+
+
+# ── dp 入口归属检测（DrissionPage 4.1.1.4+ 抢占场景）─────────────────────
+
+def _fake_dp(tmp_path, content, name='dp'):
+    p = tmp_path / name
+    p.write_text(content, encoding='utf-8')
+    return str(p)
+
+
+@pytest.mark.unit
+def test_check_dp_entry_ours(tmp_path, monkeypatch):
+    from dp_cli.commands import meta
+    p = _fake_dp(tmp_path, '#!/usr/bin/python\nimport sys\n'
+                          'from dp_cli.main import main\nsys.exit(main())')
+    monkeypatch.setattr('shutil.which', lambda n: p)
+    ep = meta.check_dp_entry()
+    assert ep['dpx']['status'] == 'ours' and ep['dpx']['path'] == p
+    assert ep['dp']['status'] == 'ours'
+
+
+@pytest.mark.unit
+def test_check_dp_entry_stolen_by_drission(tmp_path, monkeypatch):
+    """DrissionPage 抢占：脚本指向上游 cli → stolen + 修复指引。"""
+    from dp_cli.commands import meta
+    p = _fake_dp(tmp_path, '#!/usr/bin/python\nimport sys\n'
+                          'from DrissionPage._functions.cli import main\n'
+                          'sys.exit(main())')
+    monkeypatch.setattr('shutil.which', lambda n: p)
+    ep = meta.check_dp_entry()
+    assert ep['dp']['status'] == 'stolen' and ep['dp']['owner'] == 'DrissionPage'
+    assert 'dpx' in ep['dp']['fix'] and 'python -m dp_cli.main' in ep['dp']['fix']
+
+
+@pytest.mark.unit
+def test_check_dp_entry_missing(monkeypatch):
+    from dp_cli.commands import meta
+    monkeypatch.setattr('shutil.which', lambda n: None)
+    assert meta.check_dp_entry()['dpx']['status'] == 'missing'
+
+
+@pytest.mark.unit
+def test_check_dp_entry_partial_steal(tmp_path, monkeypatch):
+    """混合态：dpx 归我们、dp 被抢——stolen 仅报 dp。"""
+    from dp_cli.commands import meta
+    ours = _fake_dp(tmp_path, 'from dp_cli.main import main\n', 'dpx')
+    his = _fake_dp(tmp_path, 'from DrissionPage._functions.cli import main\n')
+    monkeypatch.setattr('shutil.which',
+                        lambda n: {'dpx': ours, 'dp': his}.get(n))
+    ep = meta.check_dp_entry()
+    assert ep['dpx']['status'] == 'ours'
+    assert ep['dp']['status'] == 'stolen'
+
+
+@pytest.mark.unit
+def test_install_check_reports_stolen_entry(runner, fake_home,
+                                            tmp_path, monkeypatch):
+    """--check 输出携带 entrypoint 块；抢占时 msg/detail 含修复指引。"""
+    from dp_cli.commands import meta
+    p = _fake_dp(tmp_path, 'from DrissionPage._functions.cli import main\n')
+    monkeypatch.setattr('shutil.which', lambda n: p)
+    runner.invoke(cli, ['install', '--skills'])
+    r = runner.invoke(cli, ['install', '--skills', '--check'])
+    assert r.exit_code == 0
+    ep = json.loads(r.output)['data']['entrypoint']
+    assert ep['dpx']['status'] == 'stolen' and 'dpx' in ep['dpx']['fix']
+    assert '入口被抢占' in json.loads(r.output)['message']
+
+
+@pytest.mark.unit
+def test_dir_diff_files_binary_no_crash(tmp_path):
+    """二进制/非 UTF-8 文件不炸比对（errors=replace 容错）。"""
+    src = tmp_path / 'src'; dst = tmp_path / 'dst'
+    for d in (src, dst):
+        d.mkdir(); (d / 'a.bin').write_bytes(b'\xff\xfe\x00')
+    (dst / 'a.bin').write_bytes(b'\x00\x01\x02')
+    diffs = sd.dir_diff_files(src, dst)
+    assert diffs == ['a.bin']          # 内容差异正确检出而非崩溃

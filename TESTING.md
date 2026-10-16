@@ -144,5 +144,5 @@ scripts/sync-skill.sh --check   # 只校验(不一致 exit 1)
 - CHANGELOG.md
 
 `test_plugin_manifest_version_sync` 会拦住三处不一致（CI 强制）。
-`dp install --skills` 写入的 `dp_cli_version` 戳从包元数据取，无需手改；
+`dpx install --skills` 写入的 `dp_cli_version` 戳从包元数据取，无需手改；
 skill 文档的 `dp_cli_version: "dev"` 是 repo 占位，勿改成真版本。

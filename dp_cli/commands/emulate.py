@@ -6,8 +6,8 @@ download  —— 设置下载目录（DrissionPage DownloadManager → Browser.s
              并等待下载任务完成
 intercept —— Network domain 请求拦截基础版：URL 通配屏蔽 + 附加请求头
 
-emulate/intercept 的配置写入 session，后续每条 dp 命令经 _get_page 重放
-（每个 dp 命令是独立进程，CDP override 需在每条命令里重新应用才可靠）。
+emulate/intercept 的配置写入 session，后续每条 dpx 命令经 _get_page 重放
+（每个 dpx 命令是独立进程，CDP override 需在每条命令里重新应用才可靠）。
 """
 import base64
 import fnmatch
@@ -200,17 +200,17 @@ def register(cli):
                 geolocation, reset):
         """模拟设备环境（设备预设/viewport/UA/locale/时区/地理位置）。
 
-        设置写入会话，后续 dp 命令自动重放；--reset 清除。
+        设置写入会话，后续 dpx 命令自动重放；--reset 清除。
 
         \b
         示例:
-          dp emulate --device iphone-15      # 设备预设一键组合
-          dp emulate --device desktop-chrome
-          dp emulate --viewport 375x812 --ua "Mozilla/5.0 (iPhone...)"
-          dp emulate --viewport 1920x1080 --no-mobile   # 桌面视口
-          dp emulate --locale zh-CN --timezone Asia/Shanghai
-          dp emulate --geolocation 39.9042,116.4074
-          dp emulate --reset
+          dpx emulate --device iphone-15      # 设备预设一键组合
+          dpx emulate --device desktop-chrome
+          dpx emulate --viewport 375x812 --ua "Mozilla/5.0 (iPhone...)"
+          dpx emulate --viewport 1920x1080 --no-mobile   # 桌面视口
+          dpx emulate --locale zh-CN --timezone Asia/Shanghai
+          dpx emulate --geolocation 39.9042,116.4074
+          dpx emulate --reset
         """
         page = _get_page(session)
         sess = load_session(session) or {}
@@ -281,14 +281,14 @@ def register(cli):
     def download(session, download_dir, timeout, when_exists):
         """设置下载目录并等待下载完成。
 
-        先触发下载的操作（如 dp click），再执行本命令；或本命令先运行、
+        先触发下载的操作（如 dpx click），再执行本命令；或本命令先运行、
         随后在 --timeout 窗口内产生下载。依赖 DrissionPage DownloadManager
         （Browser.setDownloadBehavior + downloadProgress 事件）。
 
         \b
         示例:
-          dp download --dir ~/Downloads --timeout 60
-          dp download --dir ./out --exists overwrite
+          dpx download --dir ~/Downloads --timeout 60
+          dpx download --dir ./out --exists overwrite
         """
         page = _get_page(session)
         try:
@@ -351,17 +351,17 @@ def register(cli):
                   mock_headers, mock_clear, off):
         """请求拦截：屏蔽 URL 通配 / 附加请求头 / mock 响应（Fetch domain）。
 
-        设置写入会话，后续 dp 命令自动重放。mock 规则经 Fetch.enable
+        设置写入会话，后续 dpx 命令自动重放。mock 规则经 Fetch.enable
         在请求阶段拦截并 fulfillRequest，与 --block/--header 并存。
 
         \b
         示例:
-          dp intercept --block "*.png" --block "*google-analytics*"
-          dp intercept --header "Authorization=Bearer xxx"
-          dp intercept --mock "*api/user*" --mock-body '{"id":1}'
-          dp intercept --mock "*api/list*" --mock-status 404 --mock-body "nf"
-          dp intercept --mock-clear
-          dp intercept --off
+          dpx intercept --block "*.png" --block "*google-analytics*"
+          dpx intercept --header "Authorization=Bearer xxx"
+          dpx intercept --mock "*api/user*" --mock-body '{"id":1}'
+          dpx intercept --mock "*api/list*" --mock-status 404 --mock-body "nf"
+          dpx intercept --mock-clear
+          dpx intercept --off
         """
         page = _get_page(session)
         sess = load_session(session) or {}

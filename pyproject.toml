@@ -41,6 +41,11 @@ test = [
 ]
 
 [project.scripts]
+# 主入口：DrissionPage 4.1.1.4+ 抢注了 dp（浏览器配置工具），
+# dpx 为独占命名，永远指向本 CLI。
+dpx = "dp_cli.main:main"
+# 兼容入口：最佳努力保留——装在本包之后的场景仍可用；
+# 被 DrissionPage 抢占时 install --check 会预警。
 dp = "dp_cli.main:main"
 
 [project.urls]

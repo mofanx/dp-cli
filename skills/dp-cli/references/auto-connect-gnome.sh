@@ -1,16 +1,16 @@
 #!/bin/bash
 # auto-connect-gnome.sh
 #
-# Ubuntu Gnome (Wayland) 环境下自动完成 dp open --auto-connect 授权流程的辅助脚本。
+# Ubuntu Gnome (Wayland) 环境下自动完成 dpx open --auto-connect 授权流程的辅助脚本。
 #
 # 背景：
-#   dp open --auto-connect 首次（或 Chrome 重启后）会在 Chrome 中弹出
+#   dpx open --auto-connect 首次（或 Chrome 重启后）会在 Chrome 中弹出
 #   "Allow remote debugging for this browser instance" 对话框，需用户手动切窗口点击。
 #   本脚本通过 gauto + ydotool 自动激活 Chrome 窗口并模拟 Tab+Enter 确认，
 #   免去手动操作。
 #
 # 依赖：
-#   - dp CLI（必须）
+#   - dpx CLI（必须）
 #   - gauto（可选，用于检测/启动/激活 Chrome 窗口）
 #   - ydotool（可选，用于模拟键盘；需运行 ydotoold 守护进程）
 #
@@ -36,8 +36,8 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_debug() { echo -e "${BLUE}[DEBUG]${NC} $1"; }
 
 check_deps() {
-    if ! command -v dp &> /dev/null; then
-        log_error "dp CLI 未安装"
+    if ! command -v dpx &> /dev/null; then
+        log_error "dpx CLI 未安装"
         exit 1
     fi
     command -v gauto   &> /dev/null || log_warn "gauto 未安装，无法自动激活窗口"
@@ -83,9 +83,9 @@ perform_auto_confirm() {
     fi
 }
 
-# 执行 dp open --auto-connect，实时监控输出并在检测到授权提示时自动确认
+# 执行 dpx open --auto-connect，实时监控输出并在检测到授权提示时自动确认
 run_dp_connect_auto() {
-    log_info "执行 dp open --auto-connect..."
+    log_info "执行 dpx open --auto-connect..."
     log_info "若 Chrome 弹出授权对话框，脚本将自动确认；也可手动切到 Chrome 点击 Allow"
 
     local auth_confirmed=false
@@ -97,7 +97,7 @@ run_dp_connect_auto() {
     fifo=$(mktemp -u)
     mkfifo "$fifo"
 
-    dp open --auto-connect 2>&1 | tee "$tmp" > "$fifo" &
+    dpx open --auto-connect 2>&1 | tee "$tmp" > "$fifo" &
     local dp_pid=$!
 
     while IFS= read -r line <"$fifo"; do
@@ -118,16 +118,16 @@ run_dp_connect_auto() {
     if [ $exit_code -eq 0 ]; then
         log_info "连接成功"
     else
-        log_error "dp open --auto-connect 失败 (exit=$exit_code)"
+        log_error "dpx open --auto-connect 失败 (exit=$exit_code)"
         log_warn "若未点 Allow：请手动切到 Chrome 窗口点击 Allow 后重试"
     fi
     return $exit_code
 }
 
 run_dp_connect_simple() {
-    log_info "手动模式：执行 dp open --auto-connect"
+    log_info "手动模式：执行 dpx open --auto-connect"
     log_warn "请留意 Chrome 是否弹出 Allow 对话框，需手动点击 Allow"
-    dp open --auto-connect
+    dpx open --auto-connect
 }
 
 main() {

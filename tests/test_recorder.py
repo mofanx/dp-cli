@@ -69,7 +69,7 @@ def test_dp_script_click():
     actions = [_click()]
     result = recorder._export_dp_script(actions)
     assert "#!/usr/bin/env bash" in result
-    assert "dp click 'css:#btn'" in result
+    assert "dpx click 'css:#btn'" in result
 
 
 @pytest.mark.unit
@@ -77,7 +77,7 @@ def test_dp_script_fill():
     """含 dp fill 'css:#name' hello。shlex.quote 不给简单字符串加引号。"""
     actions = [_fill()]
     result = recorder._export_dp_script(actions)
-    assert "dp fill 'css:#name' hello" in result
+    assert "dpx fill 'css:#name' hello" in result
 
 
 @pytest.mark.unit
@@ -85,7 +85,7 @@ def test_dp_script_scroll():
     """scroll 动作输出含 dp scroll --x 0 --y 300,且含 --mouse-x 10 --mouse-y 20。"""
     actions = [_scroll()]
     result = recorder._export_dp_script(actions)
-    assert "dp scroll --x 0 --y 300" in result
+    assert "dpx scroll --x 0 --y 300" in result
     assert "--mouse-x 10 --mouse-y 20" in result
 
 
@@ -113,8 +113,8 @@ def test_dp_script_select_and_check():
         {"type": "check", "best_locator": "css:#chk", "checked": True}
     ]
     result = recorder._export_dp_script(actions)
-    assert "dp select" in result
-    assert "dp click" in result
+    assert "dpx select" in result
+    assert "dpx click" in result
     assert "# check:" in result
 
 
@@ -123,7 +123,7 @@ def test_dp_script_press():
     """press 动作的输出。shlex.quote 不给简单字符串加引号。"""
     actions = [{"type": "press", "key": "Tab"}]
     result = recorder._export_dp_script(actions)
-    assert "dp press Tab" in result
+    assert "dpx press Tab" in result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

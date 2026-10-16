@@ -82,7 +82,7 @@ def register(cli):
     @session_option
     @click.option('--persist', is_flag=True,
                   help='经 addInitScript 持久化：导航后仍可用，且写入会话'
-                       '由后续 dp 命令自动重放')
+                       '由后续 dpx 命令自动重放')
     def rpc_register(name, js, session, persist):
         """注册命名 JS 函数为 RPC（挂到 window.__dp_rpc[name]）。
 
@@ -91,9 +91,9 @@ def register(cli):
 
         \b
         示例:
-          dp rpc-register sign 'function(p){return CryptoJS.MD5(p).toString()}'
-          dp rpc-register add '(a,b)=>a+b' --persist
-          dp rpc-register wrap 'const m=window.__sign;return m(__args[0])'
+          dpx rpc-register sign 'function(p){return CryptoJS.MD5(p).toString()}'
+          dpx rpc-register add '(a,b)=>a+b' --persist
+          dpx rpc-register wrap 'const m=window.__sign;return m(__args[0])'
         """
         page = _get_page(session)
         script = _register_js(name, js)
@@ -131,10 +131,10 @@ def register(cli):
 
         \b
         示例:
-          dp rpc-call sign '["payload",123]'
-          dp rpc-call add '[1,2]'
-          dp rpc-call JSON.stringify '[{"a":1}]'
-          dp rpc-call btoa '["hello"]'
+          dpx rpc-call sign '["payload",123]'
+          dpx rpc-call add '[1,2]'
+          dpx rpc-call JSON.stringify '[{"a":1}]'
+          dpx rpc-call btoa '["hello"]'
         """
         argv = _parse_args(args)
         page = _get_page(session)

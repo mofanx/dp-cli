@@ -39,8 +39,8 @@ def register(cli):
 
         \b
         示例:
-          dp cookie-list
-          dp cookie-list --domain example.com
+          dpx cookie-list
+          dpx cookie-list --domain example.com
         """
         page = _get_page(session)
         try:
@@ -126,8 +126,8 @@ def register(cli):
 
         \b
         示例:
-          dp cookie-set session_id abc123
-          dp cookie-set token xxx --domain example.com --http-only --secure
+          dpx cookie-set session_id abc123
+          dpx cookie-set token xxx --domain example.com --http-only --secure
         """
         page = _get_page(session)
         try:
@@ -177,16 +177,16 @@ def register(cli):
     def cookie_export(session, domain, fmt, output):
         """导出 Cookie（默认 Netscape 格式，curl/requests/curl_cffi 可直接加载）。
 
-        典型逆向闭环：浏览器过盾（dp open + stealth）→ 本命令导出
-        cf_clearance 等凭据 → dp http-get --impersonate 高速续爬。
+        典型逆向闭环：浏览器过盾（dpx open + stealth）→ 本命令导出
+        cf_clearance 等凭据 → dpx http-get --impersonate 高速续爬。
 
         注意：netscape 格式不携带 HttpOnly 标志（该格式无此字段；
         `#HttpOnly_` 前缀是 curl 私有扩展，本导出未启用）。
 
         \b
         示例:
-          dp cookie-export --output cookies.txt
-          dp cookie-export --domain example.com --format json
+          dpx cookie-export --output cookies.txt
+          dpx cookie-export --domain example.com --format json
           curl -b cookies.txt https://example.com  # 直接复用
         """
         page = _get_page(session)

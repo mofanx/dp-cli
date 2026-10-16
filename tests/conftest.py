@@ -8,6 +8,24 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_session_state(tmp_path: Path, monkeypatch):
+    """autouse：会话目录/页面缓存/DP_CLI_* 环境变量全量隔离。
+
+    _SESSION_DIR 是 import 期模块常量，真实 ~/.dp_cli/sessions 残留
+    （真机冒烟、其他工程会话）会污染未挂 isolated_session_dir 的用例
+    ——全部重定向到每用例独立 tmp；_PAGE_CACHE 与逃生开关同样复位。
+    """
+    import dp_cli.session as session_mod
+    d = tmp_path / '.dp_cli' / 'sessions'
+    d.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(session_mod, '_SESSION_DIR', d)
+    monkeypatch.delenv('DP_CLI_NO_STUB', raising=False)
+    session_mod._PAGE_CACHE.clear()
+    yield
+    session_mod._PAGE_CACHE.clear()
+
+
 @pytest.fixture
 def tmp_work_dir(tmp_path: Path) -> Path:
     """提供一个干净的临时工作目录。"""

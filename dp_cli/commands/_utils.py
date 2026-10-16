@@ -89,10 +89,10 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
         page = get_browser(session)
     except Exception as e:
         # 分流：会话文件存在但浏览器不可达（断连）→ SESSION_DISCONNECTED；
-        # 会话本就不存在 → SESSION_NOT_FOUND（提示先 dp open）
+        # 会话本就不存在 → SESSION_NOT_FOUND（提示先 dpx open）
         code = ('SESSION_DISCONNECTED' if load_session(session)
                 else 'SESSION_NOT_FOUND')
-        error(f'无法连接浏览器会话 [{session}]，请先执行 dp open',
+        error(f'无法连接浏览器会话 [{session}]，请先执行 dpx open',
               code=code, detail=str(e))
         return
 
@@ -116,7 +116,7 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             except Exception:
                 target = page
 
-    # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dp 命令是独立
+    # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dpx 命令是独立
     # Python 进程/独立 session，必须重新注册才能让下一次 navigation 生效。
     stealth_cfg = sess.get('stealth')
     if stealth_cfg:
@@ -385,7 +385,7 @@ def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
     ref_id = locator[4:]
     refs = load_refs(session)
     if not refs:
-        error(f'没有可用的 ref 映射，请先执行 dp snapshot',
+        error(f'没有可用的 ref 映射，请先执行 dpx snapshot',
               code='NO_REFS')
         raise SystemExit(1)
 

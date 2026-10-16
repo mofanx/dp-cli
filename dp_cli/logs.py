@@ -2,7 +2,7 @@
 """dp-cli 全局 debug 日志通道（零依赖，避免循环导入）。
 
 启用方式（任一）：
-  - CLI 全局开关: dp -v/--verbose <command>
+  - CLI 全局开关: dpx -v/--verbose <command>
   - 环境变量: DP_DEBUG=1（或 true/yes/on）
 
 约定：debug 输出一律走 stderr，不污染 stdout 的 JSON 契约。

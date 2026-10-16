@@ -240,7 +240,7 @@ def register(cli):
                   help='hook 标识（默认自动生成 type-N）')
     @click.option('--persist', is_flag=True,
                   help='经 addInitScript 持久化：导航后仍生效，写入会话'
-                       '由后续 dp 命令自动重放')
+                       '由后续 dpx 命令自动重放')
     @session_option
     def hook_set(htype, path, name, url, method, when, hid, persist, session):
         """注入 JS hook 捕获页内行为（逆向定位加密/cookie/签名链路）。
@@ -254,10 +254,10 @@ def register(cli):
 
         \b
         示例:
-          dp hook-set --type cookie --name 'session|token' --persist
-          dp hook-set --type func --path CryptoJS.MD5
-          dp hook-set --type prop --path Navigator.prototype.webdriver
-          dp hook-set --type xhr --url '/api/' --method POST
+          dpx hook-set --type cookie --name 'session|token' --persist
+          dpx hook-set --type func --path CryptoJS.MD5
+          dpx hook-set --type prop --path Navigator.prototype.webdriver
+          dpx hook-set --type xhr --url '/api/' --method POST
         """
         # 参数前置校验（不触发浏览器 attach）
         if htype in ('func', 'prop'):

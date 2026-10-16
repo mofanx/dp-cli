@@ -51,8 +51,8 @@ def register(cli):
 
         \b
         示例:
-          dp perf
-          dp perf --raw
+          dpx perf
+          dpx perf --raw
         """
         page = _get_page(session)
         try:
@@ -93,7 +93,7 @@ def register(cli):
 
         \b
         示例:
-          dp trace --duration 10 --output trace.json
+          dpx trace --duration 10 --output trace.json
         """
         page = _get_page(session)
         events = []
@@ -149,7 +149,7 @@ def register(cli):
 
         \b
         示例:
-          dp screencast --dir ./frames --duration 10
+          dpx screencast --dir ./frames --duration 10
         """
         page = _get_page(session)
         try:

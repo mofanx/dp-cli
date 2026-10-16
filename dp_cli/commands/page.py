@@ -29,10 +29,10 @@ def register(cli):
 
         \b
         示例:
-          dp screenshot
-          dp screenshot --filename page.png
-          dp screenshot --full-page
-          dp screenshot --locator "#header"
+          dpx screenshot
+          dpx screenshot --filename page.png
+          dpx screenshot --full-page
+          dpx screenshot --locator "#header"
         """
         page = _get_page(session)
         try:
@@ -60,8 +60,8 @@ def register(cli):
 
         \b
         示例:
-          dp pdf
-          dp pdf --filename output.pdf
+          dpx pdf
+          dpx pdf --filename output.pdf
         """
         page = _get_page(session)
         try:
@@ -86,10 +86,10 @@ def register(cli):
 
         \b
         示例:
-          dp eval "document.title"
-          dp eval "window.innerWidth"
-          dp eval "el => el.textContent" --locator "#header"
-          dp eval "return Array.from(document.links).map(l=>l.href)"
+          dpx eval "document.title"
+          dpx eval "window.innerWidth"
+          dpx eval "el => el.textContent" --locator "#header"
+          dpx eval "return Array.from(document.links).map(l=>l.href)"
         """
         page = _get_page(session)
         try:
@@ -119,8 +119,8 @@ def register(cli):
 
         \b
         示例:
-          dp add-init-js "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
-          dp add-init-js "window.__dp_cli = true"
+          dpx add-init-js "Object.defineProperty(navigator,'webdriver',{get:()=>undefined})"
+          dpx add-init-js "window.__dp_cli = true"
         """
         page = _get_page(session)
         try:
@@ -143,9 +143,9 @@ def register(cli):
 
         \b
         示例:
-          dp console-listen
-          dp console-dump
-          dp console-dump --keep    # dump 后继续保持监听
+          dpx console-listen
+          dpx console-dump
+          dpx console-dump --keep    # dump 后继续保持监听
         """
         page = _get_page(session)
         try:
@@ -236,8 +236,8 @@ def register(cli):
 
         \b
         示例:
-          dp dialog-accept
-          dp dialog-accept "确认文本"
+          dpx dialog-accept
+          dpx dialog-accept "确认文本"
         """
         page = _get_page(session)
         try:
@@ -281,22 +281,22 @@ def register(cli):
 
         \b
         示例:
-          dp wait --loaded                          # DOM 加载完成
-          dp wait --idle                            # 网络空闲 2 秒（默认）
-          dp wait --idle 3                          # 自定义空闲时长
-          dp wait --locator "#result"               # 元素出现
-          dp wait --locator-gone ".loading"          # 加载指示器消失
-          dp wait --url "success"                   # URL 变化
-          dp wait --title "搜索结果"                 # 标题变化
-          dp wait --text "操作成功"                  # 页面含文本
-          dp wait --downloads-done                  # 下载完成
-          dp wait --js "window.appReady === true"   # JS 表达式为真
-          dp wait --response "api/login"            # 捕获到 URL 含 api/login 的响应
+          dpx wait --loaded                          # DOM 加载完成
+          dpx wait --idle                            # 网络空闲 2 秒（默认）
+          dpx wait --idle 3                          # 自定义空闲时长
+          dpx wait --locator "#result"               # 元素出现
+          dpx wait --locator-gone ".loading"          # 加载指示器消失
+          dpx wait --url "success"                   # URL 变化
+          dpx wait --title "搜索结果"                 # 标题变化
+          dpx wait --text "操作成功"                  # 页面含文本
+          dpx wait --downloads-done                  # 下载完成
+          dpx wait --js "window.appReady === true"   # JS 表达式为真
+          dpx wait --response "api/login"            # 捕获到 URL 含 api/login 的响应
 
         \b
         懒加载典型工作流:
-          dp scroll --bottom && dp wait --idle
-          dp count ".item"
+          dpx scroll --bottom && dpx wait --idle
+          dpx count ".item"
         """
         page = _get_page(session)
         try:

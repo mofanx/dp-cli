@@ -91,6 +91,58 @@ def _detect_headless(port: int) -> bool:
         return False
 
 
+def _port_open(ip: str, port: int, timeout: float = 0.3) -> bool:
+    """TCP 快速探测端口是否可达（connection refused 立即返回 False）。
+
+    用于在 DrissionPage test_connect（固定空转 browser_connect_timeout=30s）
+    之前快速失败死端口路径：~0.1s vs 30s。
+    """
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            return s.connect_ex((ip, int(port))) == 0
+    except OSError:
+        return False
+
+
+def _probe_cdp_http(port: int, timeout: float = 1.5) -> bool:
+    """严格探测端口是否标准 CDP HTTP 端点（/json/version 返回合法 JSON）。
+
+    TCP 开 ≠ 可 attach：inspect 限流端口 /json 一律 404，其他服务监听
+    也走不通。不预检的话 DrissionPage test_connect 会空转满
+    browser_connect_timeout(30s) 才报错。~ms 级成本换掉 30s 空转。
+    """
+    try:
+        import requests
+        r = requests.get(f'http://127.0.0.1:{port}/json/version',
+                         timeout=timeout)
+        if r.status_code != 200:
+            return False
+        data = r.json()
+        return isinstance(data, dict) and 'Browser' in data
+    except Exception:
+        return False
+
+
+def _bridge_upstream_alive(bridge_port: int, timeout: float = 1.5) -> bool:
+    """探测 bridge 的上游 WS 是否还连着（GET /healthz）。
+
+    旧版本 bridge 没有 /healthz（404）或探测失败：按"未知"放行，沿用
+    现有 attach 路径——宁可多试一次也不误杀健康 bridge（重建要用户
+    重新点 Allow）。
+    """
+    try:
+        import requests
+        r = requests.get(f'http://127.0.0.1:{bridge_port}/healthz',
+                         timeout=timeout)
+        if r.status_code == 404:
+            return True
+        return r.status_code == 200 and r.json().get('upstream') is True
+    except Exception:
+        return True
+
+
 # ── chrome://inspect 远程调试：端口自动发现 ─────────────────────────────────
 #
 # Chrome 144+ 支持用户在 chrome://inspect/#remote-debugging 点击
@@ -242,12 +294,21 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
 
     real_port = discover_port_from_profile(probe_dir)
 
+    # 快速失败：DevToolsActivePort 残留但浏览器已退出——TCP 秒拒，
+    # 不必走 DrissionPage test_connect 的 30s 空转
+    if not _port_open('127.0.0.1', real_port):
+        raise ConnectionError(
+            f'端口 {real_port} 无法连接（DevToolsActivePort 残留）。\n'
+            f'浏览器可能已退出，请重新打开 Chrome/Edge 后重试。')
+
     # 已有 bridge 且仍存活 + 端口有效 → 直接复用
     old_bridge_pid = sess.get('bridge_pid')
     old_bridge_port = sess.get('bridge_port')
     old_real_port = sess.get('real_port')
     if (old_bridge_pid and old_bridge_port and is_bridge_alive(old_bridge_pid)
-            and old_real_port == real_port):
+            and old_real_port == real_port
+            and _port_open('127.0.0.1', old_bridge_port)
+            and _bridge_upstream_alive(old_bridge_port)):
         try:
             co = ChromiumOptions(read_file=False)
             co.set_local_port(old_bridge_port)
@@ -356,6 +417,25 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
 
     # === 情况1：用户明确指定端口（连接用户自己的浏览器） ===
     if port:
+        # 快速失败：端口死则 ~0.1s 报错，避免 DrissionPage test_connect
+        # 对 connection refused 也空转 30s（browser_connect_timeout）
+        if not _port_open('127.0.0.1', port):
+            raise ConnectionError(
+                f'端口 {port} 无法连接（TCP 拒绝）。\n'
+                f'请确认浏览器已使用 --remote-debugging-port={port} 启动。\n'
+                f'启动命令示例:\n'
+                f'  google-chrome --remote-debugging-port={port}\n'
+                f'  chromium --remote-debugging-port={port}')
+        # TCP 开 ≠ CDP：inspect 限流端口/其他服务监听时 /json 全 404，
+        # DrissionPage test_connect 会空转 30s——先 1.5s 预检拿清晰错误
+        if not _probe_cdp_http(port):
+            raise ConnectionError(
+                f'端口 {port} 不是标准 CDP 端点（/json/version 无有效响应）。\n'
+                f'若这是 chrome://inspect/#remote-debugging 授权端口'
+                f'（Chrome 144+，无 HTTP REST 接口），请改用：\n'
+                f'  dpx open -a\n'
+                f'若浏览器以 --remote-debugging-port={port} 启动但此处报错，\n'
+                f'可能是浏览器仍在初始化，稍后重试即可。')
         co = ChromiumOptions(read_file=False)
         co.set_local_port(port)
         co.existing_only(True)
@@ -388,8 +468,27 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     saved_port = sess.get('port')
     probe_dir = sess.get('probe_dir')  # auto-connect 模式记录的 user-data-dir
 
-    # 2a) 先尝试 saved_port 直连
-    if saved_port:
+    # 2a) 先尝试 saved_port 直连（死端口先 TCP 探测，免 30s 空转）。
+    # 注意：探测失败只置 skip_saved 标记，不清空 saved_port——后面
+    # "user_connected 不可达"守卫要靠原始端口值判断，清空了会让
+    # user_connected 会话静默落到"新建浏览器"分支顶替用户的浏览器。
+    skip_saved = False
+    if saved_port and not _port_open('127.0.0.1', saved_port):
+        debug(f'saved_port={saved_port} TCP 拒绝，跳过直连尝试')
+        skip_saved = True
+    elif saved_port and not _probe_cdp_http(saved_port):
+        # TCP 开但 /json/version 无有效响应（inspect 端口/非 CDP 服务），
+        # 直连必然触发 test_connect 30s 空转——直接跳过走复用路径
+        debug(f'saved_port={saved_port} 非标准 CDP 端点，跳过直连尝试')
+        skip_saved = True
+    elif saved_port and saved_port == sess.get('bridge_port') \
+            and not _bridge_upstream_alive(saved_port):
+        # saved_port 是 bridge 端口且上游已断（Chrome 重启等）：
+        # /json/version 是 bridge 本地应答仍返回 200，但 attach 后
+        # /json 会因上游断开而失败——跳过走 probe_dir 重建路径
+        debug(f'saved_port={saved_port} bridge 上游已断，跳过直连')
+        skip_saved = True
+    if saved_port and not skip_saved:
         try:
             co = ChromiumOptions(read_file=False)
             co.set_local_port(saved_port)
@@ -560,7 +659,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
         except Exception as e:
             debug(f'stop_bridge(pid={bridge_pid}) 失败', e)
 
-    if not port:
+    if not port or not _port_open('127.0.0.1', port):
+        # 端口死则浏览器已不在——跳过 attach（否则 test_connect 空转 30s）
         delete_session(session_name)
         return False
 

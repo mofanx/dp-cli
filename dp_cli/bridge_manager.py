@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -181,11 +182,25 @@ def start_bridge(user_data_dir: str | os.PathLike,
             s = '...(truncated)...\n' + s[-max_chars:]
         return s
 
-    # 读 stdout 直到出现 BRIDGE_READY，或超时，或进程退出
+    # 读 stdout 直到出现 BRIDGE_READY，或超时，或进程退出。
+    # 等待 >1.5s 说明 Chrome 弹了 "Allow remote debugging" 授权框等人点——
+    # 框常被窗口盖住（几十秒延迟的主因），发桌面通知引导用户点击。
     deadline = time.monotonic() + ready_timeout
     actual_port: int | None = None
+    notified = False
     try:
         while time.monotonic() < deadline:
+            if not notified and time.monotonic() > deadline - ready_timeout + 1.5:
+                notified = True
+                try:
+                    if shutil.which('notify-send'):
+                        subprocess.Popen(
+                            ['notify-send', '-a', 'dp-cli', '-t', '15000',
+                             'dp-cli 等待浏览器授权',
+                             '请在 Chrome/Edge 中点击 "Allow remote debugging"'],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception as e:
+                    debug('notify-send 发送失败（忽略）', e)
             if proc.poll() is not None:
                 raise RuntimeError(
                     f'bridge 子进程提前退出 (code={proc.returncode})。stderr:\n{_collect_stderr()}'

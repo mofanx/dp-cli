@@ -32,6 +32,13 @@ def _fake_co_factory():
     return factory
 
 
+def _patch_attach_probes(monkeypatch):
+    """mock TCP/HTTP 预检探针全部放行，让测试聚焦 ChromiumPage 层行为
+    （不依赖测试机 9222 等端口的真实监听状态）。"""
+    monkeypatch.setattr(session, "_port_open", lambda *a, **k: True)
+    monkeypatch.setattr(session, "_probe_cdp_http", lambda *a, **k: True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2.2 会话文件 CRUD
 # ─────────────────────────────────────────────────────────────────────────────
@@ -574,7 +581,8 @@ def test_close_browser_not_user_connected_with_port_exception(session_dir, monke
     
     monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions", fake_chromium_options)
-    
+    _patch_attach_probes(monkeypatch)
+
     result = session.close_browser('test')
     assert result is True
     assert not (session_dir / 'test.json').exists()
@@ -599,6 +607,7 @@ def test_close_browser_user_connected_force_quits(session_dir, monkeypatch):
         lambda *a, **k: Mock())
     monkeypatch.setattr("dp_cli.bridge_manager.stop_bridge",
                         lambda pid, timeout=None: True)
+    _patch_attach_probes(monkeypatch)
 
     result = session.close_browser('test', force=True)
     assert result is True
@@ -642,7 +651,8 @@ def test_get_browser_with_port_success(session_dir, monkeypatch):
     monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions", fake_chromium_options)
     monkeypatch.setattr(session, "_detect_headless", lambda port: False)
-    
+    _patch_attach_probes(monkeypatch)
+
     result = session.get_browser('test', port=9222)
     
     assert result == fake_page
@@ -667,9 +677,162 @@ def test_get_browser_with_port_connect_error(session_dir, monkeypatch):
     monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions", fake_chromium_options)
     monkeypatch.setattr(session, "_detect_headless", lambda port: False)
-    
+    _patch_attach_probes(monkeypatch)
+
     with pytest.raises(ConnectionError, match="无法连接到端口 9222"):
         session.get_browser('test', port=9222)
+
+
+@pytest.mark.unit
+def test_get_browser_dead_port_fails_fast(session_dir, monkeypatch):
+    """死端口快速失败：TCP 探测 ~0.1s 即抛，不触碰 ChromiumPage
+    （否则 DrissionPage test_connect 空转 30s browser_connect_timeout）。"""
+    called = []
+    monkeypatch.setattr("DrissionPage.ChromiumPage",
+                        lambda *a, **k: called.append(1))
+    import time
+    t0 = time.perf_counter()
+    with pytest.raises(ConnectionError, match="TCP 拒绝"):
+        # 1 号端口几乎不可能有服务监听
+        session.get_browser('test', port=1)
+    assert time.perf_counter() - t0 < 2
+    assert called == []
+
+
+@pytest.mark.unit
+def test_port_open_dead_and_live(monkeypatch):
+    """_port_open：死端口 False；真开 socket 监听则 True。"""
+    import socket as _s
+    assert not session._port_open('127.0.0.1', 1)
+    srv = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+    srv.bind(('127.0.0.1', 0)); srv.listen(1)
+    try:
+        assert session._port_open('127.0.0.1', srv.getsockname()[1])
+    finally:
+        srv.close()
+
+
+class _MiniHttpServer:
+    """小型假 HTTP 服务：/json/version 与 /healthz 可配置返回。"""
+
+    def __init__(self, version_mode='classic', healthz_mode='up'):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        vm, hm = version_mode, healthz_mode
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a, **k):
+                pass
+
+            def do_GET(self):
+                if self.path == '/json/version':
+                    if vm == 'classic':
+                        body = (b'{"Browser":"Chrome/147.0.0",'
+                                b'"User-Agent":"Mozilla/5.0"}')
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    else:  # inspect / 任意非 classic：404
+                        self.send_response(404)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                elif self.path == '/healthz':
+                    if hm == 'absent':
+                        self.send_response(404)
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                    else:
+                        up = b'true' if hm == 'up' else b'false'
+                        body = b'{"upstream":' + up + b'}'
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self.send_header('Content-Length', str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                else:
+                    self.send_response(404)
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+
+        self.server = HTTPServer(('127.0.0.1', 0), H)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.mark.unit
+def test_probe_cdp_http_states():
+    """_probe_cdp_http：classic JSON→True；404（inspect）→False；死端口→False。"""
+    classic = _MiniHttpServer('classic')
+    inspect = _MiniHttpServer('inspect')
+    try:
+        assert session._probe_cdp_http(classic.port) is True
+        assert session._probe_cdp_http(inspect.port) is False
+        assert session._probe_cdp_http(1, timeout=0.5) is False
+    finally:
+        classic.stop()
+        inspect.stop()
+
+
+@pytest.mark.unit
+def test_bridge_upstream_alive_states():
+    """_bridge_upstream_alive：upstream:false→False；404（旧版无端点）→True；
+    死端口→True（探测失败不阻塞现有路径）。"""
+    down = _MiniHttpServer('classic', 'down')
+    old = _MiniHttpServer('classic', 'absent')
+    try:
+        assert session._bridge_upstream_alive(down.port) is False
+        assert session._bridge_upstream_alive(old.port) is True
+        assert session._bridge_upstream_alive(1, timeout=0.5) is True
+    finally:
+        down.stop()
+        old.stop()
+
+
+@pytest.mark.unit
+def test_get_browser_non_cdp_port_fails_fast(session_dir, monkeypatch):
+    """TCP 开但非 CDP 端点（如 inspect 限流端口）：~0.1s 报错并提示
+    用 open -a，不触碰 ChromiumPage（否则 test_connect 空转 30s）。"""
+    import time
+    srv = _MiniHttpServer('inspect')
+    called = []
+    monkeypatch.setattr("DrissionPage.ChromiumPage",
+                        lambda *a, **k: called.append(1))
+    try:
+        t0 = time.perf_counter()
+        with pytest.raises(ConnectionError, match="dpx open -a"):
+            session.get_browser('test', port=srv.port)
+        assert time.perf_counter() - t0 < 3
+        assert called == []
+    finally:
+        srv.stop()
+
+
+@pytest.mark.unit
+def test_get_browser_saved_port_non_cdp_skips(session_dir, monkeypatch):
+    """saved_port 是 TCP 开但非 CDP 的端口：跳过直连（免 30s），
+    user_connected 会话随后按不可达报错。"""
+    import time
+    srv = _MiniHttpServer('inspect')
+    called = []
+    monkeypatch.setattr("DrissionPage.ChromiumPage",
+                        lambda *a, **k: called.append(1))
+    try:
+        session.save_session('test', {'port': srv.port,
+                                      'user_connected': True})
+        t0 = time.perf_counter()
+        with pytest.raises(ConnectionError, match="不可达"):
+            session.get_browser('test')
+        assert time.perf_counter() - t0 < 3
+        assert called == []
+    finally:
+        srv.stop()
 
 
 @pytest.mark.unit
@@ -693,9 +856,10 @@ def test_get_browser_reuse_saved_port(session_dir, monkeypatch):
     monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions", fake_chromium_options)
     monkeypatch.setattr(session, "_detect_headless", lambda port: False)
-    
+    _patch_attach_probes(monkeypatch)
+
     result = session.get_browser('test')
-    
+
     assert result == fake_page
     # 验证走的是复用路径（没有新建，port 仍是 9333）
     saved = session.load_session('test')
@@ -753,6 +917,7 @@ def test_get_browser_user_connected_dead_port_raises(session_dir, monkeypatch):
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
                         _fake_co_factory())
     monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+    _patch_attach_probes(monkeypatch)
 
     with pytest.raises(ConnectionError, match="用户浏览器已不可达"):
         session.get_browser('test')
@@ -780,6 +945,7 @@ def test_get_browser_user_connected_explicit_params_recreates(
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
                         _fake_co_factory())
     monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+    _patch_attach_probes(monkeypatch)
 
     result = session.get_browser('test', user_data_dir='/x')
     assert result == fake_page
@@ -805,6 +971,7 @@ def test_get_browser_dp_managed_dead_port_recreates(session_dir, monkeypatch):
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions",
                         _fake_co_factory())
     monkeypatch.setattr(session, "_detect_headless", lambda *a, **kw: False)
+    _patch_attach_probes(monkeypatch)
 
     result = session.get_browser('test')
     assert result == fake_page
@@ -847,7 +1014,8 @@ def test_connect_via_bridge_classic(session_dir, monkeypatch):
     monkeypatch.setattr(session, "discover_port_from_profile", lambda *args, **kwargs: 9222)
     monkeypatch.setattr("dp_cli.bridge_manager.detect_inspect_mode", lambda *args, **kwargs: False)
     monkeypatch.setattr(session, "_detect_headless", lambda *args, **kwargs: False)
-    
+    _patch_attach_probes(monkeypatch)
+
     sess = {}
     result = session._connect_via_bridge('test', '/probe', sess)
     
@@ -882,7 +1050,8 @@ def test_connect_via_bridge_inspect(session_dir, monkeypatch):
     monkeypatch.setattr(session, "discover_port_from_profile", lambda *args, **kwargs: 9222)
     monkeypatch.setattr("dp_cli.bridge_manager.detect_inspect_mode", lambda *args, **kwargs: True)
     monkeypatch.setattr("dp_cli.bridge_manager.start_bridge", lambda *args, **kwargs: (12345, 9555))
-    
+    _patch_attach_probes(monkeypatch)
+
     sess = {}
     result = session._connect_via_bridge('test', '/probe', sess)
     
@@ -919,9 +1088,10 @@ def test_close_browser_quit_success(session_dir, monkeypatch):
     
     monkeypatch.setattr("DrissionPage.ChromiumPage", fake_chromium_page)
     monkeypatch.setattr("DrissionPage._configs.chromium_options.ChromiumOptions", fake_chromium_options)
-    
+    _patch_attach_probes(monkeypatch)
+
     result = session.close_browser('test')
-    
+
     assert result is True
     fake_browser.quit.assert_called_once()
     assert not (session_dir / 'test.json').exists()
@@ -934,6 +1104,7 @@ def test_saved_port_headless_cached_skips_probe(session_dir, monkeypatch):
     probes = []
     monkeypatch.setattr(session, '_detect_headless',
                         lambda p: probes.append(p) or False)
+    _patch_attach_probes(monkeypatch)
     applied = []
     fake_page = Mock()
 
@@ -960,6 +1131,7 @@ def test_saved_port_headless_uncached_probes(session_dir, monkeypatch):
     probes = []
     monkeypatch.setattr(session, '_detect_headless',
                         lambda p: probes.append(p) or True)
+    _patch_attach_probes(monkeypatch)
     applied = []
 
     def fake_opts(*a, **k):
@@ -985,6 +1157,7 @@ def test_saved_port_user_connected_still_probes(session_dir, monkeypatch):
     probes = []
     monkeypatch.setattr(session, '_detect_headless',
                         lambda p: probes.append(p) or True)
+    _patch_attach_probes(monkeypatch)
     applied = []
 
     def fake_opts(*a, **k):

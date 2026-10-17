@@ -68,7 +68,26 @@ class FakeChrome:
             params = msg.get('params') or {}
             sess_id = msg.get('sessionId')
 
-            if method == 'Browser.getVersion':
+            if method == 'Target.setDiscoverTargets':
+                await ws.send(json.dumps({'id': mid, 'result': {}}))
+            elif method in ('Page.enable', 'DOM.enable', 'Runtime.enable',
+                            'Emulation.setFocusEmulationEnabled'):
+                await ws.send(json.dumps({'id': mid, 'sessionId': sess_id,
+                                          'result': {}}))
+            elif method == 'Page.getFrameTree':
+                await ws.send(json.dumps({'id': mid, 'sessionId': sess_id,
+                                          'result': {'frameTree': {
+                                              'frame': {'id': 'FRAME1'},
+                                              'childFrames': []}}}))
+            elif method == 'DOM.getDocument':
+                await ws.send(json.dumps({'id': mid, 'sessionId': sess_id,
+                                          'result': {'root': {
+                                              'backendNodeId': 1}}}))
+            elif method == 'DOM.resolveNode':
+                await ws.send(json.dumps({'id': mid, 'sessionId': sess_id,
+                                          'result': {'object': {
+                                              'objectId': 'OBJ1'}}}))
+            elif method == 'Browser.getVersion':
                 await ws.send(json.dumps({'id': mid, 'result': {
                     'product': 'Chrome/fake-147',
                     'protocolVersion': '1.3',
@@ -205,6 +224,47 @@ def test_bridge_end_to_end(tmp_path):
         assert r1 == 'echo:TARGET_PAGE_A:aaa'
         assert r2 == 'echo:TARGET_PAGE_B:bbb'
 
+    finally:
+        if bridge_pid:
+            bridge_manager.stop_bridge(bridge_pid, timeout=3)
+        fake.stop()
+
+
+@pytest.mark.integration
+@pytest.mark.timeout(30)
+def test_bridge_exits_on_upstream_close(tmp_path):
+    """上游 WS 断开（Chrome 重启/授权被关）→ bridge 进程应自行退出并释放
+    监听端口。僵尸 bridge 会让 _connect_via_bridge 的复用检查全绿但
+    attach 后在 /json 上空转挂死。"""
+    import socket as _s
+
+    fake = FakeChrome()
+    fake.start()
+    bridge_pid: int | None = None
+    try:
+        udd = _make_profile(tmp_path, fake.port, fake.browser_ws_path)
+        bridge_pid, bport = bridge_manager.start_bridge(
+            udd, listen_port=0, ready_timeout=15,
+        )
+
+        # 上游健康时 healthz 报 upstream:true
+        hz = requests.get(f'http://127.0.0.1:{bport}/healthz', timeout=5)
+        assert hz.status_code == 200 and hz.json()['upstream'] is True
+
+        # 杀上游 → bridge 应在几秒内退出并释放端口
+        fake.stop()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and \
+                bridge_manager.is_bridge_alive(bridge_pid):
+            time.sleep(0.1)
+        assert not bridge_manager.is_bridge_alive(bridge_pid), \
+            '上游断开后 bridge 未退出'
+
+        s = _s.socket()
+        s.settimeout(0.5)
+        assert s.connect_ex(('127.0.0.1', bport)) != 0, 'bridge 退出后端口仍监听'
+        s.close()
+        bridge_pid = None  # 已自行退出，无需清理
     finally:
         if bridge_pid:
             bridge_manager.stop_bridge(bridge_pid, timeout=3)

@@ -70,6 +70,11 @@ class CDPBridge:
         self._bridge_pending: dict[int, asyncio.Future] = {}
         self._send_lock = asyncio.Lock()
         self._connected_evt = asyncio.Event()
+        # 上游断开回调（由 main_async 注入 stop_evt.set）：
+        # 上游死了 bridge 就是僵尸——/json/version 照常应答但 /json 会
+        # 永远挂起，让调用方误以为端口可用。上游一断就退出，让 TCP 拒绝
+        # 把下一条命令快速导向"重读 DevToolsActivePort + 重起 bridge"。
+        self.on_upstream_closed: Any = None
 
     async def connect(self) -> None:
         if self.ws is not None:
@@ -108,6 +113,13 @@ class CDPBridge:
             self._session_to_client.clear()
             self.ws = None
             self._connected_evt.clear()
+            log.warning('upstream Chrome WebSocket closed → bridge shutting down '
+                        '(下一条 dpx 命令会自动重起 bridge 并重新授权)')
+            if self.on_upstream_closed is not None:
+                try:
+                    self.on_upstream_closed()
+                except Exception as e:
+                    log.debug('on_upstream_closed callback failed: %s', e)
 
     async def _handle_upstream_msg(self, msg: dict) -> None:
         msg_id = msg.get('id')
@@ -159,7 +171,10 @@ class CDPBridge:
 
     async def call(self, method: str, params: dict | None = None,
                    session_id: str | None = None) -> dict:
-        await self._connected_evt.wait()
+        if not self._connected_evt.is_set():
+            # 上游未连接/已断开：立刻失败。等待只会挂死——HTTP server 在
+            # connect() 成功后才开始服务，此分支只会命中"上游后挂"场景。
+            raise RuntimeError('upstream Chrome WebSocket not connected')
         mid = next(self._upstream_id)
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         self._bridge_pending[mid] = fut
@@ -340,6 +355,13 @@ async def handle_activate(request: web.Request) -> web.Response:
     return web.Response(text='Target activated')
 
 
+async def handle_healthz(request: web.Request) -> web.Response:
+    """轻量探活：返回上游 WS 连接状态，供调用方判断 bridge 是否还可复用。"""
+    st = request.app['state']
+    bridge: CDPBridge = st['bridge']
+    return web.json_response({'upstream': bridge._connected_evt.is_set()})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # WebSocket 入口
 # ─────────────────────────────────────────────────────────────────────────────
@@ -423,7 +445,9 @@ async def main_async(user_data_dir: Path, host: str, port: int) -> None:
     real_port, browser_ws_path = read_devtools_active_port(user_data_dir)
     log.info('DevToolsActivePort: port=%d ws_path=%s', real_port, browser_ws_path)
 
+    stop_evt = asyncio.Event()
     bridge = CDPBridge(real_port, browser_ws_path)
+    bridge.on_upstream_closed = stop_evt.set
     await bridge.connect()
     version = await bridge.call('Browser.getVersion')
 
@@ -438,6 +462,7 @@ async def main_async(user_data_dir: Path, host: str, port: int) -> None:
         'webkit_version': version.get('revision', ''),
     }
 
+    app.router.add_get('/healthz', handle_healthz)
     app.router.add_get('/json/version', handle_version)
     app.router.add_get('/json', handle_list)
     app.router.add_get('/json/list', handle_list)
@@ -462,7 +487,6 @@ async def main_async(user_data_dir: Path, host: str, port: int) -> None:
     print(f'BRIDGE_READY host={host} port={actual_port}', flush=True)
 
     # 等待终止信号
-    stop_evt = asyncio.Event()
     loop = asyncio.get_running_loop()
 
     if sys.platform == 'win32':

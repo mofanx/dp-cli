@@ -112,6 +112,43 @@ def _apply_browser_cdp(page, cfg: dict) -> None:
 
 
 def register(cli):
+    @cli.group('bridge')
+    def bridge_grp():
+        """bridge 子进程管理（auto-connect/inspect 模式的代理）。"""
+        pass
+
+    @bridge_grp.command('list')
+    def bridge_list():
+        """列出全部注册 bridge（跨 session 共享的代理进程）。"""
+        from dp_cli.bridge_registry import iter_entries
+        entries = iter_entries()
+        out = [{'pid': e.get('pid'), 'port': e.get('port'),
+                'real_port': e.get('real_port'),
+                'user_data_dir': e.get('user_data_dir'),
+                'sessions': e.get('sessions', [])} for e in entries]
+        ok({'count': len(out), 'bridges': out})
+
+    @bridge_grp.command('stop')
+    @click.option('--pid', type=int, default=None, help='按 pid 停（默认停全部注册项）')
+    @click.option('--user-data-dir', default=None, help='按 user-data-dir 停')
+    def bridge_stop(pid, user_data_dir):
+        """停止注册的 bridge 子进程。"""
+        from dp_cli.bridge_registry import iter_entries, unregister_bridge
+        from dp_cli.bridge_manager import stop_bridge as _stop
+        stopped = []
+        for e in iter_entries():
+            if pid is not None and e.get('pid') != pid:
+                continue
+            if user_data_dir and e.get('user_data_dir') != user_data_dir:
+                continue
+            try:
+                _stop(int(e['pid']))
+                unregister_bridge(e['user_data_dir'])
+                stopped.append({'pid': e['pid'], 'port': e.get('port')})
+            except Exception as ex:
+                debug(f'stop bridge pid={e.get("pid")} 失败', ex)
+        ok({'stopped': stopped, 'count': len(stopped)})
+
 
     @cli.command('open')
     @click.argument('url', required=False)
@@ -126,10 +163,13 @@ def register(cli):
                        '（需 Chrome/Edge 144+，用户在 chrome://inspect/#remote-debugging 或 '
                        'edge://inspect/#devices 启用）')
     @click.option('--channel',
-                  type=click.Choice(['auto', 'stable', 'beta', 'dev', 'canary', 'chromium', 'edge']),
+                  type=click.Choice(['auto', 'stable', 'beta', 'dev', 'canary',
+                                     'chromium', 'edge', 'edge-beta', 'edge-dev',
+                                     'edge-canary']),
                   default='auto', show_default=True,
                   help='配合 --auto-connect 使用，定位默认 user-data-dir；'
-                       'auto = 依次嗅探 chrome stable → edge stable，取首个含 DevToolsActivePort 的目录')
+                       'auto = 嗅探全部已装渠道（stable→edge→beta→dev→canary），'
+                       '取首个含 DevToolsActivePort 的目录')
     @click.option('--probe-dir', 'probe_dir', default=None,
                   help='配合 --auto-connect 使用，显式指定要探测的 user-data-dir '
                        '（覆盖 --channel 的默认路径）')
@@ -153,8 +193,9 @@ def register(cli):
              - Chrome：访问 chrome://inspect/#remote-debugging
              - Edge:   访问 edge://inspect/#devices
           2. 勾选 "Allow remote debugging for this browser instance"
-          3. dpx open --auto-connect            # 默认 auto：先嗅探 Chrome，再 Edge
+          3. dpx open --auto-connect            # 默认 auto：嗅探全部已装渠道
              dpx open --auto-connect --channel edge   # 强制使用 Edge stable
+             dpx open --auto-connect --channel edge-dev  # 使用 Edge dev
              dpx open --auto-connect --channel beta   # 使用 Chrome beta
              dpx open --auto-connect --probe-dir ~/my-profile   # 自定义 profile
 
@@ -187,7 +228,8 @@ def register(cli):
             if probe_dir:
                 dir_to_probe = Path(probe_dir).expanduser()
             elif channel == 'auto':
-                # 自动嗅探：chrome stable → edge stable，取首个含 DevToolsActivePort 的目录
+                # 自动嗅探：按 _AUTO_SNIFF_CHANNELS 顺序，取首个含
+                # DevToolsActivePort 且端口可连的目录
                 hit, diag = sniff_auto_user_data_dir()
                 if hit is None:
                     detail = '\n'.join(f'  - {ch:7s} {p}  [{reason}]'
@@ -313,7 +355,9 @@ def register(cli):
     @session_option
     @click.option('--del-data', is_flag=True, help='同时删除用户数据目录')
     @click.option('--force', is_flag=True, help='强制关闭浏览器（user_connected 模式下默认只断开连接）')
-    def cmd_close(session, del_data, force):
+    @click.option('--stop-bridge', is_flag=True,
+                  help='同时停止 bridge 子进程（默认保留供其他 session 复用）')
+    def cmd_close(session, del_data, force, stop_bridge):
         """关闭浏览器会话。
 
         如果是通过 --port 连接的用户自己的浏览器，默认只断开连接不关闭浏览器。
@@ -328,15 +372,17 @@ def register(cli):
         if user_connected and not force:
             # auto-connect/--port 默认只断开（不 quit 用户的 Chrome）；
             # close_browser 会同时停 bridge 子进程（若有）
-            result = close_browser(session)
+            result = close_browser(session, stop_bridge_flag=stop_bridge)
             if result:
-                extra = '，bridge 已停' if auto_connect else ''
+                extra = ('，bridge 已停' if (auto_connect and stop_bridge)
+                         else '，bridge 保留（可复用）' if auto_connect else '')
                 ok(msg=f'已断开与 [{session}] 的连接（浏览器仍运行{extra}）。'
                        f'用 --force 可尝试彻底关闭浏览器。')
             else:
                 error('断开失败', code='CLOSE_FAILED')
         else:
-            result = close_browser(session, del_data=del_data, force=force)
+            result = close_browser(session, del_data=del_data, force=force,
+                                   stop_bridge_flag=stop_bridge)
             if result:
                 ok(msg=f'会话 [{session}] 已关闭')
             else:

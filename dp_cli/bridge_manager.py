@@ -26,6 +26,11 @@ import time
 from pathlib import Path
 
 from dp_cli.logs import debug
+from dp_cli.bridge import BRIDGE_WS_OPEN_TIMEOUT
+
+# 父超时 = 子进程 ws open_timeout + 15s 余量——保证用户授权等待期间
+# 是子进程 ws_connect 先超时退出（明确报错），而非父进程抢先判死。
+DEFAULT_READY_TIMEOUT = BRIDGE_WS_OPEN_TIMEOUT + 15
 
 IS_WINDOWS = sys.platform == 'win32'
 
@@ -123,7 +128,7 @@ def detect_inspect_mode(port: int, timeout: float = 2.0) -> bool:
 
 def start_bridge(user_data_dir: str | os.PathLike,
                  listen_port: int = 0,
-                 ready_timeout: float = 90.0) -> tuple[int, int]:
+                 ready_timeout: float = None) -> tuple[int, int]:
     """启动 bridge 子进程，等待其就绪后返回 (pid, actual_port)。
 
     子进程在就绪时会向 stdout 打印 "BRIDGE_READY host=... port=..." 一行。
@@ -131,9 +136,14 @@ def start_bridge(user_data_dir: str | os.PathLike,
 
     :param user_data_dir: Chrome 用户数据目录（含 DevToolsActivePort）
     :param listen_port: 0 表示随机；否则尝试绑定指定端口
-    :param ready_timeout: 等待 ready 的秒数，首次连接用户需要点 Allow
+    :param ready_timeout: 等待 ready 的秒数，首次连接用户需要点 Allow；
+        None → DEFAULT_READY_TIMEOUT（= bridge ws open_timeout + 15，
+        保证父超时晚于子进程 ws 握手放弃——否则用户 90-120s 间点 Allow
+        会'握手成功但 bridge 已被父进程判死'）
     :raises RuntimeError: 子进程启动失败或超时
     """
+    if ready_timeout is None:
+        ready_timeout = DEFAULT_READY_TIMEOUT
     cmd = [
         sys.executable, '-m', 'dp_cli.bridge',
         '--user-data-dir', str(user_data_dir),
@@ -175,6 +185,22 @@ def start_bridge(user_data_dir: str | os.PathLike,
     stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
     stderr_thread.start()
 
+    # stdout 同样异步读到队列——不能用 proc.stdout.readline() 同步读：
+    # 授权等待期间 bridge 的 stdout 静默，readline 会一直阻塞，使循环里
+    # 的 notify/escalate/poll/deadline 检查全部失效（实测 90s ready_timeout
+    # 根本没生效，是被子进程 ws open_timeout=120s 兜住的）。
+    import queue as _queue
+    stdout_q: _queue.Queue = _queue.Queue()
+
+    def _read_stdout():
+        try:
+            for line in proc.stdout:
+                stdout_q.put(line)
+        except Exception as e:
+            debug('bridge stdout 读取线程结束异常', e)
+
+    threading.Thread(target=_read_stdout, daemon=True).start()
+
     def _collect_stderr(max_chars: int = 4000) -> str:
         with stderr_lock:
             s = ''.join(stderr_buf)
@@ -188,9 +214,11 @@ def start_bridge(user_data_dir: str | os.PathLike,
     deadline = time.monotonic() + ready_timeout
     actual_port: int | None = None
     notified = False
+    escalated = False
     try:
         while time.monotonic() < deadline:
-            if not notified and time.monotonic() > deadline - ready_timeout + 1.5:
+            elapsed = time.monotonic() - (deadline - ready_timeout)
+            if not notified and elapsed > 1.5:
                 notified = True
                 try:
                     if shutil.which('notify-send'):
@@ -201,13 +229,22 @@ def start_bridge(user_data_dir: str | os.PathLike,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 except Exception as e:
                     debug('notify-send 发送失败（忽略）', e)
+            # 等超 8s 还没点：授权框多半被窗口遮挡，或浏览器根本没有
+            # 可见窗口（无窗口时 Chrome 无法渲染授权框，握手会一直挂起
+            # ——browser-harness#554 已实证）。给用户可操作的指引。
+            if notified and not escalated and elapsed > 8:
+                escalated = True
+                print('[dp] ⏳ 等待授权超 8s——若浏览器窗口被遮挡请切到前台；\n'
+                      '    若 Chrome/Edge 当前没有可见窗口，授权框无法渲染，\n'
+                      '    请先打开一个浏览器窗口再等待/重试。',
+                      file=sys.stderr, flush=True)
             if proc.poll() is not None:
                 raise RuntimeError(
                     f'bridge 子进程提前退出 (code={proc.returncode})。stderr:\n{_collect_stderr()}'
                 )
-            line = proc.stdout.readline()
-            if not line:
-                time.sleep(0.05)
+            try:
+                line = stdout_q.get(timeout=0.2)
+            except _queue.Empty:
                 continue
             m = _READY_RE.match(line.strip())
             if m:
@@ -228,18 +265,8 @@ def start_bridge(user_data_dir: str | os.PathLike,
             debug('bridge 启动失败后 terminate 失败', e)
         raise
 
-    # ready 后让 bridge 的 stdout 继续被 drain，避免管道阻塞。
-    # stderr 已有 stderr_thread 在持续消费，继续复用即可。
-    def _drain(stream):
-        try:
-            for _ in stream:
-                pass
-        except Exception as e:
-            debug('stdout drain 线程结束异常', e)
-
-    if proc.stdout:
-        threading.Thread(target=_drain, args=(proc.stdout,), daemon=True).start()
-
+    # _read_stdout 线程在 READY 后持续消费 stdout，天然承担 drain 职责；
+    # stderr 已有 stderr_thread 在持续消费。
     return proc.pid, actual_port
 
 

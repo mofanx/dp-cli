@@ -45,6 +45,9 @@ log = logging.getLogger('dp_cli.bridge')
 # DevToolsActivePort
 # ─────────────────────────────────────────────────────────────────────────────
 
+BRIDGE_WS_OPEN_TIMEOUT = 120
+
+
 def read_devtools_active_port(user_data_dir: Path) -> tuple[int, str]:
     f = user_data_dir / 'DevToolsActivePort'
     lines = [l.strip() for l in f.read_text().splitlines() if l.strip()]
@@ -82,7 +85,8 @@ class CDPBridge:
         uri = f'ws://127.0.0.1:{self.real_port}{self.browser_ws_path}'
         log.info('connecting to real Chrome: %s', uri)
         log.info('  ⏳ 首次连接请在 Chrome 中点击 "Allow" 授权远程调试')
-        self.ws = await ws_connect(uri, open_timeout=120, max_size=None)
+        self.ws = await ws_connect(uri, open_timeout=BRIDGE_WS_OPEN_TIMEOUT,
+                                      max_size=None)
         log.info('  ✅ 已连接真 Chrome')
         self._connected_evt.set()
         asyncio.create_task(self._recv_loop())
@@ -113,6 +117,21 @@ class CDPBridge:
             self._session_to_client.clear()
             self.ws = None
             self._connected_evt.clear()
+            # 挂起请求立即失败，不等调用方各自 15s wait_for 超时
+            for fut in self._bridge_pending.values():
+                if not fut.done():
+                    fut.set_exception(
+                        RuntimeError('upstream Chrome WebSocket closed'))
+            self._bridge_pending.clear()
+            for up_id, pend in self._pending_upstream.items():
+                err = {'id': pend['client_id'],
+                       'error': {'code': -32000,
+                                 'message': 'upstream Chrome WebSocket closed'}}
+                try:
+                    await pend['client_ws'].send_str(json.dumps(err))
+                except Exception as e:
+                    log.debug('pend error reply failed: %s', e)
+            self._pending_upstream.clear()
             log.warning('upstream Chrome WebSocket closed → bridge shutting down '
                         '(下一条 dpx 命令会自动重起 bridge 并重新授权)')
             if self.on_upstream_closed is not None:

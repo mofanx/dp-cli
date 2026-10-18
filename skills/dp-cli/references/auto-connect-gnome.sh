@@ -6,23 +6,24 @@
 # 背景：
 #   dpx open --auto-connect 首次（或 Chrome 重启后）会在 Chrome 中弹出
 #   "Allow remote debugging for this browser instance" 对话框，需用户手动切窗口点击。
-#   本脚本通过 gauto + ydotool 自动激活 Chrome 窗口并模拟 Tab+Enter 确认，
+#   本脚本通过 gauto + ydotool 自动激活浏览器窗口 ($BROWSER_WIN_CLASS)并模拟 Tab+Enter 确认，
 #   免去手动操作。
 #
 # 依赖：
 #   - dpx CLI（必须）
-#   - gauto（可选，用于检测/启动/激活 Chrome 窗口）
+#   - gauto（可选，用于检测/启动/激活浏览器窗口 ($BROWSER_WIN_CLASS)）
 #   - ydotool（可选，用于模拟键盘；需运行 ydotoold 守护进程）
 #
 # 用法：
 #   ./auto-connect-gnome.sh           # 自动模式（需 gauto + ydotool）
 #   ./auto-connect-gnome.sh --full    # 先启动 Chrome，再连接
+#   ./auto-connect-gnome.sh --browser edge   # Edge（microsoft-edge）
 #   ./auto-connect-gnome.sh --simple  # 手动模式（无 gauto/ydotool 也可用）
 #
 # 注意：
 #   - Allow 弹窗通常只在 Chrome 重启后首次连接时出现，后续命令自动复用连接无需重复
 #   - ydotool 在 Wayland 下需要 ydotoold 守护进程：sudo ydotoold &
-#   - 若自动确认失败，请手动切到 Chrome 窗口点击 Allow 按钮
+#   - 若自动确认失败，请手动切到浏览器窗口点击 Allow 按钮
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -44,15 +45,22 @@ check_deps() {
     command -v ydotool &> /dev/null || log_warn "ydotool 未安装，无法自动确认授权"
 }
 
+BROWSER="${BROWSER:-chrome}"   # chrome|edge；--browser 覆盖
+BROWSER_WIN_CLASS="${BROWSER_WIN_CLASS:-google-chrome}"
+BROWSER_LAUNCH="${BROWSER_LAUNCH:-chrome}"
+case "$BROWSER" in
+  edge) BROWSER_WIN_CLASS='microsoft-edge'; BROWSER_LAUNCH='microsoft-edge' ;;
+esac
+
 is_chrome_running() {
     command -v gauto &> /dev/null || return 1
-    gauto list 2>/dev/null | tr '[:upper:]' '[:lower:]' | grep -qE "chrome|google-chrome"
+    gauto list 2>/dev/null | tr '[:upper:]' '[:lower:]' | grep -qE "chrome|microsoft-edge|$BROWSER_WIN_CLASS"
 }
 
 launch_chrome() {
-    log_info "正在启动 Chrome..."
+    log_info "正在启动浏览器 ($BROWSER)..."
     if command -v gauto &> /dev/null; then
-        gauto launch chrome
+        gauto launch "$BROWSER_LAUNCH"
         sleep 3
     else
         log_warn "请手动启动 Chrome"
@@ -60,13 +68,13 @@ launch_chrome() {
     fi
 }
 
-# 激活 Chrome 窗口并发送 Tab+Enter 确认 Allow 对话框
+# 激活浏览器窗口 ($BROWSER_WIN_CLASS)并发送 Tab+Enter 确认 Allow 对话框
 perform_auto_confirm() {
     log_info "尝试自动确认授权对话框..."
 
     if command -v gauto &> /dev/null; then
-        log_debug "激活 Chrome 窗口..."
-        gauto activate-class google-chrome 2>/dev/null || true
+        log_debug "激活浏览器窗口 ($BROWSER_WIN_CLASS)..."
+        gauto activate-class "$BROWSER_WIN_CLASS" 2>/dev/null || true
         sleep 0.5
     fi
 
@@ -79,14 +87,14 @@ perform_auto_confirm() {
             log_warn "ydotool 执行失败（确认 ydotoold 守护进程是否运行），请手动点击 Allow"
         fi
     else
-        log_warn "ydotool 不可用，请手动切到 Chrome 窗口点击 Allow"
+        log_warn "ydotool 不可用，请手动切到浏览器窗口点击 Allow"
     fi
 }
 
 # 执行 dpx open --auto-connect，实时监控输出并在检测到授权提示时自动确认
 run_dp_connect_auto() {
     log_info "执行 dpx open --auto-connect..."
-    log_info "若 Chrome 弹出授权对话框，脚本将自动确认；也可手动切到 Chrome 点击 Allow"
+    log_info "若 Chrome 弹出授权对话框，脚本将自动确认；也可手动切到浏览器点击 Allow"
 
     local auth_confirmed=false
     local tmp
@@ -104,7 +112,7 @@ run_dp_connect_auto() {
         echo "$line"
         # bridge_manager.py 输出的授权提示关键词
         if [[ "$auth_confirmed" == false ]] && \
-           [[ "$line" == *"Allow remote debugging"* || "$line" == *"请切到 Chrome"* ]]; then
+           [[ "$line" == *"Allow remote debugging"* || "$line" == *"切到"*"浏览器"* ]]; then
             auth_confirmed=true
             perform_auto_confirm &
         fi
@@ -119,14 +127,14 @@ run_dp_connect_auto() {
         log_info "连接成功"
     else
         log_error "dpx open --auto-connect 失败 (exit=$exit_code)"
-        log_warn "若未点 Allow：请手动切到 Chrome 窗口点击 Allow 后重试"
+        log_warn "若未点 Allow：请手动切到浏览器窗口点击 Allow 后重试"
     fi
     return $exit_code
 }
 
 run_dp_connect_simple() {
     log_info "手动模式：执行 dpx open --auto-connect"
-    log_warn "请留意 Chrome 是否弹出 Allow 对话框，需手动点击 Allow"
+    log_warn "请留意浏览器是否弹出 Allow 对话框，需手动点击 Allow"
     dpx open --auto-connect
 }
 
@@ -134,13 +142,15 @@ main() {
     local full_mode=false
     local auto_mode=true
 
-    for arg in "$@"; do
-        case $arg in
+    while [ $# -gt 0 ]; do
+        case $1 in
             --full|-f)   full_mode=true ;;
             --simple|-s) auto_mode=false ;;
+            --browser|-b) BROWSER="$2"; case "$BROWSER" in edge) BROWSER_WIN_CLASS='microsoft-edge'; BROWSER_LAUNCH='microsoft-edge' ;; esac; shift ;;
             --help|-h)
-                echo "用法: $0 [--full] [--simple]"
-                echo "  --full    完整流程：先启动 Chrome，再连接"
+                echo "用法: $0 [--full] [--simple] [--browser chrome|edge]"
+                echo "  --full    完整流程：先启动浏览器，再连接"
+                echo "  --browser N  chrome|edge（默认 chrome）"
                 echo "  --simple  手动模式：不自动确认，需手动点击 Allow"
                 exit 0
                 ;;

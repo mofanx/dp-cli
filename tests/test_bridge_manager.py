@@ -167,3 +167,50 @@ def test_start_bridge_missing_profile(tmp_path):
     msg = str(exc.value)
     # 错误信息应含 stderr（aiohttp/websocket 启动前 DevToolsActivePort 读取失败会抛）
     assert 'bridge' in msg.lower() or 'stderr' in msg.lower()
+
+
+def test_start_bridge_timeout_enforced_pending_upstream(tmp_path):
+    """上游 WS 握手永久 pending（Chrome 授权框没人点的场景）→
+    start_bridge 必须在 ready_timeout 内放弃。
+
+    回归保护：旧实现用 proc.stdout.readline() 同步等 READY——授权等待
+    期间 stdout 静默，readline 阻塞导致循环内 notify/escalate/poll/
+    deadline 检查全部失效，ready_timeout 名存实亡（实测挂在子进程
+    ws open_timeout=120s 上）。改队列读取后 deadline 才真生效。"""
+    import socket
+
+    # 假 CDP 端口：accept TCP 但从不回应 WS upgrade
+    srv = socket.socket()
+    srv.bind(('127.0.0.1', 0))
+    srv.listen(5)
+    port = srv.getsockname()[1]
+    stop_flag = []
+    held = []          # 持有连接防 GC 关闭——握手必须永远 pending
+
+    def _hold():
+        while not stop_flag:
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                return
+            try:
+                c.recv(4096)   # 读到 upgrade 请求但绝不回包
+                held.append(c)
+            except Exception:
+                pass
+
+    threading.Thread(target=_hold, daemon=True).start()
+
+    udd = tmp_path / 'fake-profile'
+    udd.mkdir()
+    (udd / 'DevToolsActivePort').write_text(f'{port}\n/devtools/browser/x\n')
+
+    t0 = time.perf_counter()
+    try:
+        with pytest.raises(RuntimeError, match='启动超时'):
+            bridge_manager.start_bridge(udd, listen_port=0, ready_timeout=3)
+        # 队列改造前会挂 ~120s（子进程 ws open_timeout）
+        assert time.perf_counter() - t0 < 15
+    finally:
+        stop_flag.append(1)
+        srv.close()

@@ -253,6 +253,53 @@ def test_user_data_dir_edge_hit(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_user_data_dir_edge_channels(tmp_path, monkeypatch):
+    """edge-beta / edge-dev channel 命中（linux 有 beta/dev 目录）。"""
+    monkeypatch.setattr(session.sys, "platform", "linux")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    beta = tmp_path / '.config' / 'microsoft-edge-beta'
+    dev = tmp_path / '.config' / 'microsoft-edge-dev'
+    beta.mkdir(parents=True)
+    dev.mkdir(parents=True)
+
+    assert session.default_user_data_dir_for_channel('edge-beta') == beta
+    assert session.default_user_data_dir_for_channel('edge-dev') == dev
+    # linux 无 edge canary
+    assert session.default_user_data_dir_for_channel('edge-canary') is None
+
+
+@pytest.mark.unit
+def test_sniff_hits_edge_beta_when_only_it_has_port(tmp_path, monkeypatch):
+    """stable 无目录、edge-beta 含活 DevToolsActivePort → 嗅探命中 edge-beta。"""
+    monkeypatch.setattr(session.sys, "platform", "linux")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    beta = tmp_path / '.config' / 'microsoft-edge-beta'
+    beta.mkdir(parents=True)
+    (beta / 'DevToolsActivePort').write_text("9333\n/devtools/browser/x\n",
+                                            encoding='utf-8')
+    monkeypatch.setattr(session, "_is_port_alive", lambda port: True)
+
+    result, diag = session.sniff_auto_user_data_dir()
+    assert result == beta
+    assert diag[-1] == ('edge-beta', beta, 'hit')
+
+
+@pytest.mark.unit
+def test_attach_page_narrows_connect_timeout(session_dir, monkeypatch):
+    """_attach_page：attach 期间 browser_connect_timeout 收窄到 8s
+    （existing_only 路径快速失败兜底），结束后恢复原值。"""
+    from DrissionPage._functions.settings import Settings as _S
+    seen = []
+    monkeypatch.setattr("DrissionPage.ChromiumPage",
+                        lambda *a, **k: seen.append(_S.browser_connect_timeout))
+    session._attach_page(Mock())
+    assert seen == [8]
+    assert _S.browser_connect_timeout == 30   # 已恢复
+
+
+@pytest.mark.unit
 def test_user_data_dir_darwin_stable_hit(tmp_path, monkeypatch):
     """darwin stable 命中。"""
     monkeypatch.setattr(session.sys, "platform", "darwin")
@@ -314,7 +361,7 @@ def test_sniff_no_dir(tmp_path, monkeypatch):
     
     result, diag = session.sniff_auto_user_data_dir()
     assert result is None
-    assert len(diag) == 2  # stable 和 edge 都 no_dir
+    assert len(diag) == len(session._AUTO_SNIFF_CHANNELS)
     assert all(reason == 'no_dir' for _, _, reason in diag)
 
 
@@ -335,9 +382,9 @@ def test_sniff_stale(tmp_path, monkeypatch):
     
     result, diag = session.sniff_auto_user_data_dir()
     assert result is None
-    assert len(diag) == 2  # stable stale, edge no_dir
+    assert len(diag) == len(session._AUTO_SNIFF_CHANNELS)
     assert diag[0] == ('stable', chrome_dir, 'stale')
-    assert diag[1][2] == 'no_dir'
+    assert all(reason == 'no_dir' for _, _, reason in diag[1:])
 
 
 @pytest.mark.unit
@@ -352,9 +399,9 @@ def test_sniff_no_port(tmp_path, monkeypatch):
     
     result, diag = session.sniff_auto_user_data_dir()
     assert result is None
-    assert len(diag) == 2  # stable no_port, edge no_dir
+    assert len(diag) == len(session._AUTO_SNIFF_CHANNELS)
     assert diag[0] == ('stable', chrome_dir, 'no_port')
-    assert diag[1][2] == 'no_dir'
+    assert all(reason == 'no_dir' for _, _, reason in diag[1:])
 
 
 @pytest.mark.unit
@@ -371,9 +418,9 @@ def test_sniff_bad_file(tmp_path, monkeypatch):
     
     result, diag = session.sniff_auto_user_data_dir()
     assert result is None
-    assert len(diag) == 2  # stable bad_file, edge no_dir
+    assert len(diag) == len(session._AUTO_SNIFF_CHANNELS)
     assert diag[0] == ('stable', chrome_dir, 'bad_file')
-    assert diag[1][2] == 'no_dir'
+    assert all(reason == 'no_dir' for _, _, reason in diag[1:])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -502,30 +549,31 @@ def test_close_browser_no_session_returns_false(session_dir):
 
 @pytest.mark.unit
 def test_close_browser_user_connected_stops_bridge_not_quit(session_dir, monkeypatch):
-    """含 user_connected: True, bridge_pid: 1234 的会话;
-    mock stop_bridge,断言:stop_bridge 被调用、会话文件被删除、返回 True、未 import/调用真 ChromiumPage。"""
-    # 创建会话文件
+    """新语义：close 默认保留 bridge（其他 session 可复用免授权），
+    stop_bridge_flag=True 才停。mock stop_bridge 断言两路径。"""
     session.save_session('test', {
         'user_connected': True,
         'bridge_pid': 1234,
         'port': 9222
     })
-    
-    # mock stop_bridge
     stop_bridge_called = []
     def fake_stop_bridge(pid, timeout=None):
         stop_bridge_called.append(pid)
         return True
-    
     monkeypatch.setattr("dp_cli.bridge_manager.stop_bridge", fake_stop_bridge)
-    
-    # 调用 close_browser
+
+    # 默认：保留 bridge
     result = session.close_browser('test')
-    
-    # 断言
+    assert result is True
+    assert stop_bridge_called == []
+    assert not (session_dir / 'test.json').exists()
+
+    # --stop-bridge：停 bridge
+    session.save_session('test', {
+        'user_connected': True, 'bridge_pid': 1234, 'port': 9222})
+    result = session.close_browser('test', stop_bridge_flag=True)
     assert result is True
     assert stop_bridge_called == [1234]
-    assert not (session_dir / 'test.json').exists()
 
 
 @pytest.mark.unit
@@ -727,7 +775,7 @@ class _MiniHttpServer:
 
             def do_GET(self):
                 if self.path == '/json/version':
-                    if vm == 'classic':
+                    if vm in ('classic', 'notabs'):
                         body = (b'{"Browser":"Chrome/147.0.0",'
                                 b'"User-Agent":"Mozilla/5.0"}')
                         self.send_response(200)
@@ -739,6 +787,14 @@ class _MiniHttpServer:
                         self.send_response(404)
                         self.send_header('Content-Length', '0')
                         self.end_headers()
+                elif self.path == '/json':
+                    body = (b'[]' if vm == 'notabs' else
+                            b'[{"type":"page","url":"about:blank"}]')
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                 elif self.path == '/healthz':
                     if hm == 'absent':
                         self.send_response(404)
@@ -771,13 +827,17 @@ def test_probe_cdp_http_states():
     """_probe_cdp_http：classic JSON→True；404（inspect）→False；死端口→False。"""
     classic = _MiniHttpServer('classic')
     inspect = _MiniHttpServer('inspect')
+    notabs = _MiniHttpServer('notabs')
     try:
         assert session._probe_cdp_http(classic.port) is True
         assert session._probe_cdp_http(inspect.port) is False
+        # version OK 但 /json 零 page/webview：与 test_connect 失败条件等价→False
+        assert session._probe_cdp_http(notabs.port) is False
         assert session._probe_cdp_http(1, timeout=0.5) is False
     finally:
         classic.stop()
         inspect.stop()
+        notabs.stop()
 
 
 @pytest.mark.unit

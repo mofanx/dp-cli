@@ -2,11 +2,12 @@
 
 | 类别 | 命令 | 参数 |
 |------|------|------|
+| 浏览器 | `bridge` |  |
 | 浏览器 | `bypass-csp` | [session], [off] |
 | 浏览器 | `cf-wait` | [session], [timeout], [poll], [force_poll] |
 | 浏览器 | `clipboard-get` | [session] |
 | 浏览器 | `clipboard-set` | <text>, [session] |
-| 浏览器 | `close` | [session], [del_data], [force] |
+| 浏览器 | `close` | [session], [del_data], [force], [stop_bridge] |
 | 浏览器 | `close-all` |  |
 | 浏览器 | `delete-data` | [session] |
 | 浏览器 | `file-chooser` | <files>, [session], <loc>, [timeout] |

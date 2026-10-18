@@ -120,9 +120,33 @@ def _probe_cdp_http(port: int, timeout: float = 1.5) -> bool:
         if r.status_code != 200:
             return False
         data = r.json()
-        return isinstance(data, dict) and 'Browser' in data
+        if not (isinstance(data, dict) and 'Browser' in data):
+            return False
+        # 与 DrissionPage test_connect 的成功条件等价：/json 必须含
+        # page/webview 目标。零 tab 浏览器（全关/异常）此前仍空转 30s。
+        tabs = requests.get(f'http://127.0.0.1:{port}/json',
+                            timeout=timeout).json()
+        return any(t.get('type') in ('page', 'webview') for t in tabs)
     except Exception:
         return False
+
+
+def _attach_page(co):
+    """existing_only attach：把 DrissionPage test_connect 重试窗口
+    30s → 8s。
+
+    所有调用点都过了 TCP+HTTP 预检，attach 理应即刻成功；8s 留给
+    "预检通过但 attach 前端口刚死/竞态失败"的重试余量，失败也比
+    默认 30s 快败。新建浏览器路径不经过此函数（保持 30s 启动余量）。
+    """
+    from DrissionPage import ChromiumPage
+    from DrissionPage._functions.settings import Settings as _S
+    old = _S.browser_connect_timeout
+    _S.browser_connect_timeout = 8
+    try:
+        return ChromiumPage(co)
+    finally:
+        _S.browser_connect_timeout = old
 
 
 def _bridge_upstream_alive(bridge_port: int, timeout: float = 1.5) -> bool:
@@ -156,39 +180,50 @@ def _bridge_upstream_alive(bridge_port: int, timeout: float = 1.5) -> bool:
 def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
     """返回指定 channel 的 Chrome/Edge 默认 user-data-dir。
 
-    :param channel: stable / beta / dev / canary / chromium / edge
+    :param channel: stable / beta / dev / canary / chromium /
+                    edge / edge-beta / edge-dev / edge-canary
+                    （edge-canary 无 Linux 版，Windows 为 SxS）
     :return: 用户数据目录 Path；不存在时返回 None
     """
     home = Path.home()
     candidates: dict[str, list[Path]] = {}
     if sys.platform.startswith('linux'):
         candidates = {
-            'stable':   [home / '.config' / 'google-chrome'],
-            'beta':     [home / '.config' / 'google-chrome-beta'],
-            'dev':      [home / '.config' / 'google-chrome-unstable'],
-            'canary':   [home / '.config' / 'google-chrome-canary'],
-            'chromium': [home / '.config' / 'chromium'],
-            'edge':     [home / '.config' / 'microsoft-edge'],
+            'stable':       [home / '.config' / 'google-chrome'],
+            'beta':         [home / '.config' / 'google-chrome-beta'],
+            'dev':          [home / '.config' / 'google-chrome-unstable'],
+            'canary':       [home / '.config' / 'google-chrome-canary'],
+            'chromium':     [home / '.config' / 'chromium'],
+            'edge':         [home / '.config' / 'microsoft-edge'],
+            'edge-beta':    [home / '.config' / 'microsoft-edge-beta'],
+            'edge-dev':     [home / '.config' / 'microsoft-edge-dev'],
+            'edge-canary':  [],   # Edge 无 Linux canary
         }
     elif sys.platform == 'darwin':
         base = home / 'Library' / 'Application Support'
         candidates = {
-            'stable':   [base / 'Google' / 'Chrome'],
-            'beta':     [base / 'Google' / 'Chrome Beta'],
-            'dev':      [base / 'Google' / 'Chrome Dev'],
-            'canary':   [base / 'Google' / 'Chrome Canary'],
-            'chromium': [base / 'Chromium'],
-            'edge':     [base / 'Microsoft Edge'],
+            'stable':       [base / 'Google' / 'Chrome'],
+            'beta':         [base / 'Google' / 'Chrome Beta'],
+            'dev':          [base / 'Google' / 'Chrome Dev'],
+            'canary':       [base / 'Google' / 'Chrome Canary'],
+            'chromium':     [base / 'Chromium'],
+            'edge':         [base / 'Microsoft Edge'],
+            'edge-beta':    [base / 'Microsoft Edge Beta'],
+            'edge-dev':     [base / 'Microsoft Edge Dev'],
+            'edge-canary':  [base / 'Microsoft Edge Canary'],
         }
     elif sys.platform.startswith('win'):
         local = Path(os.environ.get('LOCALAPPDATA', home / 'AppData' / 'Local'))
         candidates = {
-            'stable':   [local / 'Google' / 'Chrome' / 'User Data'],
-            'beta':     [local / 'Google' / 'Chrome Beta' / 'User Data'],
-            'dev':      [local / 'Google' / 'Chrome Dev' / 'User Data'],
-            'canary':   [local / 'Google' / 'Chrome SxS' / 'User Data'],
-            'chromium': [local / 'Chromium' / 'User Data'],
-            'edge':     [local / 'Microsoft' / 'Edge' / 'User Data'],
+            'stable':       [local / 'Google' / 'Chrome' / 'User Data'],
+            'beta':         [local / 'Google' / 'Chrome Beta' / 'User Data'],
+            'dev':          [local / 'Google' / 'Chrome Dev' / 'User Data'],
+            'canary':       [local / 'Google' / 'Chrome SxS' / 'User Data'],
+            'chromium':     [local / 'Chromium' / 'User Data'],
+            'edge':         [local / 'Microsoft' / 'Edge' / 'User Data'],
+            'edge-beta':    [local / 'Microsoft' / 'Edge Beta' / 'User Data'],
+            'edge-dev':     [local / 'Microsoft' / 'Edge Dev' / 'User Data'],
+            'edge-canary':  [local / 'Microsoft' / 'Edge SxS' / 'User Data'],
         }
 
     for p in candidates.get(channel, []):
@@ -197,8 +232,11 @@ def default_user_data_dir_for_channel(channel: str = 'stable') -> Path | None:
     return None
 
 
-# --auto-connect 不传 --channel 时的嗅探顺序：先 Chrome stable，再 Edge stable
-_AUTO_SNIFF_CHANNELS = ('stable', 'edge')
+# --auto-connect 不传 --channel 时的嗅探顺序：覆盖全部已装渠道。
+# stable 系优先（多数用户的主力浏览器在 stable），Edge 紧随同级
+# Chrome 渠道；chromium 排最后（多见于测试环境，抢答风险最高）。
+_AUTO_SNIFF_CHANNELS = ('stable', 'edge', 'beta', 'edge-beta', 'dev',
+                        'edge-dev', 'canary', 'edge-canary', 'chromium')
 
 
 def _is_port_alive(port: int, timeout: float = 0.3) -> bool:
@@ -287,7 +325,6 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
       sess['bridge_pid']  = bridge 子进程 pid（如起了）
       sess['bridge_port'] = bridge 监听端口（= sess['port']）
     """
-    from DrissionPage import ChromiumPage
     from DrissionPage._configs.chromium_options import ChromiumOptions
     from dp_cli.bridge_manager import (detect_inspect_mode, start_bridge,
                                         is_bridge_alive, stop_bridge)
@@ -313,7 +350,7 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
             co = ChromiumOptions(read_file=False)
             co.set_local_port(old_bridge_port)
             co.existing_only(True)
-            return ChromiumPage(co)
+            return _attach_page(co)
         except Exception:
             # 复用失败，停旧的再重起
             stop_bridge(old_bridge_pid)
@@ -321,6 +358,39 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
     # 老 bridge 存在但 real_port 变了（Chrome 重启）→ 先清掉
     if old_bridge_pid and is_bridge_alive(old_bridge_pid):
         stop_bridge(old_bridge_pid)
+
+    # 跨 session 复用：session 级 miss 后查注册表（其他 dpx 会话
+    # 可能已授权起过 bridge——直接采用免再点 Allow）
+    from dp_cli import bridge_registry as reg
+    entry = reg.find_bridge(probe_dir, real_port=real_port)
+    if entry is not None and entry['port'] != old_bridge_port:
+        try:
+            co = ChromiumOptions(read_file=False)
+            co.set_local_port(int(entry['port']))
+            co.existing_only(True)
+            page = _attach_page(co)
+            reg._note_session(entry, session_name)
+            sess['port'] = int(entry['port'])
+            sess['real_port'] = real_port
+            sess['bridge_pid'] = int(entry['pid'])
+            sess['bridge_port'] = int(entry['port'])
+            save_session(session_name, sess)
+            return page
+        except Exception as e:
+            debug(f'registry bridge 复用失败 port={entry["port"]}，转 spawn', e)
+            # 共享 bridge 不连坐：有其他 session 持有时只摘除本 session
+            # 名，不删注册项也不停进程——它们还指着这条 bridge
+            others = [s for s in entry.get('sessions', [])
+                      if s != session_name]
+            if others:
+                try:
+                    entry['sessions'].remove(session_name)
+                    reg._write_json_atomic(
+                        reg._entry_path(probe_dir), entry)
+                except Exception as ee:
+                    debug('注册项 session 摘除失败（忽略）', ee)
+            else:
+                reg.unregister_bridge(probe_dir)
 
     # 检测真端口是否 inspect 限流模式
     is_inspect = detect_inspect_mode(real_port)
@@ -332,7 +402,7 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
         co.existing_only(True)
         if _detect_headless(real_port):
             co.headless(True)
-        page = ChromiumPage(co)
+        page = _attach_page(co)
         sess.pop('bridge_pid', None)
         sess.pop('bridge_port', None)
         sess['port'] = real_port
@@ -340,15 +410,32 @@ def _connect_via_bridge(session_name: str, probe_dir: str, sess: dict):
         save_session(session_name, sess)
         return page
 
-    # inspect 模式：起 bridge 代理
-    pid, bport = start_bridge(probe_dir)
+    # inspect 模式：注册表锁内"查→spawn→登记"——并发多 session
+    # 只起一次 bridge（其余 adopt），避免双授权弹窗
+    pid, bport, adopted = reg.acquire_or_spawn(
+        probe_dir, spawn_fn=start_bridge, real_port=real_port,
+        session_name=session_name)
     try:
         co = ChromiumOptions(read_file=False)
         co.set_local_port(bport)
         co.existing_only(True)
-        page = ChromiumPage(co)
+        page = _attach_page(co)
     except Exception:
-        stop_bridge(pid)
+        # 共享 bridge（adopt）attach 失败不得连坐：停进程/删注册项
+        # 仅在本 session 是唯一持有者时执行，否则只摘除本 session 名
+        ent = reg.find_bridge(probe_dir, real_port=real_port)
+        others = [s for s in (ent or {}).get('sessions', [])
+                  if s != session_name]
+        if not adopted and not others:
+            stop_bridge(pid)
+            reg.unregister_bridge(probe_dir)
+        elif ent is not None and session_name in ent.get('sessions', []):
+            ent['sessions'].remove(session_name)
+            try:
+                reg._write_json_atomic(
+                    reg._entry_path(probe_dir), ent)
+            except Exception as e:
+                debug('注册项 session 摘除失败（忽略）', e)
         raise
 
     sess['port'] = bport
@@ -425,6 +512,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
                 f'请确认浏览器已使用 --remote-debugging-port={port} 启动。\n'
                 f'启动命令示例:\n'
                 f'  google-chrome --remote-debugging-port={port}\n'
+                f'  microsoft-edge --remote-debugging-port={port}\n'
                 f'  chromium --remote-debugging-port={port}')
         # TCP 开 ≠ CDP：inspect 限流端口/其他服务监听时 /json 全 404，
         # DrissionPage test_connect 会空转 30s——先 1.5s 预检拿清晰错误
@@ -444,13 +532,14 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
         if _detect_headless(port):
             co.headless(True)
         try:
-            page = ChromiumPage(co)
+            page = _attach_page(co)
         except Exception as e:
             raise ConnectionError(
                 f'无法连接到端口 {port} 的浏览器实例。\n'
                 f'请确认浏览器已使用 --remote-debugging-port={port} 启动。\n'
                 f'启动命令示例:\n'
                 f'  google-chrome --remote-debugging-port={port}\n'
+                f'  microsoft-edge --remote-debugging-port={port}\n'
                 f'  chromium --remote-debugging-port={port}\n'
                 f'原始错误: {e}'
             ) from e
@@ -476,17 +565,18 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     if saved_port and not _port_open('127.0.0.1', saved_port):
         debug(f'saved_port={saved_port} TCP 拒绝，跳过直连尝试')
         skip_saved = True
-    elif saved_port and not _probe_cdp_http(saved_port):
-        # TCP 开但 /json/version 无有效响应（inspect 端口/非 CDP 服务），
-        # 直连必然触发 test_connect 30s 空转——直接跳过走复用路径
-        debug(f'saved_port={saved_port} 非标准 CDP 端点，跳过直连尝试')
-        skip_saved = True
     elif saved_port and saved_port == sess.get('bridge_port') \
             and not _bridge_upstream_alive(saved_port):
-        # saved_port 是 bridge 端口且上游已断（Chrome 重启等）：
-        # /json/version 是 bridge 本地应答仍返回 200，但 attach 后
-        # /json 会因上游断开而失败——跳过走 probe_dir 重建路径
+        # saved_port 是 bridge 端口且上游已断（Chrome 重启等）——
+        # 必须先查 healthz：否则下面的 /json 预检会被 bridge 内部
+        # Target.getTargets 15s 超时拖住。上游断则走 probe_dir 重建
         debug(f'saved_port={saved_port} bridge 上游已断，跳过直连')
+        skip_saved = True
+    elif saved_port and not _probe_cdp_http(saved_port):
+        # TCP 开但 /json 无有效响应/无 page 目标（inspect 端口/
+        # 非 CDP 服务/零 tab），直连必然触发 test_connect 30s 空转
+        # ——直接跳过走复用路径
+        debug(f'saved_port={saved_port} 非可 attach 的 CDP 端点，跳过直连')
         skip_saved = True
     if saved_port and not skip_saved:
         try:
@@ -503,7 +593,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
                     co.headless(True)
             elif _detect_headless(saved_port):
                 co.headless(True)
-            page = ChromiumPage(co)
+            page = _attach_page(co)
             return page
         except Exception as e:
             debug(f'saved_port={saved_port} 直连失败，尝试其他复用路径', e)
@@ -620,7 +710,7 @@ def load_refs(session_name: str) -> dict:
 
 
 def close_browser(session_name: str = 'default', del_data: bool = False,
-                  force: bool = False) -> bool:
+                  force: bool = False, stop_bridge_flag: bool = False) -> bool:
     """关闭指定会话的浏览器。
 
     - auto-connect / user_connected 模式（默认）：只停 bridge 子进程 +
@@ -629,7 +719,6 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
       （dpx close --force 的语义）。
     - dpx 自管模式：调用 page.browser.quit() 彻底结束浏览器进程。
     """
-    from DrissionPage import ChromiumPage
     from DrissionPage._configs.chromium_options import ChromiumOptions
 
     sess = load_session(session_name)
@@ -642,12 +731,32 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
 
     # auto-connect / user_connected 且未 --force：不 quit 真 Chrome
     if user_connected and not force:
-        if bridge_pid:
+        # bridge 默认保留：存活 bridge 是本机免 Allow 的控制通道，
+        # 其他 session/下次连接可直接复用。--stop-bridge 或
+        # DPX_CLOSE_STOPS_BRIDGE=1 回退旧语义（close 即停 bridge）
+        stop_b = (stop_bridge_flag
+                  or os.environ.get('DPX_CLOSE_STOPS_BRIDGE'))
+        if bridge_pid and stop_b:
             from dp_cli.bridge_manager import stop_bridge
             try:
                 stop_bridge(bridge_pid)
+                if sess.get('probe_dir'):
+                    from dp_cli.bridge_registry import unregister_bridge
+                    unregister_bridge(sess['probe_dir'])
             except Exception as e:
                 debug(f'stop_bridge(pid={bridge_pid}) 失败', e)
+        elif bridge_pid and sess.get('probe_dir'):
+            # 保留 bridge：仅把本 session 从注册项摘除
+            try:
+                from dp_cli.bridge_registry import find_bridge, \
+                    _entry_path, _write_json_atomic
+                ent = find_bridge(sess['probe_dir'])
+                if ent and session_name in ent.get('sessions', []):
+                    ent['sessions'].remove(session_name)
+                    _write_json_atomic(
+                        _entry_path(sess['probe_dir']), ent)
+            except Exception as e:
+                debug('注册项 session 摘除失败（忽略）', e)
         delete_session(session_name)
         return True
 
@@ -672,7 +781,7 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
         # 否则对 headless 浏览器 attach 会因模式不匹配失败
         if _detect_headless(port):
             co.headless(True)
-        page = ChromiumPage(co)
+        page = _attach_page(co)
         page.browser.quit(del_data=del_data)
     except Exception as e:
         debug(f'browser.quit(port={port}) 失败，仍清理会话', e)

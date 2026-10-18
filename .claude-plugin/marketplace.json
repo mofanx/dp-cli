@@ -11,7 +11,7 @@
       "name": "dp-cli",
       "source": "./",
       "description": "DrissionPage 命令行浏览器自动化：控制真实已登录 Chrome、反检测、pw: 语义定位器、110+ JSON 命令、Playwright 用例固化",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "category": "development"
     }
   ]

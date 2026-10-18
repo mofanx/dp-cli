@@ -2,6 +2,24 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.11.0] - 2026-10-17
+
+### 新增
+
+- **`dpx bridge list`/`dpx bridge stop`**：跨 session bridge 注册表——同 profile 多 session 共享授权 bridge（flock 锁并发 spawn=1、四道闸 adopt），`open -a` 二次及多 session 场景免重复点 Allow。
+- `dpx close --stop-bridge`：显式清理授权 bridge；`DPX_CLOSE_STOPS_BRIDGE=1` 回退旧语义。
+- Edge 渠道补齐：`--channel edge-beta/edge-dev/edge-canary`；`auto-connect-gnome.sh --browser edge` 参数化；`--port` 报错补 `microsoft-edge`/`msedge.exe` 启动示例。
+
+### 变更（行为）
+
+- **`dpx close` 对 user_connected 会话默认保留授权 bridge**（bridge 上游断自行退出，无孤儿风险）——`open→close→open -a` 循环不再每轮重弹授权框；注意存活 bridge 是本机免 Allow 的控制通道，用 `dpx bridge stop` 或 `--stop-bridge` 显式清理。
+
+### 修复
+
+- `open` 连接死端口 30s→0.22s：`_port_open` TCP 预探活 + `_probe_cdp_http` 分层探测（含 page-target 等价判定），inspect 端口正确分流 `-a` 指引；existing_only attach `browser_connect_timeout` 收窄 30s→8s。
+- 僵尸 bridge：上游 WS 断开 bridge 自行退出 + `/healthz` 预检；挂起请求 `-32000` 应答防泄漏。
+- 授权等待感知：`notify-send` 桌面通知（GNOME 不受窗口遮挡）；`ready_timeout` 与 ws `open_timeout` 单一事实源联动，消除 90-119s 点击误杀窗口。
+
 ## [0.10.0] - 2026-10-16
 
 ### 变更（契约）

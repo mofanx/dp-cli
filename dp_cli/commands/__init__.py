@@ -12,5 +12,6 @@ _MODULES = [browser, snapshot_cmd, element, keyboard, page, tab, storage, networ
 
 
 def register_all(cli):
-    for mod in _MODULES:
+    from dp_cli import daemon as daemon_mod  # 惰性导入，防循环
+    for mod in _MODULES + [daemon_mod]:
         mod.register(cli)

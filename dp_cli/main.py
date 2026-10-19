@@ -9,6 +9,8 @@ dp-cli —— DrissionPage 命令行工具
   - 支持 shadow-root / iframe 穿透
   - 内置网络包监听能力
 """
+import os
+
 import click
 
 from dp_cli.commands import register_all
@@ -62,6 +64,12 @@ register_all(cli)
 
 
 def main():
+    import sys as _sys
+    if os.environ.get('DPX_NO_DAEMON') != '1':
+        from dp_cli.daemon import try_daemon
+        code = try_daemon(_sys.argv[1:])
+        if code is not None:
+            _sys.exit(code)
     cli()
 
 

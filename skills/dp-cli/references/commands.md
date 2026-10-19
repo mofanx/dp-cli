@@ -128,4 +128,7 @@
 | 提取 | `read` | [url], [session], [selector], [fmt], [output], [boundary] |
 | 元信息 | `catalog` | [as_md], [as_json] |
 | 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |
+| 其他 | `daemon-start` | session |
+| 其他 | `daemon-status` | session |
+| 其他 | `daemon-stop` | session |
 

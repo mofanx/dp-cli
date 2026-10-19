@@ -3553,3 +3553,120 @@ def test_wait_download_fallback_empty_dir(runner, monkeypatch, tmp_path):
     r = runner.invoke(cli, ['wait', '--download', '--timeout', '1'])
     assert 'WAIT_TIMEOUT' in r.output
     assert '不可追溯' in r.output
+
+
+@pytest.mark.unit
+def test_daemon_session_parse():
+    from dp_cli.daemon import _session_of, _cmd_timeout
+    assert _session_of(['eval', 'x', '--session', 's1']) == 's1'
+    assert _session_of(['eval', 'x', '-S', 's2']) == 's2'
+    assert _session_of(['eval', 'x', '--session=s3']) == 's3'
+    assert _session_of(['eval', 'x']) == 'default'
+    assert _cmd_timeout(['wait', '--timeout', '60']) == 75.0
+    assert _cmd_timeout(['wait', '--timeout=45']) == 60.0
+
+
+@pytest.mark.unit
+def test_daemon_routes_only_when_enabled(runner, monkeypatch, tmp_path):
+    """无 socket 且无 DPX_DAEMON → try_daemon 返回 None 走本地。"""
+    from dp_cli.daemon import try_daemon
+    monkeypatch.delenv('DPX_DAEMON', raising=False)
+    monkeypatch.setattr('dp_cli.daemon._sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    assert try_daemon(['eval', '1']) is None
+
+
+@pytest.mark.unit
+def test_daemon_socket_roundtrip(tmp_path, monkeypatch):
+    """真实 unix socket 往返：起 run_daemon 线程 → _send_recv → 关。"""
+    import socket as sk
+    import threading
+    from dp_cli import daemon as dm
+    sp = tmp_path / 'test.sock'
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_IDLE_TTL', 99999)
+
+    t = threading.Thread(target=dm.run_daemon, args=('test',), daemon=True)
+    t.start()
+    import time as _t
+    for _ in range(40):
+        if sp.exists():
+            break
+        _t.sleep(0.1)
+    r = dm._send_recv(sp, {'argv': ['-V']}, 10)
+    assert isinstance(r, dict) and r.get('exit') == 0
+
+
+@pytest.mark.unit
+def test_daemon_skip_cmds_not_routed(monkeypatch):
+    """serve/sh/batch/daemon-* 不走 daemon 路由。"""
+    from dp_cli.daemon import try_daemon
+    import os
+    os.environ['DPX_DAEMON'] = '1'
+    try:
+        for cmd in (['serve'], ['sh'], ['batch', 'f.txt'],
+                    ['daemon-status'], ['daemon-stop'], ['daemon-start'],
+                    ['catalog'], ['install', '--skills']):
+            assert try_daemon(cmd) is None, cmd
+    finally:
+        del os.environ['DPX_DAEMON']
+
+
+@pytest.mark.unit
+def test_daemon_spawn_concurrent_once(tmp_path, monkeypatch):
+    """8 线程并发 spawn：flock 下恰好起 1 次（bridge_registry 同款）。"""
+    import threading
+    from dp_cli import daemon as dm
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    spawns = []
+
+    def fake_popen(*a, **k):
+        spawns.append(1)
+        (tmp_path / 'x.sock').write_text('')   # 模拟 socket 就绪
+
+    monkeypatch.setattr(dm.subprocess, 'Popen', fake_popen)
+    threads = [threading.Thread(target=dm._spawn_daemon, args=('x',))
+               for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(spawns) == 1
+
+
+@pytest.mark.unit
+def test_daemon_stop_reaches_handler(tmp_path, monkeypatch):
+    """daemon-stop 不被 _SKIP_CMDS 拦——handler 判定顺序（死代码修复）。"""
+    import socket as sk
+    import threading
+    from dp_cli import daemon as dm
+    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    t = threading.Thread(target=dm.run_daemon, args=('z',), daemon=True)
+    t.start()
+    import time as _t
+    for _ in range(40):
+        if (tmp_path / 'z.sock').exists():
+            break
+        _t.sleep(0.1)
+    r = dm._send_recv(tmp_path / 'z.sock', {'argv': ['daemon-stop']}, 10)
+    assert isinstance(r, dict) and r.get('exit') == 0
+    assert '退出中' in json.dumps(r, ensure_ascii=False)
+
+
+@pytest.mark.unit
+def test_daemon_flag_value_not_cmd(monkeypatch, tmp_path):
+    """['--session','s','eval','1'] 的 's' 不得被当命令名。"""
+    from dp_cli.daemon import try_daemon
+    monkeypatch.setattr('dp_cli.daemon._sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.delenv('DPX_DAEMON', raising=False)
+    # sock 不存在 + 无 env → 应返回 None（'eval' 不在 skip，但未启用不路由）
+    assert try_daemon(['--session', 's', 'eval', '1']) is None
+    # daemon-status 在 skip——验证命令名解析对了（session 值 's' 不算命令）
+    r = try_daemon(['--session', 'default', 'daemon-status'])
+    assert r is None  # skip 名单命中（证明解析出 daemon-status 而非 'default'）

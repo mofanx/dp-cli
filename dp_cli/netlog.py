@@ -96,6 +96,10 @@ def arm_netlog(page, session: str) -> bool:
         drv.set_callback(
             'Network.loadingFailed',
             lambda **kw: _append(session, _entry_fail(kw)))
+        try:
+            _path(session).touch(exist_ok=True)
+        except OSError:
+            pass
         _armed.add(session)
         return True
     except Exception:

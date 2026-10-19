@@ -65,10 +65,11 @@
 | 网络 | `listen-stop` | [session], [count], [timeout], [output], [fields], [head] |
 | 网络 | `request` | [session], <request_id>, [body] |
 | 网络 | `requests` | [session], [furl], [fmethod], [ftype], [ffailed], [head] |
-| 断言 | `assert-count` | <locator>, [expected], [session], [min_count], [max_count], [frame], [timeout] |
-| 断言 | `assert-text` | <text>, [session], [locator], [exact], [frame], [timeout] |
-| 断言 | `assert-url` | <text>, [session], [exact], [check_title], [timeout] |
-| 断言 | `assert-visible` | <locator>, [session], [expect_hidden], [frame], [timeout] |
+| 断言 | `assert-count` | <locator>, [expected], [session], [min_count], [max_count], [negate], [frame], [timeout] |
+| 断言 | `assert-text` | <text>, [session], [locator], [exact], [negate], [frame], [timeout] |
+| 断言 | `assert-url` | <text>, [session], [exact], [check_title], [negate], [timeout] |
+| 断言 | `assert-value` | <locator>, <expect>, [session], [contains], [negate], [frame], [timeout] |
+| 断言 | `assert-visible` | <locator>, [session], [expect_hidden], [negate], [frame], [timeout] |
 | 断言 | `expect-gen` | [ele_loc], [gen_all], [limit], [no_count], [lang], [session], [frame] |
 | 模拟/下载/拦截 | `download` | [session], [download_dir], [timeout], [when_exists] |
 | 模拟/下载/拦截 | `emulate` | [session], [device], [viewport], [mobile], [ua], [locale], [timezone], [geolocation], [reset] |
@@ -113,7 +114,7 @@
 | 页面 | `pdf` | [session], [filename] |
 | 页面 | `screenshot` | [session], [locator], [filename], [full_page], [fmt], [annotate], [if_changed] |
 | 页面 | `sleep` | <seconds> |
-| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [downloads_done_alias], [popup], [js_expr], [resp_pattern], [timeout], [force_poll] |
+| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [downloads_done_alias], [popup], [js_expr], [resp_pattern], [stable_loc], [stable_for], [timeout], [force_poll] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
 | 批量 | `serve` | [session] |
@@ -132,4 +133,4 @@
 | 其他 | `daemon-start` | session |
 | 其他 | `daemon-status` | session |
 | 其他 | `daemon-stop` | session |
-
+| 其他 | `mcp` | session, unsafe_eval, domains |

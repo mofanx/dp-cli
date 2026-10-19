@@ -440,12 +440,16 @@ def register(cli):
                   help='等待 JS 表达式结果为真（轮询），如 "document.querySelector(\'#x\')!==null"')
     @click.option('--response', 'resp_pattern', default=None,
                   help='等待 URL 含此文本的网络响应出现（一步式，等价 listen + listen-stop）')
+    @click.option('--stable', 'stable_loc', default=None,
+                  help='等待元素 DOM 静默（outerHTML 连续 --for 秒不变）')
+    @click.option('--for', 'stable_for', type=float, default=0.5,
+                  show_default=True, help='--stable 的静默窗口秒数')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
     @click.option('--poll', '--no-events', 'force_poll', is_flag=True,
                   help='禁用事件驱动（--text/--js），强制纯轮询')
     def wait(session, url, title, locator, locator_gone, text, loaded, idle,
              downloads_done, downloads_done_alias, popup, js_expr, resp_pattern,
-             timeout, force_poll):
+             stable_loc, stable_for, timeout, force_poll):
         """等待条件满足。
 
         \b
@@ -484,6 +488,38 @@ def register(cli):
             elif locator:
                 ele = page.wait.ele_displayed(locator, timeout=timeout)
                 ok({'locator': locator, 'found': bool(ele)}, msg='元素已出现')
+            elif stable_loc:
+                # DOM 静默等待：outerHTML 采样连续 --for 秒不变即过。
+                from dp_cli.commands._utils import resolve_locator as _rl
+                real = _rl(stable_loc, session)
+                end = perf_counter() + timeout
+                last_html = object()
+                stable_since = None
+                done = False
+                while perf_counter() < end:
+                    try:
+                        ele = page.ele(real, timeout=0.5)
+                        cur = (getattr(ele, 'raw_html', None)
+                               or getattr(ele, 'html', None) or '')
+                    except Exception:
+                        cur = ''
+                    now = perf_counter()
+                    if cur == last_html:
+                        if stable_since is None:
+                            stable_since = now
+                        if now - stable_since >= stable_for:
+                            done = True
+                            break
+                    else:
+                        last_html = cur
+                        stable_since = now
+                    _sleep(0.1)
+                if done:
+                    ok({'locator': real, 'stable_for': stable_for},
+                       msg=f'DOM 已静默 {stable_for}s')
+                else:
+                    error(f'等待超时：{timeout}s 内元素 DOM 未达到 '
+                          f'{stable_for}s 静默', code='WAIT_TIMEOUT')
             elif locator_gone:
                 page.wait.ele_hidden(locator_gone, timeout=timeout)
                 ok({'locator': locator_gone}, msg='元素已消失')

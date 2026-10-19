@@ -438,6 +438,12 @@ def register(cli):
                           code='INVALID_ARGS')
                     return
                 k, v = p.split('=', 1)
+                if k.startswith('@'):
+                    hint = ("pair 模式无法表达含 = 的属性定位器 "
+                            f"({k}=... 会被误拆)——请改用 --data JSON，"
+                            f'如 --data \'{{"{k}=值": "填写值"}}\'')
+                    error(hint, code='INVALID_ARGS')
+                    return
                 fields[k] = v
         else:
             error('请提供 --data 或 locator=value 参数', code='INVALID_ARGS')

@@ -169,9 +169,10 @@ def register(cli):
     @session_option
     @click.option('--locator', default=None, help='限定断言范围到指定元素')
     @click.option('--exact', is_flag=True, help='精确匹配（默认包含匹配；建议配合 --locator）')
+    @click.option('--not', 'negate', is_flag=True, help='反向断言：断言不含文本')
     @frame_option
     @click.option('--timeout', default=5, type=float, help='元素等待超时秒数', show_default=True)
-    def assert_text(text, session, locator, exact, frame, timeout):
+    def assert_text(text, session, locator, exact, frame, timeout, negate):
         """断言页面或指定元素包含文本。
 
         \b
@@ -194,19 +195,26 @@ def register(cli):
                 hay = (ele.raw_text or '').strip()
             else:
                 hay = page.html or ''
-            return {'hay': hay} if (hay == text if exact
-                                    else text in hay) else {'hay': hay, 'miss': True}
+            matched = hay == text if exact else text in hay
+            if negate:
+                matched = not matched
+            return {'hay': hay} if matched else {'hay': hay, 'miss': True}
 
         try:
             r = _poll(_check, timeout)
             if r and not r.get('miss'):
                 scope = f'元素 {real_loc}' if real_loc else '页面'
-                ok({'text': text, 'scope': scope, 'exact': exact}, msg='断言通过')
+                ok({'text': text, 'scope': scope, 'exact': exact,
+                    'negate': negate}, msg='断言通过')
             else:
                 scope = f'元素 {real_loc}' if real_loc else '页面'
                 hay = (r or {}).get('hay', '')
                 if real_loc and r is None:
                     error(f'断言失败：元素不存在 {real_loc}', code='ASSERT_FAILED')
+                elif negate:
+                    error(f'断言失败：{scope}包含文本 "{text}"（--not 断言不含）',
+                          code='ASSERT_FAILED',
+                          detail=(hay[:200] if hay else '(空)'))
                 else:
                     error(f'断言失败：{scope}不包含文本 "{text}"',
                           code='ASSERT_FAILED',
@@ -219,9 +227,10 @@ def register(cli):
     @session_option
     @click.option('--exact', is_flag=True, help='精确匹配（默认包含匹配）')
     @click.option('--title', 'check_title', is_flag=True, help='断言标题而非 URL')
+    @click.option('--not', 'negate', is_flag=True, help='反向断言：断言 URL/标题不含文本')
     @click.option('--timeout', default=5, type=float,
                   help='条件轮询超时秒数（默认 5s 内重试）', show_default=True)
-    def assert_url(text, session, exact, check_title, timeout):
+    def assert_url(text, session, exact, check_title, timeout, negate):
         """断言当前 URL（或 --title 断言标题）包含文本（条件轮询到 --timeout）。
 
         \b
@@ -236,18 +245,20 @@ def register(cli):
         def _check():
             actual = page.title if check_title else page.url
             actual = actual or ''
-            if (actual == text if exact else text in actual):
-                return {'actual': actual}
-            return None
+            matched = actual == text if exact else text in actual
+            if negate:
+                matched = not matched
+            return {'actual': actual} if matched else None
 
         try:
             r = _poll(_check, timeout)
             if r:
-                ok({'field': field, 'actual': r['actual'], 'exact': exact},
-                   msg='断言通过')
+                ok({'field': field, 'actual': r['actual'], 'exact': exact,
+                    'negate': negate}, msg='断言通过')
             else:
                 actual = (page.title if check_title else page.url) or ''
-                error(f'断言失败：{field} 不包含 "{text}"', code='ASSERT_FAILED',
+                verb = '包含' if negate else '不包含'
+                error(f'断言失败：{field} {verb} "{text}"', code='ASSERT_FAILED',
                       detail=f'实际值: {actual[:200]}')
         except Exception as e:
             error('断言执行失败', code='ASSERT_FAILED', detail=str(e))
@@ -257,9 +268,10 @@ def register(cli):
     @session_option
     @click.option('--hidden', 'expect_hidden', is_flag=True,
                   help='断言元素不可见或不存在')
+    @click.option('--not', 'negate', is_flag=True, help='反向断言（同 --hidden）')
     @frame_option
     @click.option('--timeout', default=5, type=float, help='元素等待超时秒数', show_default=True)
-    def assert_visible(locator, session, expect_hidden, frame, timeout):
+    def assert_visible(locator, session, expect_hidden, negate, frame, timeout):
         """断言元素可见（--hidden 断言不可见/不存在）。
 
         \b
@@ -271,6 +283,7 @@ def register(cli):
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
         real_loc = resolve_locator(locator, session)
+        expect_hidden = expect_hidden or negate
 
         def _check():
             try:
@@ -309,29 +322,46 @@ def register(cli):
 
     @cli.command('assert-count')
     @click.argument('locator')
-    @click.argument('expected', required=False, type=int, default=None)
+    @click.argument('expected', required=False, type=str, default=None)
     @session_option
     @click.option('--min', 'min_count', type=int, default=None, help='最小数量（含）')
     @click.option('--max', 'max_count', type=int, default=None, help='最大数量（含）')
+    @click.option('--not', 'negate', is_flag=True, help='反向断言：数量不满足条件时通过')
     @frame_option
     @click.option('--timeout', default=0, type=float,
                   help='条件轮询超时秒数（0=即时判断不重试）', show_default=True)
-    def assert_count(locator, expected, session, min_count, max_count, frame, timeout):
+    def assert_count(locator, expected, session, min_count, max_count,
+                     negate, frame, timeout):
         """断言匹配元素的数量。
 
         \b
         示例:
           dpx assert-count ".item" 20          # 恰好 20 个
+          dpx assert-count ".item" ">=3"       # 运算符写法
           dpx assert-count ".item" --min 1     # 至少 1 个
           dpx assert-count ".error" 0          # 无错误元素
           dpx assert-count "li" --min 3 --max 10
+          dpx assert-count ".dup" "!=1"        # 非恰好 1（配合 --not 亦可）
         """
-        if expected is not None and (min_count is not None
-                                     or max_count is not None):
-            error('位置参数 expected 与 --min/--max 互斥，请二选一',
-                  code='INVALID_ARGS')
-            return
-        if expected is None and min_count is None and max_count is None:
+        op_func = None
+        if expected is not None:
+            if min_count is not None or max_count is not None:
+                error('位置参数 expected 与 --min/--max 互斥，请二选一',
+                      code='INVALID_ARGS')
+                return
+            import re as _re
+            m = _re.fullmatch(r'(>=|<=|!=|==|>|<)?\s*(\d+)', expected)
+            if not m:
+                error(f'expected 须为数字或比较式（>=3 <=5 !=2 >1 <9）: '
+                      f'{expected}', code='INVALID_ARGS')
+                return
+            op, n_exp = m.group(1) or '==', int(m.group(2))
+            op_func = {
+                '==': lambda n: n == n_exp, '!=': lambda n: n != n_exp,
+                '>=': lambda n: n >= n_exp, '<=': lambda n: n <= n_exp,
+                '>': lambda n: n > n_exp, '<': lambda n: n < n_exp}[op]
+            expected_desc = f'{op}{n_exp}'
+        elif min_count is None and max_count is None:
             error('请指定期望数量或 --min/--max', code='INVALID_ARGS')
             return
         page = _get_page(session)
@@ -340,11 +370,13 @@ def register(cli):
             real_loc = resolve_locator(locator, session)
 
             def _pass(n):
-                if expected is not None:
-                    return n == expected
-                lo = min_count if min_count is not None else 0
-                hi = max_count if max_count is not None else n
-                return lo <= n <= hi
+                if op_func is not None:
+                    base = op_func(n)
+                else:
+                    lo = min_count if min_count is not None else 0
+                    hi = max_count if max_count is not None else n
+                    base = lo <= n <= hi
+                return (not base) if negate else base
 
             def _check():
                 try:
@@ -355,20 +387,83 @@ def register(cli):
 
             r = _poll(_check, timeout) if timeout else _check()
             n = (r or {}).get('n', 0)
-            if expected is not None:
-                passed = n == expected
-                desc = f'期望 {expected} 个，实际 {n} 个'
+            if op_func is not None:
+                base = op_func(n)
+                desc = f'期望 {expected_desc} 个，实际 {n} 个'
             else:
                 lo = min_count if min_count is not None else 0
                 hi = max_count if max_count is not None else n
-                passed = lo <= n <= hi
+                base = lo <= n <= hi
                 lo_s = str(min_count) if min_count is not None else '-∞'
                 hi_s = str(max_count) if max_count is not None else '+∞'
                 desc = f'期望 [{lo_s}, {hi_s}]，实际 {n} 个'
+            passed = (not base) if negate else base
+            if negate:
+                desc += '（--not 反断）'
             if passed:
                 ok({'locator': real_loc, 'count': n}, msg='断言通过')
             else:
                 error(f'断言失败：{desc}', code='ASSERT_FAILED')
+        except Exception as e:
+            error('断言执行失败', code='ASSERT_FAILED', detail=str(e))
+
+    @cli.command('assert-value')
+    @click.argument('locator')
+    @click.argument('expect')
+    @session_option
+    @click.option('--contains', is_flag=True, help='包含匹配（默认精确等于）')
+    @click.option('--not', 'negate', is_flag=True, help='反向断言：值不等于/不包含')
+    @frame_option
+    @click.option('--timeout', default=5, type=float, help='元素等待超时秒数', show_default=True)
+    def assert_value(locator, expect, session, contains, negate, frame, timeout):
+        """断言表单元素的 value（input/textarea；条件轮询到 --timeout）。
+
+        元素不存在无论正反都判失败（PW 语义：缺失元素不做反向放行）。
+
+        \b
+        示例:
+          dpx assert-value "#username" "admin"
+          dpx assert-value "@name=q" "temp" --contains
+          dpx assert-value "#token" "" --not --contains   # 断言非空
+        """
+        page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
+        real = resolve_locator(locator, session)
+
+        def _check():
+            ele = ctx.ele(real, timeout=0.5)
+            if _is_missing(ele):
+                return {'miss': True, 'missing': True}
+            # property 优先（JS 赋值的 value 不落 attribute），attribute 兜底
+            try:
+                val = ele.run_js('return this.value')
+            except Exception:
+                val = None
+            if val is None:
+                val = ele.attr('value')
+            val = '' if val is None else str(val)
+            matched = (expect in val) if contains else (val == expect)
+            if negate:
+                matched = not matched
+            return {'value': val} if matched else {'value': val, 'miss': True}
+
+        try:
+            r = _poll(_check, timeout)
+            if r and not r.get('miss'):
+                ok({'locator': real, 'value': r.get('value'),
+                    'negate': negate}, msg='断言通过')
+            elif r and r.get('missing'):
+                error(f'断言失败：元素不存在 {real}', code='ASSERT_FAILED')
+            else:
+                verb = '包含' if contains else '等于'
+                if negate:
+                    error(f'断言失败：元素值仍{verb} "{expect}"（--not）',
+                          code='ASSERT_FAILED',
+                          detail=f'实际值: {(r or {}).get("value", "")[:120]}')
+                else:
+                    error(f'断言失败：元素值不{verb} "{expect}"',
+                          code='ASSERT_FAILED',
+                          detail=f'实际值: {(r or {}).get("value", "")[:120]}')
         except Exception as e:
             error('断言执行失败', code='ASSERT_FAILED', detail=str(e))
 

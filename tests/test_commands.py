@@ -3719,3 +3719,30 @@ def test_fill_form_bad_json(runner, monkeypatch):
     monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
     r = runner.invoke(cli, ['fill-form', '--data', '{broken'])
     assert 'INVALID_JSON' in r.output
+
+
+@pytest.mark.unit
+def test_mcp_tool_table_and_schema():
+    """白名单工具表：数量/schema/unsafe-eval 门控/argv 映射。"""
+    from dp_cli import mcp as m
+    assert len(m._TOOLS) >= 30
+    assert 'eval' in m._UNSAFE
+    s = m._schema('click', m._TOOLS['click'])
+    assert s['required'] == ['locator']
+    assert s['properties']['force']['type'] == 'boolean'
+    argv = m._to_argv('fill', m._TOOLS['fill'],
+                      {'locator': '#u', 'value': 'admin'})
+    assert argv == ['fill', '#u', 'admin']
+    argv2 = m._to_argv('screenshot', m._TOOLS['screenshot'],
+                       {'path': 'a.png', 'annotate': True})
+    assert argv2 == ['screenshot', '--filename', 'a.png', '--annotate']
+
+
+@pytest.mark.unit
+def test_mcp_without_sdk_actionable(runner, monkeypatch):
+    """mcp 包缺失 → 可行动提示（MCP_FAILED）。"""
+    from dp_cli.main import cli
+    import dp_cli.mcp as mm
+    monkeypatch.setattr(mm, 'run_mcp', lambda *a, **k: 1)
+    r = runner.invoke(cli, ['mcp'])
+    assert 'MCP_FAILED' in r.output

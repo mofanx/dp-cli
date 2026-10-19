@@ -128,6 +128,12 @@ def run_mcp(session: str, unsafe_eval: bool, allowed_domains):
                                 text=f'{{"error":"unknown tool {name}"}}')]
         argv = _to_argv(name, spec, dict(arguments or {}))
         argv += ['--session', session]
+        # netlog 前置武装：本条 tool 导航的流量也要进缓冲
+        try:
+            from dp_cli.commands.serve import _maybe_arm_netlog
+            _maybe_arm_netlog(session)
+        except Exception:
+            pass
         from dp_cli.commands.batch import _invoke
         code, result = _invoke(argv)
         return [TextContent(type='text',

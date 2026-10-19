@@ -3746,3 +3746,43 @@ def test_mcp_without_sdk_actionable(runner, monkeypatch):
     monkeypatch.setattr(mm, 'run_mcp', lambda *a, **k: 1)
     r = runner.invoke(cli, ['mcp'])
     assert 'MCP_FAILED' in r.output
+
+
+@pytest.mark.unit
+def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
+    """daemon 路径：_maybe_arm_netlog 在 _invoke 前（首导航命令流量可捕获）。"""
+    import threading
+    import dp_cli.daemon as dm
+    order = []
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
+
+    import dp_cli.commands.serve as sv
+    import dp_cli.commands.batch as bt
+    monkeypatch.setattr(sv, '_maybe_arm_netlog',
+                        lambda s: order.append('arm'))
+    monkeypatch.setattr(bt, '_invoke',
+                        lambda argv: (order.append('invoke'), (0, {}))[1])
+
+    t = threading.Thread(target=dm.run_daemon, args=('ord',), daemon=True)
+    t.start()
+    import time as _t
+    for _ in range(40):
+        if (tmp_path / 'ord.sock').exists():
+            break
+        _t.sleep(0.1)
+    r = dm._send_recv(tmp_path / 'ord.sock', {'argv': ['eval', '1']}, 10)
+    assert order == ['arm', 'invoke']
+
+
+@pytest.mark.unit
+def test_fill_form_eq_in_locator_hint(runner, monkeypatch):
+    """fill-form pair 模式 '@name=x' 会被 split 拆错——提示走 --data。"""
+    from dp_cli.main import cli
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['fill-form', '@name=pw', '--no-wait'])
+    # 已有 '@name=' 引导改用 --data 的 INVALID_ARGS 提示
+    assert 'INVALID_ARGS' in r.output and '--data' in r.output

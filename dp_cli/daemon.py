@@ -200,12 +200,14 @@ def _handle_conn(conn, session):
                 if ('--session' not in argv and '-S' not in argv
                         and _accepts_session(cmd_name)):
                     argv = argv + ['--session', session]
+                # netlog 前置武装：首条导航命令的 Network 事件
+                # 才能被捕获（后置会丢该命令全程流量）
+                try:
+                    from dp_cli.commands.serve import _maybe_arm_netlog
+                    _maybe_arm_netlog(session)
+                except Exception:
+                    pass
                 code, result = _invoke(argv)
-        try:
-            from dp_cli.commands.serve import _maybe_arm_netlog
-            _maybe_arm_netlog(session)
-        except Exception:
-            pass
         out = {'exit': code, 'result': result}
         if req_id is not None:
             out['id'] = req_id

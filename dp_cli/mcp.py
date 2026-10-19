@@ -154,7 +154,9 @@ def register(cli):
     @cli.command('mcp')
     @click.option('--session', default='default', show_default=True)
     @click.option('--unsafe-eval', is_flag=True,
-                  help='暴露 eval 工具（可执行任意 JS，默认关闭）')
+                  help='额外暴露 eval 工具——允许 MCP client 在页面'
+                       '执行任意 JavaScript（默认不暴露；'
+                       '仅供可信 client，等同 --eval 权限面）')
     @click.option('--allow-domain', 'domains', multiple=True,
                   help='域名白名单（透传会话拦截配置，可多次）')
     def mcp_cmd(session, unsafe_eval, domains):

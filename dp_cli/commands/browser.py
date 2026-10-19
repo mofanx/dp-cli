@@ -120,13 +120,25 @@ def register(cli):
     @bridge_grp.command('list')
     def bridge_list():
         """列出全部注册 bridge（跨 session 共享的代理进程）。"""
-        from dp_cli.bridge_registry import iter_entries
+        from dp_cli.bridge_registry import (iter_entries,
+                                            _default_validate, _bridges_dir)
         entries = iter_entries()
-        out = [{'pid': e.get('pid'), 'port': e.get('port'),
-                'real_port': e.get('real_port'),
-                'user_data_dir': e.get('user_data_dir'),
-                'sessions': e.get('sessions', [])} for e in entries]
-        ok({'count': len(out), 'bridges': out})
+        out, pruned = [], 0
+        for e in entries:
+            alive = _default_validate(e, e.get('real_port'))
+            if not alive:
+                # 死件就地清——注册表不堆积 stale（find_bridge 同款语义）
+                try:
+                    (_bridges_dir() / e['_file']).unlink()
+                    pruned += 1
+                except OSError:
+                    pass
+                continue
+            out.append({'pid': e.get('pid'), 'port': e.get('port'),
+                        'real_port': e.get('real_port'),
+                        'user_data_dir': e.get('user_data_dir'),
+                        'sessions': e.get('sessions', [])})
+        ok({'count': len(out), 'pruned': pruned, 'bridges': out})
 
     @bridge_grp.command('stop')
     @click.option('--pid', type=int, default=None, help='按 pid 停（默认停全部注册项）')

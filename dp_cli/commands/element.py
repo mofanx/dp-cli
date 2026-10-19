@@ -146,7 +146,7 @@ def register(cli):
             if human:
                 human_click(page, ele, human_min, human_max, times=2)
             else:
-                ele.click(count=2)
+                ele.click.multi(times=2)
             ok({'locator': locator}, msg='双击成功')
         except Exception as e:
             error(f'双击失败: {locator}', code='CLICK_FAILED', detail=str(e))

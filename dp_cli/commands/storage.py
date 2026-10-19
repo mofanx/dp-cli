@@ -26,8 +26,9 @@ def _is_local_or_ip(host: str) -> bool:
 
 
 _COOKIE_ATTRS = {'path', 'domain', 'expires', 'max-age', 'samesite',
-                 'priority', 'secure', 'httponly', 'expires', 'version',
-                 'comment', 'port', 'discard'}
+                 'priority', 'secure', 'httponly', 'version',
+                 'comment', 'port', 'discard', 'partitioned',
+                 'sameparty'}
 
 
 def _sniff_cookies(raw: str):

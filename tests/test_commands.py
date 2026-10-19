@@ -504,6 +504,8 @@ def test_listen_stop_always_stops(runner, monkeypatch):
     from dp_cli.main import cli
 
     class _Listen:
+        listening = True
+
         def __init__(self):
             self.stopped = False
 
@@ -2200,6 +2202,8 @@ def test_listen_stop_output_writes_json(runner, monkeypatch, tmp_path):
         response = _Resp()
 
     class _Listen:
+        listening = True
+
         def wait(self, count, timeout, fit_count):
             return [_Pkt()]
 

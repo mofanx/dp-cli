@@ -318,6 +318,14 @@ def register(cli):
     def listen_stop(session, count, timeout, output, fields, head):
         """停止监听并获取捕获的网络请求数据（含请求头/postData/响应体）。"""
         page = _get_page(session)
+        if not getattr(page.listen, 'listening', False):
+            error('当前进程无活动监听——listen 是进程内监听器，跨进程不持久。'
+                  '请在同一会话的常驻进程内配对使用：'
+                  'dpx serve / dpx sh / daemon(DPX_DAEMON=1) / dpx mcp 内 '
+                  'listen→触发→listen-stop；'
+                  '或改用被动缓冲 `dpx requests`（serve/daemon 托管）',
+                  code='LISTEN_FAILED')
+            return
         try:
             # finally 中 stop：wait 超时/出错也必须停止监听，否则监听器残留
             try:

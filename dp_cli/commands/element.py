@@ -306,7 +306,8 @@ def register(cli):
     @frame_option
     @click.option('--no-wait', is_flag=True, help='不等待可交互，立即执行')
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def drag(from_locator, to_locator, session, duration, frame, timeout):
+    def drag(from_locator, to_locator, session, duration, frame, timeout,
+             no_wait):
         """拖拽元素到另一个元素。
 
         \b
@@ -319,11 +320,11 @@ def register(cli):
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
         try:
-            src = ctx.ele(from_locator, timeout=timeout)
-            dst = ctx.ele(to_locator, timeout=timeout)
-            if not src or src.__class__.__name__ == 'NoneElement':
-                error(f'未找到源元素: {from_locator}', code='ELEMENT_NOT_FOUND')
+            src = _wait_ele(ctx, from_locator, timeout=timeout,
+                            no_wait=no_wait, code='DRAG_FAILED', label='拖拽')
+            if src is None:
                 return
+            dst = ctx.ele(to_locator, timeout=timeout)
             if not dst or dst.__class__.__name__ == 'NoneElement':
                 error(f'未找到目标元素: {to_locator}', code='ELEMENT_NOT_FOUND')
                 return

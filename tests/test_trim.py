@@ -180,6 +180,8 @@ class _Pkt:
 
 
 class _Listen:
+    listening = True
+
     def wait(self, **kw):
         return [_Pkt(i) for i in range(3)]
 

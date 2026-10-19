@@ -36,6 +36,10 @@ def _sniff_cookies(raw: str):
 
     支持：JSON 列表 [{name,value,...}]、JSON 对象 {name:value}、
     Netscape dump（7 列 tab 分隔）、Cookie 头串 "k=v; k=v"。
+
+    已知取舍：头串分支按 _COOKIE_ATTRS 过滤属性名——真叫
+    path/domain/expires 等的 cookie 名会被误判为属性丢弃（RFC 歧义，
+    现实极罕见；首段豁免会引入不对称复杂度，故不过滤）。
     """
     text = raw.strip()
     if not text:

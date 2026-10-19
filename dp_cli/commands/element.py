@@ -391,6 +391,110 @@ def register(cli):
         except Exception as e:
             error(f'文件上传失败', code='UPLOAD_FAILED', detail=str(e))
 
+    @cli.command('fill-form')
+    @click.argument('pairs', nargs=-1)
+    @session_option
+    @click.option('--data', 'data_json', default=None,
+                  help='JSON 对象 {"locator":"value",...}（与位置参数互斥）')
+    @click.option('--no-wait', is_flag=True, help='不等待可交互，立即执行')
+    @frame_option
+    @click.option('--timeout', default=10, help='每字段等待超时秒数',
+                  show_default=True)
+    def fill_form(pairs, session, data_json, no_wait, frame, timeout):
+        """批量表单填充：逐字段 actionability 等待 + fill，per-field 明细。
+
+        \b
+        示例:
+          dpx fill-form --data '{"#user":"admin","@name=pwd":"123"}'
+          dpx fill-form "#user=admin" "css:#pwd=123"
+          dpx fill-form --data @form.json     # 支持 @file 读 JSON
+        """
+        import json as _json
+        fields = {}
+        if data_json and pairs:
+            error('--data 与位置参数互斥', code='INVALID_ARGS')
+            return
+        if data_json:
+            src = data_json
+            if src.startswith('@'):
+                try:
+                    from pathlib import Path as _P
+                    src = _P(src[1:]).read_text(encoding='utf-8')
+                except OSError as e:
+                    error(f'读取 --data 文件失败: {e}', code='INVALID_ARGS')
+                    return
+            try:
+                fields = _json.loads(src)
+            except _json.JSONDecodeError as e:
+                error(f'--data JSON 解析失败: {e}', code='INVALID_JSON')
+                return
+            if not isinstance(fields, dict):
+                error('--data 须为 JSON 对象', code='INVALID_JSON')
+                return
+        elif pairs:
+            for p in pairs:
+                if '=' not in p:
+                    error(f'位置参数须为 locator=value: {p}',
+                          code='INVALID_ARGS')
+                    return
+                k, v = p.split('=', 1)
+                fields[k] = v
+        else:
+            error('请提供 --data 或 locator=value 参数', code='INVALID_ARGS')
+            return
+        page = _get_page(session)
+        ctx = frame_ctx(page, frame, session)
+        results = []
+        n_fail = 0
+        from dp_cli.commands._utils import wait_actionable as _wa
+        import io as _io, contextlib as _cl
+        for loc, val in fields.items():
+            try:
+                # resolve_locator 内部 error() 打 JSON 并 sys.exit——
+                # 重定向捕获避免污染 stdout 契约，失败计入 per-field
+                _buf = _io.StringIO()
+                with _cl.redirect_stdout(_buf):
+                    real = resolve_locator(loc, session)
+                if no_wait:
+                    ele = ctx.ele(real, timeout=0)
+                    fail = ({'reason': 'not_found'}
+                            if ele is None
+                            or ele.__class__.__name__ == 'NoneElement'
+                            else None)
+                else:
+                    ele, fail = _wa(ctx, real, timeout=timeout,
+                                    hit_check=False)
+                if fail is not None:
+                    results.append({'locator': loc, 'ok': False,
+                                    'reason': fail.get('reason', 'failed')})
+                    n_fail += 1
+                    continue
+                ele.input(val, clear=True)
+                results.append({'locator': loc, 'ok': True})
+            except SystemExit:
+                try:
+                    reason = _json.loads(
+                        _buf.getvalue()
+                    ).get('message', 'resolve_error')[:120]
+                except Exception:
+                    reason = 'resolve_error'
+                results.append({'locator': loc, 'ok': False,
+                                'reason': reason})
+                n_fail += 1
+            except Exception as e:
+                results.append({'locator': loc, 'ok': False,
+                                'reason': str(e)[:120]})
+                n_fail += 1
+        data = {'total': len(fields), 'filled': len(fields) - n_fail,
+                'failed': n_fail, 'fields': results}
+        if n_fail:
+            data['status'] = 'error'
+            data['code'] = 'FILL_FAILED'
+            data['message'] = f'{n_fail}/{len(fields)} 字段填入失败'
+            print(_json.dumps(data, ensure_ascii=False))
+            raise SystemExit(1)
+        ok(data, msg=f'已填入 {len(fields)} 个字段')
+
     @cli.command('count')
     @click.argument('locator')
     @session_option

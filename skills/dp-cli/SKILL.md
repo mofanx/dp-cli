@@ -587,3 +587,14 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 ## 维护约定（仓库贡献者）
 
 修改本 skill 文档后必跑 `scripts/sync-skill.sh` 同步到 `~/.claude/skills/dp-cli/`（脚本末尾 diff -r 自检）；新增/改命令选项后重跑 `python -m dp_cli.catalog --md` 刷新 `references/commands.md` 生成段。详见 TESTING.md 第 8 节。
+
+
+## 新特性速查（0.13）
+
+- `dpx fill-form <pairs...>|--data '<json>'`：批量填表，per-field 明细
+- `dpx cookies-import <file|->`：批量导 cookie（Netscape/JSON/Cookie 头）
+- `dpx intercept --allow-domain <域>`：白名单外请求 abort（agent 安全护栏）
+- `dpx read <url>`：无浏览器直抓 markdown（llms.txt 探测）
+- `dpx requests`/`dpx request <id>`：serve 托管被动网络日志
+- `dpx daemon-start|daemon-status|daemon-stop`：socket 常驻免启动税（DPX_DAEMON=1 强制路由）
+- `dpx sleep N`、`dpx wait --popup`、`dpx wait --download`：定时/新tab/下载等待

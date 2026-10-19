@@ -3670,3 +3670,52 @@ def test_daemon_flag_value_not_cmd(monkeypatch, tmp_path):
     # daemon-status 在 skip——验证命令名解析对了（session 值 's' 不算命令）
     r = try_daemon(['--session', 'default', 'daemon-status'])
     assert r is None  # skip 名单命中（证明解析出 daemon-status 而非 'default'）
+
+
+@pytest.mark.unit
+def test_fill_form_multi_ok(runner, monkeypatch):
+    """fill-form 多字段全成功。"""
+    from dp_cli.main import cli
+    filled = []
+
+    class E(FakeEle):
+        def input(self, v, clear=True, by_js=False):
+            filled.append(v)
+
+    monkeypatch.setattr(_utils, 'get_browser',
+                        lambda s: FakePage(ele=E()))
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['fill-form', '#u=admin', '#p=pw'])
+    assert r.exit_code == 0, r.output
+    assert filled == ['admin', 'pw']
+    assert '"filled": 2' in r.output
+
+
+@pytest.mark.unit
+def test_fill_form_partial_fail_detail(runner, monkeypatch):
+    """单字段失败：fields 明细 + 非零退出。"""
+    from dp_cli.main import cli
+
+    class E(FakeEle):
+        def input(self, v, clear=True, by_js=False):
+            pass
+
+    class P(FakePage):
+        def ele(self, locator, index=1, timeout=10):
+            return E() if 'good' in locator else NoneEle()
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['fill-form', '#good=1', '#bad=2', '--no-wait'])
+    assert r.exit_code != 0
+    assert '"failed": 1' in r.output and '"ok": false' in r.output
+
+
+@pytest.mark.unit
+def test_fill_form_bad_json(runner, monkeypatch):
+    from dp_cli.main import cli
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    r = runner.invoke(cli, ['fill-form', '--data', '{broken'])
+    assert 'INVALID_JSON' in r.output

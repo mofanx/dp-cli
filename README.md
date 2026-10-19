@@ -262,6 +262,18 @@ dpx extract "css:.item-card" \
   --limit 100 -o csv -f result.csv
 ```
 
+
+## New in 0.13
+
+- **Batch form fill** — `dpx fill-form "#u=admin" "css:#p=pw"` or `--data '{"#u":"x"}'`；per-field ok/fail 明细
+- **Cookie bulk import** — `dpx cookies-import cookies.txt|-` auto-sniffs Netscape dump / JSON / `Cookie:` header
+- **Domain allowlist** — `dpx intercept --allow-domain ex.com` aborts all off-list requests (`--allow-file` escapes file://)
+- **Browserless read** — `dpx read <url>` fetches via curl_cffi (`Accept: text/markdown` + llms.txt probing), no browser needed
+- **Passive netlog** — `dpx serve` buffers ~500 requests → `dpx requests` / `dpx request <id>`
+- **Session daemon** — `dpx daemon-start` then commands run via unix socket, no per-cmd startup tax (`DPX_DAEMON=1` forces routing)
+- **Timing waits** — `dpx sleep N`, `dpx wait --popup` (new tab id), `dpx wait --download` (dir-rescan fallback)
+- **Select diagnostics** — failed `dpx select` lists available option value(text)
+
 ## Project Structure
 
 ```

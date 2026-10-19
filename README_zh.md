@@ -94,6 +94,18 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 
 定位器优先 `pw:role=...`/`text:` 语义形式，css 兜底。全部输出为 JSON——错误带 `code`（如 `SESSION_NOT_FOUND`/`SESSION_DISCONNECTED`/`SKILL_DRIFT`）与退出码。
 
+
+## 0.13 新特性
+
+- **批量表单填充** — `dpx fill-form "#u=admin" "css:#p=pw"` 或 `--data '{"#u":"x"}'`；每字段 ok/fail 明细
+- **Cookie 批量导入** — `dpx cookies-import cookies.txt|-` 自动识别 Netscape dump / JSON / `Cookie:` 头串
+- **域名白名单** — `dpx intercept --allow-domain ex.com` 拦截白名单外全部请求（`--allow-file` 放行 file://）
+- **无浏览器抓取** — `dpx read <url>` curl_cffi 直取（`Accept: text/markdown` + llms.txt 祖先探测），不起浏览器
+- **被动网络日志** — `dpx serve` 托管 ~500 条 ring buffer → `dpx requests` / `dpx request <id>`
+- **session daemon** — `dpx daemon-start` 后命令走 unix socket 免启动税（`DPX_DAEMON=1` 强制路由）
+- **定时等待** — `dpx sleep N`、`dpx wait --popup`（新 tab id）、`dpx wait --download`（目录回扫兜底）
+- **select 诊断** — `dpx select` 失败时枚举可选 option 的 value(text)
+
 ## 项目结构
 
 ```

@@ -42,6 +42,7 @@
 | 提取/交互 | `dblclick` | <locator>, [session], [index], [human], [human_min], [human_max], [frame], [no_wait], [timeout] |
 | 提取/交互 | `drag` | <from_locator>, <to_locator>, [session], [duration], [frame], [no_wait], [timeout] |
 | 提取/交互 | `fill` | <locator>, <value>, [session], [index], [clear], [by_js], [human], [human_min], [human_max], [frame], [no_wait], [timeout] |
+| 提取/交互 | `fill-form` | [pairs], [session], [data_json], [no_wait], [frame], [timeout] |
 | 提取/交互 | `hover` | <locator>, [session], [index], [offset_x], [offset_y], [frame], [no_wait], [timeout] |
 | 提取/交互 | `select` | <locator>, <value>, [session], [index], [by_text], [sel_by_index], [frame], [no_wait], [timeout] |
 | 提取/交互 | `upload` | <locator>, <file_path>, [session], [frame], [no_wait], [timeout] |

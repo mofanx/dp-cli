@@ -222,3 +222,15 @@ def test_skill_frontmatter_schema():
         assert isinstance(d.get('dp_cli_version'), str)
     except ImportError:
         pytest.skip('pyyaml 不可用')
+
+
+@pytest.mark.unit
+def test_docs_cover_013_features():
+    """钉住 0.13 新命令名在三处文档中不漂移。"""
+    root = Path(__file__).resolve().parent.parent
+    for fname in ('README.md', 'README_zh.md',
+                  'skills/dp-cli/SKILL.md'):
+        text = (root / fname).read_text(encoding='utf-8')
+        for cmd in ('fill-form', 'cookies-import', 'allow-domain',
+                    'daemon-start', 'requests', 'read <url>'):
+            assert cmd in text, f'{fname} 缺 {cmd}'

@@ -2,6 +2,28 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.13.0] - 2026-10-19
+
+### 新增
+
+- **`dpx daemon-start/status/stop` + socket 化**（opt-in）：命令经 unix socket 路由到常驻进程，ENOENT 自动 spawn+retry、超时分层、idle 自退、flock 锁并发 spawn=1；`DPX_DAEMON=1` 启用，默认不变现有行为。
+- **被动网络日志**：`netlog` ring buffer（serve 常驻托管）+ `dpx requests`/`dpx request <id>` 滚动查询（NO_NETLOG 降级指引）。
+- **域名白名单护栏**：`intercept --allow-domain` 导航+全资源拦截（fail-closed，畸形 URL/未知 scheme 拒绝，`--allow-file` 逃生位）+ `FORBIDDEN_DOMAIN`。
+- **内容边界**：`read/extract/query --boundary` nonce 包裹防 prompt injection。
+- **`dpx fill-form`**：批量表单填充（--data JSON/@file 或 locator=value 对），逐字段 actionability，per-field 明细+FILL_FAILED。
+- **`dpx sleep`**、`wait --popup`（新 tab 捕获）、`wait --download`（三态：可行动报错→missions 轮询→目录回扫兜底）。
+- **`screenshot --annotate`**（refs overlay）+`--if-changed`（未变不落盘省 token）。
+- **`cookies-import`**：curl dump/JSON/Cookie header 三格式自动嗅探批量导入。
+- **`read <url>` 直抓**：无浏览器 curl_cffi+trafilatura+llms.txt 探测。
+- `select` 失败枚举可用 option；`state-save` 多 origin localStorage；`state-load` 兼容 playwright storageState（0.12 已含导出侧）。
+- `README_zh.md` 中文文档与英文版互链。
+
+### 修复
+
+- wait --popup 对 MixTab 无 tab_ids 被 except 吞恒超时（复核链抓到）；download --dir 持久化 sess 标记（page.download_path 恒 truthy 死代码）。
+- `_host_allowed` fail-open → fail-closed（复核链抓到：畸形 URL 可绕白名单）。
+- daemon spawn 竞态→flock；daemon-stop 死代码→判定前移。
+
 ## [0.12.0] - 2026-10-19
 
 ### 新增

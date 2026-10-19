@@ -25,6 +25,11 @@ def _is_local_or_ip(host: str) -> bool:
         return False
 
 
+_COOKIE_ATTRS = {'path', 'domain', 'expires', 'max-age', 'samesite',
+                 'priority', 'secure', 'httponly', 'expires', 'version',
+                 'comment', 'port', 'discard'}
+
+
 def _sniff_cookies(raw: str):
     """嗅探 cookie 文本格式 → list[dict] | None（无法识别）。
 
@@ -87,7 +92,7 @@ def _sniff_cookies(raw: str):
                 continue
             k, v = seg.split('=', 1)
             k = k.strip()
-            if k:
+            if k and k.lower() not in _COOKIE_ATTRS:
                 out.append({'name': k, 'value': v.strip()})
         if out:
             return out

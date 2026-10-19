@@ -25,6 +25,75 @@ def _is_local_or_ip(host: str) -> bool:
         return False
 
 
+def _sniff_cookies(raw: str):
+    """嗅探 cookie 文本格式 → list[dict] | None（无法识别）。
+
+    支持：JSON 列表 [{name,value,...}]、JSON 对象 {name:value}、
+    Netscape dump（7 列 tab 分隔）、Cookie 头串 "k=v; k=v"。
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    # JSON
+    if text[0] in '[{':
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, list):
+            return [c for c in data if isinstance(c, dict) and 'name' in c]
+        if isinstance(data, dict):
+            # pw storageState 顶层对象 → 取 cookies 键
+            if 'cookies' in data and isinstance(data['cookies'], list):
+                return [c for c in data['cookies']
+                        if isinstance(c, dict) and 'name' in c]
+            return [{'name': k, 'value': str(v)} for k, v in data.items()]
+        return None
+    # Netscape dump：含 \t 的行按 7 列解析
+    if '\t' in text:
+        out = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split('\t')
+            if len(parts) < 7:
+                continue
+            dom, _inc, path, secure, exp, name, value = parts[:7]
+            ck = {'name': name, 'value': value}
+            if dom:
+                ck['domain'] = dom
+            if path:
+                ck['path'] = path
+            if secure.upper() == 'TRUE':
+                ck['secure'] = True
+            try:
+                e = int(float(exp))
+                if e > 0:
+                    ck['expires'] = e
+            except (TypeError, ValueError):
+                pass
+            out.append(ck)
+        if out:
+            return out
+    # Cookie 头串：k=v; k=v
+    if '=' in text:
+        hdr = text.split(':', 1)[1].strip() if text.lower().startswith(
+            'cookie:') else text
+        out = []
+        for seg in hdr.split(';'):
+            seg = seg.strip()
+            if '=' not in seg:
+                continue
+            k, v = seg.split('=', 1)
+            k = k.strip()
+            if k:
+                out.append({'name': k, 'value': v.strip()})
+        if out:
+            return out
+    return None
+
+
 def register(cli):
 
     # ── Cookie ──────────────────────────────────
@@ -237,6 +306,59 @@ def register(cli):
                 ok({'content': content, 'count': len(items)})
         except Exception as e:
             error(f'导出 Cookie 失败', code='COOKIE_FAILED', detail=str(e))
+
+    @cli.command('cookies-import')
+    @click.argument('source')
+    @session_option
+    def cookies_import(source, session):
+        """批量导入 Cookie——自动嗅探三种格式。
+
+        \b
+        支持格式（自动识别，无需指定）:
+          1. Netscape/curl dump（cookies.txt，curl -b 可直接导出）
+          2. JSON——列表 [{name,value,...}]（pw/本工具 cookie-export 格式）
+                     或对象 {name: value}
+          3. Cookie 头串 "k1=v1; k2=v2"（浏览器 DevTools 复制）
+        source 为文件路径或 '-' 读 stdin。
+
+        \b
+        示例:
+          dpx cookies-import cookies.txt
+          dpx cookies-import auth.json
+          echo 'a=1; b=2' | dpx cookies-import -
+        """
+        page = _get_page(session)
+        try:
+            if source == '-':
+                import sys
+                raw = sys.stdin.read()
+            else:
+                raw = Path(source).read_text(encoding='utf-8')
+        except OSError as e:
+            error(f'读取 cookie 源失败: {source}', code='FILE_NOT_FOUND',
+                  detail=str(e))
+            return
+        cookies = _sniff_cookies(raw)
+        if cookies is None:
+            error('无法识别 cookie 格式（支持 Netscape dump / JSON / '
+                  'Cookie 头串）', code='INVALID_ARGS')
+            return
+        if not cookies:
+            error('cookie 源为空', code='INVALID_ARGS')
+            return
+        n_ok = 0
+        n_fail = []
+        for c in cookies:
+            try:
+                page.set.cookies(c)
+                n_ok += 1
+            except Exception as e:
+                n_fail.append(f"{c.get('name')}: {e}")
+        result = {'imported': n_ok}
+        if n_fail:
+            result['failed'] = n_fail
+        ok(result, msg=f'已导入 {n_ok} 个 cookie'
+                       + (f'（失败 {len(n_fail)}）' if n_fail else ''))
 
     # ── LocalStorage ────────────────────────────
 

@@ -80,19 +80,106 @@ def _apply_intercept(page, cfg: dict) -> None:
     page.run_cdp('Network.setExtraHTTPHeaders',
                  headers=cfg.get('headers') or {})
     mocks = cfg.get('mocks') or []
-    if mocks:
-        page.run_cdp('Fetch.enable', patterns=[
-            {'urlPattern': m['pattern'], 'requestStage': 'Request'}
-            for m in mocks])
+    allowed = cfg.get('allowed_domains') or []
+    if mocks or allowed:
+        patterns = [{'urlPattern': m['pattern'], 'requestStage': 'Request'}
+                    for m in mocks]
+        if allowed:
+            # 白名单须拦全部请求才能逐条判定（mocks 只拦命中 pattern 的）
+            patterns.append({'urlPattern': '*', 'requestStage': 'Request'})
+        page.run_cdp('Fetch.enable', patterns=patterns)
         page.driver.set_callback(
-            'Fetch.requestPaused', _make_mock_handler(page, mocks))
+            'Fetch.requestPaused',
+            _make_paused_handler(page, mocks, allowed,
+                                 cfg.get('allow_file', False)))
     else:
-        # 无 mock 规则时确保 Fetch 拦截关闭（重放 --off 后的干净状态）
+        # 无 mock/白名单规则时确保 Fetch 拦截关闭（重放 --off 后的干净状态）
         try:
             page.driver.set_callback('Fetch.requestPaused', None)
             page.run_cdp('Fetch.disable')
         except Exception:
             pass
+
+
+# 页面运行必需的内部 scheme 白名单（无 host 概念，不构成出域风险）
+_INTERNAL_SCHEMES = {'data', 'blob', 'about', 'chrome', 'edge',
+                     'chrome-extension', 'moz-extension', 'devtools',
+                     'javascript', 'view-source'}
+
+
+def _host_allowed(url: str, allowed: list, allow_file: bool = False) -> bool:
+    """URL host 是否命中白名单（后缀匹配：example.com 覆盖子域）。
+
+    策略（fail-closed）：
+    - 解析失败/无 host 的 http(s) 形态 → 拒绝（畸形 URL 是典型绕过面）
+    - 内部 scheme（data:/blob:/about:/chrome-extension: 等）→ 放行（页面必需）
+    - file:// → 默认拒绝（本地文件是高敏面），allow_file=True 放行
+    - 其他未知 scheme（ftp:/custom-app: 等）→ 拒绝
+    """
+    from urllib.parse import urlparse
+    try:
+        parts = urlparse(url)
+    except Exception:
+        debug(f'白名单判定：URL 解析失败，拒绝 {url[:80]}')
+        return False
+    scheme = (parts.scheme or '').lower()
+    if scheme in _INTERNAL_SCHEMES:
+        return True
+    if scheme == 'file':
+        return allow_file
+    if scheme not in ('http', 'https'):
+        # ws/wss 等非 http 但受域名约束的也按 host 判定；无 host 拒绝
+        if scheme in ('ws', 'wss'):
+            pass  # 落到下方 host 判定
+        elif not scheme:
+            pass  # protocol-relative / 相对路径 → host 判定
+        else:
+            debug(f'白名单判定：未知 scheme={scheme}，拒绝 {url[:80]}')
+            return False
+    host = (parts.hostname or '').lower()
+    if not host:
+        # http(s)/ws(s)/相对形态但没有 host → 畸形，拒绝
+        debug(f'白名单判定：无 host（{url[:80]}），拒绝')
+        return False
+    for d in allowed:
+        d = d.lower().lstrip('*.')
+        if host == d or host.endswith('.' + d):
+            return True
+    return False
+
+
+def _make_paused_handler(page, mocks: list, allowed: list,
+                         allow_file: bool = False):
+    """统一 requestPaused 回调：白名单外 abort → mock fulfill → 放行。"""
+    def _on_paused(**kw):
+        rid = kw.get('requestId')
+        url = (kw.get('request') or {}).get('url', '')
+        if allowed and not _host_allowed(url, allowed, allow_file):
+            try:
+                page.run_cdp('Fetch.failRequest', requestId=rid,
+                             errorReason='BlockedByClient')
+            except Exception as e:
+                debug(f'failRequest 失败 url={url}', e)
+            return
+        for m in mocks:
+            if fnmatch.fnmatch(url, m.get('pattern', '*')):
+                body = (m.get('body') or '').encode('utf-8')
+                headers = [{'name': k, 'value': str(v)}
+                           for k, v in (m.get('headers') or {}).items()]
+                try:
+                    page.run_cdp(
+                        'Fetch.fulfillRequest', requestId=rid,
+                        responseCode=int(m.get('status', 200)),
+                        body=base64.b64encode(body).decode('ascii'),
+                        responseHeaders=headers)
+                except Exception as e:
+                    debug(f'fulfillRequest 失败 url={url}', e)
+                return
+        try:
+            page.run_cdp('Fetch.continueRequest', requestId=rid)
+        except Exception as e:
+            debug(f'continueRequest 失败 url={url}', e)
+    return _on_paused
 
 
 def _make_mock_handler(page, mocks: list):
@@ -345,10 +432,17 @@ def register(cli):
     @click.option('--mock-header', 'mock_headers', multiple=True,
                   help='mock 响应头 k=v（可多次）')
     @click.option('--mock-clear', is_flag=True, help='仅清空 mock 规则')
+    @click.option('--allow-domain', 'allow_domains', multiple=True,
+                  help='域名白名单（可多次）——设置后非白名单请求一律 abort'
+                       '（安全护栏：防页面把 agent 带离可信域）')
+    @click.option('--allow-file', is_flag=True,
+                  help='白名单生效时放行 file:// 本地文件（默认拒绝）')
+    @click.option('--allow-clear', is_flag=True, help='清空域名白名单')
     @click.option('--off', is_flag=True,
                   help='关闭拦截：清空 block/headers/mock 并 Fetch.disable')
     def intercept(session, blocks, headers, mocks, mock_status, mock_body,
-                  mock_headers, mock_clear, off):
+                  mock_headers, mock_clear, allow_domains, allow_file,
+                  allow_clear, off):
         """请求拦截：屏蔽 URL 通配 / 附加请求头 / mock 响应（Fetch domain）。
 
         设置写入会话，后续 dpx 命令自动重放。mock 规则经 Fetch.enable
@@ -378,9 +472,19 @@ def register(cli):
             cfg.setdefault('block', [])
             cfg.setdefault('headers', {})
             cfg.setdefault('mocks', [])
+            cfg.setdefault('allowed_domains', [])
 
             if mock_clear:
                 cfg['mocks'] = []
+            if allow_clear:
+                cfg['allowed_domains'] = []
+                cfg.pop('allow_file', None)
+            for d in allow_domains:
+                d = d.strip().lower().lstrip('*.')
+                if d and d not in cfg['allowed_domains']:
+                    cfg['allowed_domains'].append(d)
+            if allow_file:
+                cfg['allow_file'] = True
 
             # --mock-status/--mock-body/--mock-header 须配合 --mock 使用
             mock_extras = (mock_body is not None or mock_headers
@@ -413,9 +517,11 @@ def register(cli):
                 k, v = h.split('=', 1)
                 cfg['headers'][k.strip()] = v
 
-            changed = bool(blocks or headers or mocks or mock_clear)
+            changed = bool(blocks or headers or mocks or mock_clear
+                           or allow_domains or allow_file or allow_clear)
             if not changed:
-                has_cfg = (cfg['block'] or cfg['headers'] or cfg['mocks'])
+                has_cfg = (cfg['block'] or cfg['headers'] or cfg['mocks']
+                           or cfg['allowed_domains'])
                 ok({'intercept': cfg if has_cfg else None},
                    msg='当前拦截配置（未改动）' if has_cfg else '当前无拦截配置')
                 return
@@ -426,6 +532,7 @@ def register(cli):
             ok({'intercept': cfg},
                msg=f"已拦截 {len(cfg['block'])} 个模式，"
                    f"附加 {len(cfg['headers'])} 个请求头，"
-                   f"mock {len(cfg['mocks'])} 条规则")
+                   f"mock {len(cfg['mocks'])} 条规则，"
+                   f"白名单 {len(cfg['allowed_domains'])} 域")
         except Exception as e:
             error('拦截设置失败', code='INTERCEPT_FAILED', detail=str(e))

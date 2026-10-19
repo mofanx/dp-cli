@@ -29,10 +29,10 @@
 | 导航/页面 | `state-save` | [filename], [fmt], [session] |
 | 快照 | `dom` | <locator>, [session], [direction], [depth], [index], [timeout] |
 | 快照 | `dom-snapshot` | [session], [loc], [styles], [no_rects], [no_paint], [output] |
-| 快照 | `extract` | [session], <container>, <fields_json>, [limit], [output_fmt], [filename] |
+| 快照 | `extract` | [session], <container>, <fields_json>, [limit], [output_fmt], [filename], [boundary] |
 | 快照 | `find` | <locator>, [session], [find_all], [timeout] |
 | 快照 | `inspect` | <locator>, [session], [index], [include_rect], [include_style], [timeout] |
-| 快照 | `query` | [session], <selector>, [fields], [limit], [filename] |
+| 快照 | `query` | [session], <selector>, [fields], [limit], [filename], [boundary] |
 | 快照 | `scan` | [session], [viewport_only], [confidence], [max_elements], [fmt], [filename], [verbose] |
 | 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes], [pw_locators], [since] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [no_wait], [timeout] |
@@ -62,6 +62,8 @@
 | 网络 | `http-post` | <url>, [data], [form], [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `listen` | [session], [url_filter], [count], [timeout], [method] |
 | 网络 | `listen-stop` | [session], [count], [timeout], [output], [fields], [head] |
+| 网络 | `request` | [session], <request_id>, [body] |
+| 网络 | `requests` | [session], [furl], [fmethod], [ftype], [ffailed], [head] |
 | 断言 | `assert-count` | <locator>, [expected], [session], [min_count], [max_count], [frame], [timeout] |
 | 断言 | `assert-text` | <text>, [session], [locator], [exact], [frame], [timeout] |
 | 断言 | `assert-url` | <text>, [session], [exact], [check_title], [timeout] |
@@ -69,7 +71,7 @@
 | 断言 | `expect-gen` | [ele_loc], [gen_all], [limit], [no_count], [lang], [session], [frame] |
 | 模拟/下载/拦截 | `download` | [session], [download_dir], [timeout], [when_exists] |
 | 模拟/下载/拦截 | `emulate` | [session], [device], [viewport], [mobile], [ua], [locale], [timezone], [geolocation], [reset] |
-| 模拟/下载/拦截 | `intercept` | [session], [blocks], [headers], [mocks], [mock_status], [mock_body], [mock_headers], [mock_clear], [off] |
+| 模拟/下载/拦截 | `intercept` | [session], [blocks], [headers], [mocks], [mock_status], [mock_body], [mock_headers], [mock_clear], [allow_domains], [allow_file], [allow_clear], [off] |
 | 观测 | `perf` | [session], [raw] |
 | 观测 | `screencast` | [session], <out_dir>, [duration] |
 | 观测 | `trace` | [session], [duration], [out_file], [categories] |
@@ -83,6 +85,7 @@
 | 存储 | `cookie-get` | <name>, [session] |
 | 存储 | `cookie-list` | [session], [domain], [url], [fields], [head] |
 | 存储 | `cookie-set` | <name>, <value>, [session], [domain], [path], [http_only], [secure] |
+| 存储 | `cookies-import` | <source>, [session] |
 | 存储 | `localstorage-clear` | [session] |
 | 存储 | `localstorage-delete` | <key>, [session] |
 | 存储 | `localstorage-get` | <key>, [session] |
@@ -107,7 +110,7 @@
 | 页面 | `dialog-policy` | [action], [types_], [clear], [session] |
 | 页面 | `eval` | <script>, [session], [locator], [timeout] |
 | 页面 | `pdf` | [session], [filename] |
-| 页面 | `screenshot` | [session], [locator], [filename], [full_page], [fmt] |
+| 页面 | `screenshot` | [session], [locator], [filename], [full_page], [fmt], [annotate], [if_changed] |
 | 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout], [force_poll] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
@@ -121,7 +124,7 @@
 | 逆向 | `rpc-list` | [session] |
 | 逆向 | `rpc-register` | <name>, <js>, [session], [persist] |
 | 逆向 | `rpc-unregister` | <name>, [session] |
-| 提取 | `read` | [session], [selector], [fmt], [output] |
+| 提取 | `read` | [url], [session], [selector], [fmt], [output], [boundary] |
 | 元信息 | `catalog` | [as_md], [as_json] |
 | 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |
 

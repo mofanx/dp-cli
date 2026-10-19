@@ -15,6 +15,110 @@ _PACKET_FIELDS = {'url', 'method', 'status', 'type', 'request_headers',
                   'postData', 'response_headers', 'response_body'}
 
 
+def _requests_no_buffer(session):
+    error('无被动网络日志（需要 dpx serve 常驻进程托管事件缓冲；'
+          '或使用 dpx listen 主动监听）', code='NO_NETLOG',
+          detail='dpx serve --session ' + session)
+
+
+def _register_requests(cli):
+    @cli.command('requests')
+    @session_option
+    @click.option('--filter', 'furl', default=None,
+                  help='URL 子串过滤（如 "api/"）')
+    @click.option('--method', 'fmethod', default=None,
+                  help='HTTP 方法过滤（GET/POST/...）')
+    @click.option('--type', 'ftype', default=None,
+                  help='资源类型过滤（XHR/Fetch/Document/...）')
+    @click.option('--failed', 'ffailed', is_flag=True,
+                  help='只看失败请求')
+    @click.option('--head', type=int, default=None,
+                  help='只输出前 N 条（按时间序）')
+    def cmd_requests(session, furl, fmethod, ftype, ffailed, head):
+        """列出被动网络日志（serve 进程托管的 ~500 条 ring buffer）。
+
+        需先跑 `dpx serve --session <name>`——常驻进程替你开着
+        Network.enable 监听滚动写盘；无缓冲时提示改用 dpx listen。
+
+        \b
+        示例:
+          dpx requests                       # 全部（时间序）
+          dpx requests --filter api/         # URL 过滤
+          dpx requests --method POST --failed
+        """
+        from dp_cli.netlog import read_entries
+        entries = read_entries(session)
+        if entries is None:
+            _requests_no_buffer(session)
+            return
+        # 按 requestId 聚合 req+resp 成行
+        reqs = {}
+        for e in entries:
+            rid = e.get('id')
+            if rid is None:
+                continue
+            slot = reqs.setdefault(rid, {})
+            slot.update({k: v for k, v in e.items() if v is not None})
+            if e['kind'] == 'resp':
+                slot['status'] = e.get('status')
+            if e['kind'] == 'fail':
+                slot['failed'] = e.get('errorText') or 'failed'
+        rows = list(reqs.values())
+        if furl:
+            rows = [r for r in rows if furl in (r.get('url') or '')]
+        if fmethod:
+            rows = [r for r in rows
+                    if (r.get('method') or '').upper() == fmethod.upper()]
+        if ftype:
+            rows = [r for r in rows
+                    if (r.get('type') or '').lower() == ftype.lower()]
+        if ffailed:
+            rows = [r for r in rows if r.get('failed')]
+        if head:
+            rows = rows[:head]
+        slim = [{'id': r.get('id'), 'method': r.get('method'),
+                 'url': r.get('url'), 'status': r.get('status'),
+                 'type': r.get('type'),
+                 **({'failed': r['failed']} if r.get('failed') else {})}
+                for r in rows]
+        ok({'count': len(slim), 'requests': slim})
+
+    @cli.command('request')
+    @session_option
+    @click.argument('request_id')
+    @click.option('--body', is_flag=True, help='尝试拉响应体（CDP）')
+    def cmd_request(session, request_id, body):
+        """查看某请求的 headers/body 详情（按 requests 列表里的 id）。
+
+        \b
+        示例:
+          dpx request 42.17
+          dpx request 42.17 --body
+        """
+        from dp_cli.netlog import read_entries
+        entries = read_entries(session)
+        if entries is None:
+            _requests_no_buffer(session)
+            return
+        matched = [e for e in entries if e.get('id') == request_id]
+        if not matched:
+            error(f'请求 id 不存在: {request_id}', code='REQUEST_NOT_FOUND')
+            return
+        merged = {}
+        for e in matched:
+            merged.update({k: v for k, v in e.items() if v is not None})
+        if body:
+            try:
+                page = _get_page(session)
+                r = page.run_cdp('Network.getResponseBody',
+                                 requestId=request_id)
+                merged['body'] = r.get('body')
+                merged['body_base64'] = r.get('base64Encoded', False)
+            except Exception as e:
+                merged['body_error'] = str(e)
+        ok(merged)
+
+
 def _emit_response(url, resp, output):
     """构造 http-get/http-post 的输出。
 
@@ -175,6 +279,7 @@ def _build_har(entries: dict, page_url: str = '') -> dict:
 
 
 def register(cli):
+    _register_requests(cli)
 
     @cli.command('listen')
     @session_option

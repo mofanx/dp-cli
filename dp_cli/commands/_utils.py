@@ -297,6 +297,26 @@ _CSS_COMBINATOR = re.compile(r'[\[>+~]|::|:(?:nth|first|last|not|has)')  # [attr
 _XPATH_START = re.compile(r'^\(?/')                 # //div  /html  (//a)
 
 
+def wrap_boundary(content: str) -> tuple:
+    """内容边界包裹：防不可信页面文本 prompt-injection 混入 agent 上下文。
+
+    返回 (wrapped_text, nonce)。调用方把 nonce 放进 data.boundary，
+    文本两头加 UNTRUSTED-CONTENT 标记行，agent 侧可识别并隔离。
+    """
+    import secrets
+    nonce = secrets.token_hex(4)
+    return (f'<<<UNTRUSTED-CONTENT nonce="{nonce}">>>\n'
+            f'{content}\n<<<END-UNTRUSTED-CONTENT nonce="{nonce}">>>',
+            nonce)
+
+
+def boundary_option(f):
+    return click.option(
+        '--boundary', is_flag=True, default=False,
+        help='页面文本输出加不可信内容边界（防 prompt-injection；'
+             'nonce 见 data.boundary）')(f)
+
+
 def normalize_locator(loc: str) -> str:
     """智能补全定位器前缀，允许省略 css:/xpath:。
 

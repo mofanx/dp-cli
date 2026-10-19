@@ -3110,3 +3110,185 @@ def test_wait_actionable_stable_returns(runner):
 
     ele, fail = wait_actionable(Ctx(), '#x', timeout=2.0, settle=0.1)
     assert fail is None and ele is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# A 批：allowed-domains / boundary / screenshot --if-changed
+# B 批：cookies-import 嗅探 / read direct / netlog ring buffer
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_host_allowed_suffix():
+    from dp_cli.commands.emulate import _host_allowed
+    assert _host_allowed('https://ex.com/a', ['ex.com'])
+    assert _host_allowed('https://api.ex.com/', ['ex.com'])
+    assert not _host_allowed('https://evil.com/', ['ex.com'])
+    assert _host_allowed('data:text/plain,x', ['ex.com'])  # 非 http 放行
+
+
+@pytest.mark.unit
+def test_sniff_cookies_json_list():
+    from dp_cli.commands.storage import _sniff_cookies
+    r = _sniff_cookies('[{"name":"a","value":"1","domain":".x.com"}]')
+    assert r == [{'name': 'a', 'value': '1', 'domain': '.x.com'}]
+
+
+@pytest.mark.unit
+def test_sniff_cookies_json_dict():
+    from dp_cli.commands.storage import _sniff_cookies
+    r = _sniff_cookies('{"a":"1","b":"2"}')
+    assert {c['name'] for c in r} == {'a', 'b'}
+
+
+@pytest.mark.unit
+def test_sniff_cookies_netscape():
+    from dp_cli.commands.storage import _sniff_cookies
+    raw = '# Netscape\n.x.com\tTRUE\t/\tTRUE\t1700000000\tsid\tv1\n'
+    r = _sniff_cookies(raw)
+    assert r[0]['name'] == 'sid' and r[0]['secure'] is True
+
+
+@pytest.mark.unit
+def test_sniff_cookies_header():
+    from dp_cli.commands.storage import _sniff_cookies
+    r = _sniff_cookies('Cookie: a=1; b=hello world')
+    assert r == [{'name': 'a', 'value': '1'},
+                 {'name': 'b', 'value': 'hello world'}]
+
+
+@pytest.mark.unit
+def test_sniff_cookies_garbage():
+    from dp_cli.commands.storage import _sniff_cookies
+    assert _sniff_cookies('not cookies at all') is None
+
+
+@pytest.mark.unit
+def test_wrap_boundary_marks():
+    from dp_cli.commands._utils import wrap_boundary
+    w, n = wrap_boundary('evil content')
+    assert f'nonce="{n}"' in w and 'UNTRUSTED-CONTENT' in w
+    assert 'evil content' in w
+
+
+@pytest.mark.unit
+def test_goto_forbidden_domain(runner, monkeypatch):
+    """goto 命中白名单外域名 → FORBIDDEN_DOMAIN。"""
+    from dp_cli.main import cli
+    import dp_cli.commands.browser as browser_mod
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(browser_mod, 'load_session',
+                        lambda s: {'intercept': {'allowed_domains': ['ok.com']}})
+    r = runner.invoke(cli, ['goto', 'https://evil.com/x'])
+    assert 'FORBIDDEN_DOMAIN' in r.output
+
+
+@pytest.mark.unit
+def test_goto_allowed_domain_passes(runner, monkeypatch):
+    from dp_cli.main import cli
+    import dp_cli.commands.browser as browser_mod
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(browser_mod, 'load_session',
+                        lambda s: {'intercept': {'allowed_domains': ['ok.com']}})
+    r = runner.invoke(cli, ['goto', 'https://sub.ok.com/x'])
+    assert 'FORBIDDEN_DOMAIN' not in r.output
+
+
+@pytest.mark.unit
+def test_requests_no_buffer_degrade(runner, monkeypatch, tmp_path):
+    """requests 无缓冲文件 → NO_NETLOG 降级提示。"""
+    from dp_cli.main import cli
+    import dp_cli.netlog as nl
+    monkeypatch.setattr(nl.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr('dp_cli.netlog._path',
+                        lambda s: tmp_path / f'netlog-{s}.jsonl')
+    r = runner.invoke(cli, ['requests'])
+    assert 'NO_NETLOG' in r.output
+
+
+@pytest.mark.unit
+def test_requests_lists_ring(runner, monkeypatch, tmp_path):
+    """requests 聚合 req+resp → 行（含 status 合并）。"""
+    from dp_cli.main import cli
+    import dp_cli.netlog as nl
+    log = tmp_path / 'netlog-default.jsonl'
+    log.write_text('\n'.join([
+        json.dumps({'kind': 'req', 'id': '1', 'url': 'https://x/a',
+                    'method': 'GET', 'type': 'XHR'}),
+        json.dumps({'kind': 'resp', 'id': '1', 'url': 'https://x/a',
+                    'status': 200}),
+        json.dumps({'kind': 'req', 'id': '2', 'url': 'https://x/b',
+                    'method': 'POST', 'type': 'Document'}),
+        json.dumps({'kind': 'fail', 'id': '2', 'errorText': 'net::ERR'})]))
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'netlog-{s}.jsonl')
+    r = runner.invoke(cli, ['requests'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output.strip())
+    reqs = d['data']['requests']
+    assert len(reqs) == 2
+    a = next(x for x in reqs if x['id'] == '1')
+    assert a['status'] == 200
+    b = next(x for x in reqs if x['id'] == '2')
+    assert 'failed' in b
+
+
+@pytest.mark.unit
+def test_netlog_ring_trims(tmp_path):
+    """netlog 写超水位截到 ~500 行。"""
+    import dp_cli.netlog as nl
+    log = tmp_path / 'netlog-x.jsonl'
+    monkeylog = []
+    # 直接写 650 行再触发 trim
+    log.write_text('\n'.join(json.dumps({'kind': 'req', 'id': str(i)})
+                             for i in range(650)) + '\n')
+    nl._maybe_trim(log)
+    lines = log.read_text().splitlines()
+    assert len(lines) <= 500
+
+
+@pytest.mark.unit
+def test_request_detail_missing(runner, monkeypatch, tmp_path):
+    from dp_cli.main import cli
+    import dp_cli.netlog as nl
+    (tmp_path / 'netlog-default.jsonl').write_text(
+        json.dumps({'kind': 'req', 'id': '1', 'url': 'https://x'}) + '\n')
+    monkeypatch.setattr(nl, '_path',
+                        lambda s: tmp_path / f'netlog-{s}.jsonl')
+    r = runner.invoke(cli, ['request', '999'])
+    assert 'REQUEST_NOT_FOUND' in r.output
+
+
+@pytest.mark.unit
+def test_host_allowed_malformed_denied():
+    """畸形 URL（解析失败/无 host 的 http 形态）→ fail-closed 拒绝。"""
+    from dp_cli.commands.emulate import _host_allowed
+    assert not _host_allowed('https://', ['ex.com'])          # 无 host
+    assert not _host_allowed('http://:bad/x', ['ex.com'])     # 空 host
+    assert not _host_allowed('//nohost', ['ex.com'])          # 协议相对无 host
+
+
+@pytest.mark.unit
+def test_host_allowed_internal_schemes_pass():
+    """data:/blob:/about:/chrome-extension: 等内部 scheme 放行（页面必需）。"""
+    from dp_cli.commands.emulate import _host_allowed
+    for u in ('data:text/html,<h1>x</h1>', 'about:blank',
+              'blob:https://x.com/uuid', 'javascript:void(0)',
+              'chrome-extension://abc/popup.html'):
+        assert _host_allowed(u, ['ex.com']), u
+
+
+@pytest.mark.unit
+def test_host_allowed_file_denied_default():
+    """file:// 默认拒绝，allow_file=True 放行。"""
+    from dp_cli.commands.emulate import _host_allowed
+    assert not _host_allowed('file:///etc/passwd', ['ex.com'])
+    assert _host_allowed('file:///tmp/x.html', ['ex.com'], allow_file=True)
+
+
+@pytest.mark.unit
+def test_host_allowed_unknown_scheme_denied():
+    """未知 scheme（ftp/custom-app）→ 拒绝；ws/wss 走 host 判定。"""
+    from dp_cli.commands.emulate import _host_allowed
+    assert not _host_allowed('ftp://ex.com/file', ['ex.com'])
+    assert not _host_allowed('myapp://ex.com/open', ['ex.com'])
+    assert _host_allowed('wss://api.ex.com/ws', ['ex.com'])
+    assert not _host_allowed('wss://evil.com/ws', ['ex.com'])

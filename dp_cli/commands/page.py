@@ -15,6 +15,84 @@ from dp_cli.commands._utils import (session_option, _get_page,
 _CONSOLE_FIELDS = {'level', 'text', 'source', 'timestamp'}
 
 
+def _annotate_refs(page, session):
+    """给快照 ref 元素画编号 overlay：返回清除 overlay 的 JS 表达式。
+
+    流程：refs 中 backendNodeId → DOM.resolveNode 定位 → getBoundingClientRect
+    → 注入绝对定位 badge。截图后调用方跑返回的 JS 清除。
+    """
+    from dp_cli.session import load_refs
+    from dp_cli.commands._utils import _mark_element_by_backend_id
+    refs = load_refs(session) or {}
+    if not refs:
+        return None
+    markers = []
+    for rid, rd in sorted(refs.items(),
+                          key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else 0):
+        bid = rd.get('backendNodeId')
+        if not bid:
+            continue
+        marker = _mark_element_by_backend_id(page, bid)
+        if marker:
+            markers.append((rid, marker))
+    if not markers:
+        return None
+    marks_js = json.dumps([{ 'id': rid, 'm': m} for rid, m in markers])
+    inject = f"""
+(function(){{
+  if(document.getElementById('__dp_ann'))return;
+  const layer=document.createElement('div');layer.id='__dp_ann';
+  layer.style.cssText='position:absolute;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none';
+  for(const it of {marks_js}){{
+    const el=document.querySelector('[data-dp-ref="'+it.m+'"]');
+    if(!el)continue;
+    const r=el.getBoundingClientRect();
+    if(!r.width&&!r.height)continue;
+    const b=document.createElement('div');
+    b.textContent='ref:'+it.id;
+    b.style.cssText='position:absolute;left:'+(r.x+scrollX)+'px;top:'+(r.y+scrollY)+'px;'
+      +'background:#e33;color:#fff;font:bold 12px monospace;padding:1px 4px;'
+      +'border-radius:3px;outline:1px solid #fff';
+    layer.appendChild(b);
+    el.style.outline='2px solid #e33';
+  }}
+  document.documentElement.appendChild(layer);
+}})()
+"""
+    cleanup = """
+(function(){const l=document.getElementById('__dp_ann');
+  if(l)l.remove();
+  document.querySelectorAll('[data-dp-ref]').forEach(function(e){
+    e.style.outline='';e.removeAttribute('data-dp-ref')});})()
+"""
+    try:
+        page.run_js(inject, as_expr=True)
+    except Exception as e:
+        debug('annotate 注入失败', e)
+        return None
+    return cleanup
+
+
+def _shot_hash_path(session) -> Path:
+    p = Path.home() / '.dp_cli' / 'shots'
+    p.mkdir(parents=True, exist_ok=True)
+    return p / f'{session}.sha1'
+
+
+def _last_shot_hash(session) -> str:
+    try:
+        return _shot_hash_path(session).read_text().strip()
+    except OSError:
+        return ''
+
+
+def _save_shot_hash(session, digest: str) -> None:
+    try:
+        _shot_hash_path(session).write_text(digest)
+    except OSError:
+        pass
+
+
 def register(cli):
 
     @cli.command('screenshot')
@@ -24,7 +102,12 @@ def register(cli):
     @click.option('--full-page', is_flag=True, help='截取完整页面（包括视口外）')
     @click.option('--format', 'fmt', type=click.Choice(['png', 'jpg', 'jpeg']),
                   default='png', show_default=True)
-    def cmd_screenshot(session, locator, filename, full_page, fmt):
+    @click.option('--annotate', is_flag=True,
+                  help='在快照 ref 元素位置画编号 overlay（需先 dpx snapshot）')
+    @click.option('--if-changed', is_flag=True,
+                  help='与上次截图像素未变时返回 unchanged（省 token，不写文件）')
+    def cmd_screenshot(session, locator, filename, full_page, fmt,
+                       annotate, if_changed):
         """截图。DrissionPage 支持完整页面截图（含视口外内容）。
 
         \b
@@ -33,6 +116,8 @@ def register(cli):
           dpx screenshot --filename page.png
           dpx screenshot --full-page
           dpx screenshot --locator "#header"
+          dpx screenshot --annotate          # ref:N 编号标到图上
+          dpx screenshot --if-changed        # 画面未变跳过写盘
         """
         page = _get_page(session)
         try:
@@ -40,6 +125,9 @@ def register(cli):
                 from datetime import datetime
                 ts = datetime.now().strftime('%Y%m%d_%H%M%S')
                 filename = f'screenshot_{ts}.{fmt}'
+            overlay = None
+            if annotate:
+                overlay = _annotate_refs(page, session)
             if locator:
                 ele = page.ele(locator)
                 if not ele or ele.__class__.__name__ == 'NoneElement':
@@ -48,7 +136,27 @@ def register(cli):
                 ele.get_screenshot(path=filename)
             else:
                 page.get_screenshot(path=filename, full_page=full_page)
-            ok({'filename': str(Path(filename).absolute())}, msg='截图已保存')
+            if overlay:
+                try:
+                    page.run_js(overlay, as_expr=True)
+                except Exception:
+                    pass
+            result = {'filename': str(Path(filename).absolute())}
+            if if_changed:
+                import hashlib
+                digest = hashlib.sha1(
+                    Path(filename).read_bytes()).hexdigest()
+                prev = _last_shot_hash(session)
+                if digest == prev:
+                    try:
+                        Path(filename).unlink()
+                    except OSError:
+                        pass
+                    result['unchanged'] = True
+                    ok(result, msg='截图与上次一致（已跳过写盘）')
+                    return
+                _save_shot_hash(session, digest)
+            ok(result, msg='截图已保存')
         except Exception as e:
             error(f'截图失败', code='SCREENSHOT_FAILED', detail=str(e))
 

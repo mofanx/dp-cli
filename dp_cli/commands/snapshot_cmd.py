@@ -34,6 +34,11 @@ styles:{color:cs.color,'background-color':cs.backgroundColor,
 position:cs.position,'z-index':cs.zIndex}};"""
 
 
+def _mk_nonce() -> str:
+    import secrets
+    return secrets.token_hex(4)
+
+
 def register(cli):
 
     @cli.command()
@@ -333,7 +338,10 @@ def register(cli):
     @click.option('--output', '-o', 'output_fmt', type=click.Choice(['json', 'csv']),
                   default='json', show_default=True, help='输出格式')
     @click.option('--filename', '-f', default=None, help='保存结果到文件')
-    def cmd_extract(session, container, fields_json, limit, output_fmt, filename):
+    @click.option('--boundary', is_flag=True,
+                  help='输出记录标记不可信边界 nonce（防 prompt-injection）')
+    def cmd_extract(session, container, fields_json, limit, output_fmt, filename,
+                    boundary):
         """批量提取结构化数据（列表页核心工具）。
 
         \b
@@ -373,14 +381,20 @@ def register(cli):
                 content = records_to_csv(results)
                 if filename:
                     Path(filename).write_text(content, encoding='utf-8-sig')
+                    if boundary:
+                        data['boundary'] = _mk_nonce()
                     ok(data, msg=f'已提取 {len(results)} 条记录，保存到 {filename}')
                 else:
                     click.echo(content)
             elif filename:
                 Path(filename).write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+                if boundary:
+                    data['boundary'] = _mk_nonce()
                 ok(data, msg=f'已提取 {len(results)} 条记录，保存到 {filename}')
             else:
+                if boundary:
+                    data['boundary'] = _mk_nonce()
                 ok(data, msg=f'已提取 {len(results)} 条记录')
         except Exception as e:
             error(f'提取失败', code='EXTRACT_FAILED', detail=str(e))
@@ -392,7 +406,9 @@ def register(cli):
                   help='提取字段，逗号分隔')
     @click.option('--limit', default=None, help='最多返回多少条', show_default=True)
     @click.option('--filename', '-o', default=None, help='保存结果到 JSON 文件')
-    def cmd_query(session, selector, fields, limit, filename):
+    @click.option('--boundary', is_flag=True,
+                  help='输出记录标记不可信边界 nonce（防 prompt-injection）')
+    def cmd_query(session, selector, fields, limit, filename, boundary):
         """按选择器查询元素，提取内容和定位器。支持动态渲染内容。
 
         \b
@@ -424,8 +440,12 @@ def register(cli):
             if filename:
                 Path(filename).write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+                if boundary:
+                    data['boundary'] = _mk_nonce()
                 ok(data, msg=f'查询到 {len(results)} 个元素，保存到 {filename}')
             else:
+                if boundary:
+                    data['boundary'] = _mk_nonce()
                 ok(data, msg=f'查询到 {len(results)} 个元素')
         except Exception as e:
             error(f'查询失败', code='QUERY_FAILED', detail=str(e))

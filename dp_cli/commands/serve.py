@@ -129,6 +129,27 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         'status': 'error', 'code': 'ERROR',
                         'message': f'serve 执行异常: {e}'}
         _emit(seq, req_id, code, result)
+        _maybe_arm_netlog(session)
+
+
+def _maybe_arm_netlog(default_session) -> None:
+    """命令执行后尝试挂载被动网络日志（会话存在且未挂过）。
+
+    开销一次 attach + Network.enable；挂载后请求/响应事件持续写入
+    ~/.dp_cli/netlog-{session}.jsonl ring buffer，供 dpx requests 离线读。
+    失败静默——被动日志是增强项，绝不阻塞主链路。
+    """
+    try:
+        from dp_cli.session import load_session, get_browser
+        from dp_cli.netlog import arm_netlog, _armed
+        sess = default_session or 'default'
+        if sess in _armed or not load_session(sess):
+            return
+        page = get_browser(sess)
+        target = page.latest_tab or page
+        arm_netlog(target, sess)
+    except Exception:
+        pass
 
 
 def _prewarm():

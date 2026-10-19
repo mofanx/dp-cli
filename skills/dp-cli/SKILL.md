@@ -235,6 +235,20 @@ dpx snapshot                → 确认操作结果（编号会刷新）
 
 **如果点击后出现弹窗（alert/confirm/prompt），用 `dpx dialog-accept` 或 `dpx dialog-dismiss` 处理。**
 
+**交互可靠性（0.12+ 默认开启）**：`click`/`fill`/`hover`/`check`/`upload`/`clear`/`select`/`fill-form` 执行前自动等待元素可见+可用+位置稳定（两帧）+未被遮挡。被遮挡时报 `CLICK_FAILED` 并返回遮挡元素明细（通常是遮罩/consent banner——先处理它再重试）。跳过等待加 `--no-wait`，强制点击加 `--force`。
+
+```bash
+dpx click "ref:19" --button right          # 右键（contextmenu）
+dpx click "ref:19" --modifiers "Shift"     # 组合键点击
+dpx click "ref:19" --click-count 2         # 双击
+dpx click "ref:19" --position 10,20        # 元素内相对坐标
+dpx dialog-policy --accept                 # 预设会话级自动应答（无人值守必备）
+```
+
+**精细键鼠**（canvas/游戏/vision 场景）：`mousemove`/`mousedown`/`mouseup`/`mousewheel`（CDP 真实输入事件，光标位置会话持久）、`keydown`/`keyup`（按住修饰键）、`press`/`type` 作用当前焦点。
+
+**批量自愈**：`dpx batch --screenshot-on-fail <dir>`——任一命令失败自动截图留证后再中断。
+
 ### 场景二：批量数据提取（列表页）
 
 **优先使用批量提取，避免逐个点击的低效方式。**
@@ -271,7 +285,7 @@ dpx listen-stop                  → 获取捕获的请求+响应体（JSON 格�
 
 ### 场景补充：断言自检与观测
 
-**断言**（脚本自检，失败 exit 4 可 `&&` 串联）：
+**断言**（脚本自检，失败 exit 4 可 `&&` 串联；0.12+ 条件自动轮询到 `--timeout`，适合"等待结果出现再断言"）：
 
 ```bash
 dpx assert-text "登录成功"          # 页面含文本
@@ -343,6 +357,8 @@ dpx open --auto-connect
 dpx state-load --filename my-site.json
 dpx goto "https://my-site.com/dashboard"  → 已登录状态
 ```
+
+`state-load` 兼容 playwright `storage_state` JSON（自动探测 `cookies` 为数组的格式，cookie 全字段恢复）。
 
 ### 场景九：多标签页操作（标签页绑定）
 
@@ -565,7 +581,7 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 - **页面 JS 报错** → `dpx console-listen` + 复现操作 + `dpx console-dump` 查看未捕获异常
 - **定位不准** → `dpx dom "ref:N" -d parent --depth 3` 查看上下文 → 用 `css` 字段获取精确路径
 - **需要 JS 兜底** → `dpx eval "..."` 执行自定义 JavaScript
-- **会话状态混乱** → `dpx close` 清理当前会话；`dpx list` 查看所有会话；`dpx close-all` 清空
+- **会话状态混乱** → `dpx close` 清理当前会话；`dpx list` 查看所有会话；`dpx close-all` 清空；`dpx kill-all` 最彻底（关全部会话+停 bridge+强杀 dp-cli 自管浏览器实例，不误伤用户浏览器）
 - **具体命令用法** → `dpx <command> --help`
 
 ## 维护约定（仓库贡献者）

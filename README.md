@@ -19,6 +19,8 @@ A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — bro
 - **Stealth patches** — `dpx stealth` bypasses common automation detections
 - **Dual mode** — browser control + pure HTTP requests
 - **Shadow-root / iframe** — traverse directly without switching context
+- **Actionable auto-wait** — click/fill wait for visible+stable+enabled+unoccluded, reports the blocking element on failure; `dialog-policy` for unattended dialog handling; `batch --screenshot-on-fail` for evidence
+- **Fine-grained input** — `keydown/keyup` + real `mousemove/mousedown/mouseup/mousewheel` CDP events; `click --button/--modifiers/--click-count/--force`
 - **JSON output** — all commands output JSON, AI-friendly
 
 ## Installation

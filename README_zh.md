@@ -11,6 +11,8 @@
 - **结构化输出**——全部命令输出 JSON，带语义化错误码与退出码，agent/脚本管道友好
 - **持久会话**——跨命令复用浏览器会话（`~/.dp_cli/sessions/`）
 - **常驻模式**——`dpx serve`/`dpx sh`/`dpx batch` 摊销进程与 attach 开销，循环内命令 ~10ms 级
+- **可操作自动等待**——click/fill 执行前自动等待元素可见+稳定+可用+无遮挡，被遮挡时报出遮挡元素；`dialog-policy` 无人值守弹窗策略；`batch --screenshot-on-fail` 失败自动截图留证
+- **精细键鼠**——`keydown/keyup` + 真实 `mousemove/mousedown/mouseup/mousewheel` CDP 事件；`click --button/--modifiers/--click-count/--force`
 
 ## 安装
 

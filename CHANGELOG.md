@@ -2,6 +2,26 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.12.0] - 2026-10-19
+
+### 新增
+
+- **actionability 自动等待**：`click`/`fill`/`hover`/`check`/`upload`/`clear`/`select`/`fill-form` 执行前自动等待元素可见+可用+位置稳定（两帧）+未被遮挡；被遮挡时报 `CLICK_FAILED` 并返回遮挡元素明细；`--no-wait`/`--force` 可跳过。
+- **click 参数面**：`--button`（right/middle）/`--modifiers`/`--position`/`--click-count`/`--force`，CDP `Input.dispatchMouseEvent` 路径。
+- **精细键鼠原语**：`keydown`/`keyup`/`mousemove`/`mousedown`/`mouseup`/`mousewheel`（真实 CDP 输入事件，光标位置会话持久）。
+- **`dpx kill-all`**：关全部会话+停全部 bridge+强杀 dp-cli 自管浏览器（不误伤用户浏览器）。
+- **`dpx dialog-policy`**：会话级弹窗预设策略（auto-accept/dismiss/按类型过滤），弹窗挂起时其他命令快速失败并告警——无人值守必备。
+- **`batch --screenshot-on-fail DIR`**：任一命令失败自动截图留证后再中断。
+- `assert-*` 四断言统一轮询到 `--timeout`（事件驱动，非单次判断）。
+- `state-load` 兼容 playwright `storage_state` JSON（cookie 全字段恢复+origins.localStorage）。
+- `dpx -V/--version` 与 `-h` 路径覆盖 skill 漂移告警（升级后第一处可见）+ `--check` 指引行。
+- `README_zh.md` 中文文档，与英文版顶部互链。
+
+### 修复
+
+- `_ACTIONABLE_JS` IIFE 在 run_js 下静默失效致遮挡检测从未生效（复核链抓到）。
+- `state-load` cookie 丢失 domain/path/secure/httpOnly/sameSite/expires 字段。
+
 ## [0.11.0] - 2026-10-17
 
 ### 新增

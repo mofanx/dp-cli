@@ -70,9 +70,9 @@
 
 | code | 说明 |
 |---|---|
-| `CLICK_FAILED` / `FILL_FAILED` / `TYPE_FAILED` / `KEY_FAILED` / `MOUSE_FAILED` | 元素交互/键鼠失败 |
+| `CLICK_FAILED` / `FILL_FAILED` / `TYPE_FAILED` / `KEY_FAILED` / `MOUSE_FAILED` / `POPUP_FAILED` | 元素交互/键鼠/弹窗等待失败 |
 | `FORBIDDEN_DOMAIN` | 目标域名不在 `intercept --allow-domain` 白名单（安全护栏 abort） |
-| `NO_NETLOG` | 无被动网络日志缓冲（需 `dpx serve` 常驻进程，或改用 `dpx listen`） |
+| `NO_NETLOG` | 无被动网络日志缓冲（需 `dpx serve` 或 `dpx daemon-start` 常驻进程，或改用 `dpx listen`） |
 | `REQUEST_NOT_FOUND` | `dpx request <id>` 指定的请求 id 不在 ring buffer |
 | `SCROLL_FAILED` / `AUTOSCROLL_FAILED` | 滚动失败 |
 | `HOVER_FAILED` / `CHECK_FAILED` / `SELECT_FAILED` / `DRAG_FAILED` / `CLEAR_FAILED` | 元素操作失败 |

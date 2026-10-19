@@ -263,6 +263,12 @@ dpx extract "css:.item-card" \
 ```
 
 
+## New in 0.14
+
+- **`dpx mcp`** — MCP stdio server: 34 whitelisted tools over the existing JSON contract; `eval` gated behind `--unsafe-eval`. Claude Desktop: `{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`
+- **Assertion coverage** — `dpx assert-value <loc> <expect>`; `assert-count` operators (`>=3`/`!=2`/...); `--not` on every `assert-*`; `dpx wait --stable <loc> --for N` (DOM quiet period)
+- **netlog via daemon** — `dpx daemon-start` hosts the passive network log too; `dpx requests` no longer requires `dpx serve`
+
 ## New in 0.13
 
 - **Batch form fill** — `dpx fill-form "#u=admin" "css:#p=pw"` or `--data '{"#u":"x"}'`；per-field ok/fail 明细

@@ -225,6 +225,17 @@ def test_skill_frontmatter_schema():
 
 
 @pytest.mark.unit
+def test_docs_cover_014_features():
+    """钉住 0.14 新命令名在三处文档中不漂移。"""
+    root = Path(__file__).resolve().parent.parent
+    for fname in ('README.md', 'README_zh.md',
+                  'skills/dp-cli/SKILL.md'):
+        text = (root / fname).read_text(encoding='utf-8')
+        for cmd in ('mcp', 'assert-value', '--not', '--stable',
+                    'requests'):
+            assert cmd in text, f'{fname} 缺 {cmd}'
+
+
 def test_docs_cover_013_features():
     """钉住 0.13 新命令名在三处文档中不漂移。"""
     root = Path(__file__).resolve().parent.parent

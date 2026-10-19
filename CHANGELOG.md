@@ -2,6 +2,26 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.14.0] - 2026-10-19
+
+### 新增
+
+- **`dpx mcp`**：MCP stdio server——34 个白名单工具（导航/观察/交互/会话/取证），
+  schema 手写映射 + 现有 JSON 输出契约透传；`eval` 高危工具默认关闭（`--unsafe-eval` 显式开），
+  `--allow-domain` 透传域名白名单。Claude Desktop/Windsurf 等 MCP client 直接接入。
+- **断言扩展**：`dpx assert-value <loc> <expect>`（元素 value 断言，property 优先）；
+  `assert-count` 支持比较运算符（`>=3`/`<=5`/`!=2`/`>1`/`<9`/`==`）；全部 assert-* 命令支持 `--not` 反向断言。
+- **`dpx wait --stable <loc> [--for N]`**：元素 outerHTML 连续静默 N 秒判定 DOM 稳定。
+- **netlog 并入 daemon**：`dpx daemon-start` 后被动网络日志由 daemon 进程托管，
+  `dpx requests`/`request` 不再依赖 `dpx serve`（NO_NETLOG 语义更新）。
+- **fill-form 输入校验**：pair 模式 `@name=x` 属性定位器给出改用 `--data` 的可行动提示。
+
+### 修复
+
+- `assert-value`：读取元素 `value` property 优先（JS 赋值不落 attribute），attribute 兜底。
+- `fill-form`：字段定位器解析失败收敛进 per-field 明细（不再中断整批/污染 stdout 契约）。
+- MCP 工具表实名修正（tab-select/cookie-list/localstorage-get 等），`goto` 语义对齐。
+
 ## [0.13.0] - 2026-10-19
 
 ### 新增

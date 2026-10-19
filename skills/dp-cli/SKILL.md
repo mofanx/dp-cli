@@ -589,6 +589,16 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 修改本 skill 文档后必跑 `scripts/sync-skill.sh` 同步到 `~/.claude/skills/dp-cli/`（脚本末尾 diff -r 自检）；新增/改命令选项后重跑 `python -m dp_cli.catalog --md` 刷新 `references/commands.md` 生成段。详见 TESTING.md 第 8 节。
 
 
+## 新特性速查（0.14）
+
+- `dpx mcp [--unsafe-eval] [--allow-domain 域]`：MCP stdio server（34 白名单工具；eval 默认关）。
+  Claude Desktop 配置：`{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`
+- `dpx assert-value <loc> <expect> [--contains] [--not]`：元素 value 断言（property 优先）
+- `dpx assert-count <loc> ">=3"`：数量断言支持 `>=`/`<=`/`!=`/`>`/`<`/`==` 运算符；全部 assert-* 支持 `--not`
+- `dpx wait --stable <loc> [--for 0.5]`：DOM 静默等待（outerHTML 连续不变）
+- `dpx requests`：serve 或 daemon 任一常驻进程托管即可读（NO_NETLOG = 两者都未跑）
+- `dpx fill-form` pair 模式中 `@name=x` 定位器会提示改用 `--data`（`=` 会误拆）
+
 ## 新特性速查（0.13）
 
 - `dpx fill-form <pairs...>|--data '<json>'`：批量填表，per-field 明细

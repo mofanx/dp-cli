@@ -95,6 +95,13 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 定位器优先 `pw:role=...`/`text:` 语义形式，css 兜底。全部输出为 JSON——错误带 `code`（如 `SESSION_NOT_FOUND`/`SESSION_DISCONNECTED`/`SKILL_DRIFT`）与退出码。
 
 
+## 0.14 新特性
+
+- **`dpx mcp`** — MCP stdio server：34 个白名单工具透传 JSON 契约；`eval` 需 `--unsafe-eval` 显式开启。Claude Desktop：`{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`
+- **断言扩展** — `dpx assert-value`、`assert-count` 运算符（`>=3`/`!=2`…）、全 assert-* 支持 `--not`、`dpx wait --stable <loc> --for N`（DOM 静默）
+- **netlog 并入 daemon** — `dpx daemon-start` 同样托管被动日志，`dpx requests` 不再依赖 `dpx serve`
+- **fill-form 提示** — pair 模式 `@name=x` 定位器提示改用 `--data`（`=` 会误拆）
+
 ## 0.13 新特性
 
 - **批量表单填充** — `dpx fill-form "#u=admin" "css:#p=pw"` 或 `--data '{"#u":"x"}'`；每字段 ok/fail 明细

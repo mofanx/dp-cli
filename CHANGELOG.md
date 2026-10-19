@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.14.1] - 2026-10-19
+
+### 修复（实测打磨批）
+
+- `drag` 签名漏收 `no_wait` 致 TypeError 全失效——修复并接 `_wait_ele` actionability（实机拖拽实证）。
+- `listen-stop` 无监听时裸 NoneType 异常——listening 前置检查+`LISTEN_FAILED` 可行动指引。
+- `dblclick` 用错 API（`click(count=2)` 不存在）——改 `click.multi(times=2)`。
+- `cookies-import` 头串嗅探把 `Path`/`Domain`/`HttpOnly`/`expires`/`SameSite`/`Partitioned` 当伪 cookie 扩散——`_COOKIE_ATTRS` 过滤修复。
+- `bridge list` 死桥堆积——存活校验+stale 清理。
+- MCP/daemon 会话 `netlog` arm 前置——首条导航命令流量不再丢缓冲。
+- `--unsafe-eval` -h 权限说明补全；损坏 session 边界文档注明。
+
 ## [0.14.0] - 2026-10-19
 
 ### 新增

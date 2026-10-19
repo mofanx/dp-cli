@@ -70,7 +70,7 @@
 
 | code | 说明 |
 |---|---|
-| `CLICK_FAILED` / `FILL_FAILED` / `TYPE_FAILED` / `KEY_FAILED` | 元素交互/按键失败 |
+| `CLICK_FAILED` / `FILL_FAILED` / `TYPE_FAILED` / `KEY_FAILED` / `MOUSE_FAILED` | 元素交互/键鼠失败 |
 | `SCROLL_FAILED` / `AUTOSCROLL_FAILED` | 滚动失败 |
 | `HOVER_FAILED` / `CHECK_FAILED` / `SELECT_FAILED` / `DRAG_FAILED` / `CLEAR_FAILED` | 元素操作失败 |
 | `UPLOAD_FAILED` | 文件上传失败 |

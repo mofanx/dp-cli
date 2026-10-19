@@ -1,5 +1,7 @@
 # dp-cli
 
+**English** | [中文](README_zh.md)
+
 A powerful CLI for [DrissionPage](https://github.com/g1879/DrissionPage) — browser automation, structured data extraction, network listening and more.
 
 ## Features
@@ -39,6 +41,11 @@ claude plugin marketplace add mofanx/dp-cli  # 或 Claude Code 插件市场
 ```
 
 未安装也能用——skill 只是文档层；agent 可直接读 `dpx --help` 或 `python -m dp_cli.catalog` 自举。
+
+> **升级后请刷新 skill**：`pip install -U dp-cli` 后已装 skill 版本戳落后于 CLI——
+> 每条命令 stderr 会提示 `运行 'dpx install --skills' 更新`（不污染 stdout JSON）。
+> 执行 `dpx install --skills` 或 `dpx install --skills --check` 校验即可对齐。
+> 版本戳相同但内容被篡改/过期时，`--check` 同样检出差异文件清单。
 
 ## Quick Start
 
@@ -86,10 +93,14 @@ depend on. `dp-cli` transparently handles this:
    - Synthesizes the missing HTTP endpoints from CDP calls
    - Multiplexes page-level CDP traffic over a single browser-level WebSocket
      via `Target.attachToTarget(flatten=True)`
-4. Points DrissionPage at the bridge. Subsequent `dp` commands reuse the same bridge.
+4. Points DrissionPage at the bridge. Subsequent `dpx` commands reuse the same bridge.
 
-The bridge subprocess and its port are tracked in the session file; `dpx close` stops
-the bridge automatically and never quits your browser (it's your browser, not dp's).
+The bridge subprocess is registered in a shared registry (`~/.dp_cli/bridges/`) so all
+sessions on the same profile reuse one authorized connection — `dpx close` **keeps** it
+by default (only detaches your session). Use `dpx close --stop-bridge` or
+`DPX_CLOSE_STOPS_BRIDGE=1` for the old stop-on-close behavior, and `dpx bridge list` /
+`dpx bridge stop` to inspect or terminate registered bridges directly.
+`dpx close` never quits your browser (it's your browser, not dp's).
 
 ### Caveats
 

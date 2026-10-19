@@ -5,6 +5,7 @@
 可直接用于 `&&` 串联或 CI 检查。
 """
 import json
+from time import perf_counter, sleep as _sleep
 
 import click
 
@@ -13,6 +14,25 @@ from dp_cli.commands._utils import (session_option, frame_option,
                                     _get_page, resolve_locator, frame_ctx)
 from dp_cli.locators import (parse_pw, PwParseError, build_pw_count_js,
                              pw_candidates, dp_loc_to_pw)
+
+
+def _poll(check, timeout: float, interval: float = 0.2):
+    """断言条件轮询：check() 返回 truthy 即过；超时返回最后一次结果。
+
+    check 抛异常视为本次不成立（元素未就绪等瞬态），吞掉继续等。
+    """
+    deadline = perf_counter() + timeout
+    last = None
+    while True:
+        try:
+            last = check()
+        except Exception:
+            last = None
+        if last:
+            return last
+        if perf_counter() >= deadline:
+            return last
+        _sleep(interval)
 
 
 def _is_missing(ele) -> bool:
@@ -162,24 +182,35 @@ def register(cli):
         """
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
-        try:
-            if locator:
-                real_loc = resolve_locator(locator, session)
-                ele = ctx.ele(real_loc, timeout=timeout)
+        real_loc = None
+        if locator:
+            real_loc = resolve_locator(locator, session)
+
+        def _check():
+            if real_loc:
+                ele = ctx.ele(real_loc, timeout=0.5)
                 if _is_missing(ele):
-                    error(f'断言失败：元素不存在 {real_loc}', code='ASSERT_FAILED')
-                    return
-                haystack = (ele.raw_text or '').strip()
-                scope = f'元素 {real_loc}'
+                    return None
+                hay = (ele.raw_text or '').strip()
             else:
-                haystack = page.html or ''
-                scope = '页面'
-            matched = haystack == text if exact else text in haystack
-            if matched:
+                hay = page.html or ''
+            return {'hay': hay} if (hay == text if exact
+                                    else text in hay) else {'hay': hay, 'miss': True}
+
+        try:
+            r = _poll(_check, timeout)
+            if r and not r.get('miss'):
+                scope = f'元素 {real_loc}' if real_loc else '页面'
                 ok({'text': text, 'scope': scope, 'exact': exact}, msg='断言通过')
             else:
-                error(f'断言失败：{scope}不包含文本 "{text}"', code='ASSERT_FAILED',
-                      detail=(haystack[:200] if haystack else '(空)'))
+                scope = f'元素 {real_loc}' if real_loc else '页面'
+                hay = (r or {}).get('hay', '')
+                if real_loc and r is None:
+                    error(f'断言失败：元素不存在 {real_loc}', code='ASSERT_FAILED')
+                else:
+                    error(f'断言失败：{scope}不包含文本 "{text}"',
+                          code='ASSERT_FAILED',
+                          detail=(hay[:200] if hay else '(空)'))
         except Exception as e:
             error('断言执行失败', code='ASSERT_FAILED', detail=str(e))
 
@@ -188,8 +219,10 @@ def register(cli):
     @session_option
     @click.option('--exact', is_flag=True, help='精确匹配（默认包含匹配）')
     @click.option('--title', 'check_title', is_flag=True, help='断言标题而非 URL')
-    def assert_url(text, session, exact, check_title):
-        """断言当前 URL（或 --title 断言标题）包含文本。
+    @click.option('--timeout', default=5, type=float,
+                  help='条件轮询超时秒数（默认 5s 内重试）', show_default=True)
+    def assert_url(text, session, exact, check_title, timeout):
+        """断言当前 URL（或 --title 断言标题）包含文本（条件轮询到 --timeout）。
 
         \b
         示例:
@@ -198,14 +231,22 @@ def register(cli):
           dpx assert-url "搜索结果" --title
         """
         page = _get_page(session)
-        try:
-            field = 'title' if check_title else 'url'
+        field = 'title' if check_title else 'url'
+
+        def _check():
             actual = page.title if check_title else page.url
             actual = actual or ''
-            matched = actual == text if exact else text in actual
-            if matched:
-                ok({'field': field, 'actual': actual, 'exact': exact}, msg='断言通过')
+            if (actual == text if exact else text in actual):
+                return {'actual': actual}
+            return None
+
+        try:
+            r = _poll(_check, timeout)
+            if r:
+                ok({'field': field, 'actual': r['actual'], 'exact': exact},
+                   msg='断言通过')
             else:
+                actual = (page.title if check_title else page.url) or ''
                 error(f'断言失败：{field} 不包含 "{text}"', code='ASSERT_FAILED',
                       detail=f'实际值: {actual[:200]}')
         except Exception as e:
@@ -229,22 +270,40 @@ def register(cli):
         """
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
-        try:
-            real_loc = resolve_locator(locator, session)
-            ele = ctx.ele(real_loc, timeout=timeout)
+        real_loc = resolve_locator(locator, session)
+
+        def _check():
+            try:
+                ele = ctx.ele(real_loc, timeout=0.5)
+            except Exception:
+                ele = None
             missing = _is_missing(ele)
             visible = False if missing else bool(ele.states.is_displayed)
             if expect_hidden:
-                if visible:
-                    error(f'断言失败：元素仍可见 {real_loc}', code='ASSERT_FAILED')
+                return {'missing': missing, 'visible': False} if not visible else None
+            return {'visible': True} if (not missing and visible) else None
+
+        try:
+            r = _poll(_check, timeout)
+            if r:
+                if expect_hidden:
+                    ok({'locator': real_loc, 'hidden': True},
+                       msg='断言通过：元素不可见')
                 else:
-                    ok({'locator': real_loc, 'hidden': True}, msg='断言通过：元素不可见')
-            elif missing:
-                error(f'断言失败：元素不存在 {real_loc}', code='ASSERT_FAILED')
-            elif not visible:
-                error(f'断言失败：元素存在但不可见 {real_loc}', code='ASSERT_FAILED')
+                    ok({'locator': real_loc}, msg='断言通过：元素可见')
+            elif expect_hidden:
+                error(f'断言失败：元素仍可见 {real_loc}', code='ASSERT_FAILED')
             else:
-                ok({'locator': real_loc}, msg='断言通过：元素可见')
+                try:
+                    ele = ctx.ele(real_loc, timeout=0.5)
+                    missing = _is_missing(ele)
+                except Exception:
+                    missing = True
+                if missing:
+                    error(f'断言失败：元素不存在 {real_loc}', code='ASSERT_FAILED')
+                else:
+                    error(f'断言失败：元素存在但不可见 {real_loc}',
+                          code='ASSERT_FAILED')
         except Exception as e:
             error('断言执行失败', code='ASSERT_FAILED', detail=str(e))
 
@@ -256,7 +315,7 @@ def register(cli):
     @click.option('--max', 'max_count', type=int, default=None, help='最大数量（含）')
     @frame_option
     @click.option('--timeout', default=0, type=float,
-                  help='等待元素出现的超时秒数（默认 0 即时返回）', show_default=True)
+                  help='条件轮询超时秒数（0=即时判断不重试）', show_default=True)
     def assert_count(locator, expected, session, min_count, max_count, frame, timeout):
         """断言匹配元素的数量。
 
@@ -279,8 +338,23 @@ def register(cli):
         try:
             ctx = frame_ctx(page, frame, session)
             real_loc = resolve_locator(locator, session)
-            eles = ctx.eles(real_loc, timeout=timeout)
-            n = len(eles)
+
+            def _pass(n):
+                if expected is not None:
+                    return n == expected
+                lo = min_count if min_count is not None else 0
+                hi = max_count if max_count is not None else n
+                return lo <= n <= hi
+
+            def _check():
+                try:
+                    n = len(ctx.eles(real_loc, timeout=0.5))
+                except Exception:
+                    n = 0
+                return {'n': n} if _pass(n) else {'n': n, 'miss': True}
+
+            r = _poll(_check, timeout) if timeout else _check()
+            n = (r or {}).get('n', 0)
             if expected is not None:
                 passed = n == expected
                 desc = f'期望 {expected} 个，实际 {n} 个'

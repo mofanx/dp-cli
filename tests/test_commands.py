@@ -2935,3 +2935,178 @@ def test_localstorage_list_no_toplevel_return(runner, monkeypatch):
     assert r.exit_code == 0, r.output
     d = json.loads(r.output)['data']
     assert d['storage'] == {'a': '1'} and d['count'] == 1
+
+
+@pytest.mark.unit
+def test_version_flag_runs_drift_warning(runner, monkeypatch, tmp_path):
+    """-V：漂移时 stderr 告警 + stdout 纯版本号。"""
+    from dp_cli.main import cli
+    calls = []
+    monkeypatch.setattr('dp_cli.skill_dist.warn_drift',
+                        lambda: calls.append(1))
+    r = runner.invoke(cli, ['-V'])
+    assert r.exit_code == 0 and calls == [1]
+    import re
+    assert re.fullmatch(r'\d+\.\d+\.\d+\s*', r.output.strip())
+
+
+@pytest.mark.unit
+def test_version_flag_clean_stdout_no_drift(runner, monkeypatch):
+    """-V：不漂移时 stdout 只有版本号。"""
+    from dp_cli.main import cli
+    monkeypatch.setattr('dp_cli.skill_dist.warn_drift', lambda: None)
+    r = runner.invoke(cli, ['-V'])
+    assert r.exit_code == 0
+    import re
+    assert re.fullmatch(r'\d+\.\d+\.\d+\s*', r.output.strip())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# actionability / click 参数面 / dialog-policy / state-load pw 兼容
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_click_nowait_flag(runner, monkeypatch):
+    """click --no-wait：跳过 actionability 直接点。"""
+    from dp_cli.main import cli
+    ele = FakeEle()
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage(ele=ele))
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['click', '#btn', '--no-wait'])
+    assert r.exit_code == 0, r.output
+    assert ele._clicked == ['click']
+
+
+@pytest.mark.unit
+def test_click_bad_modifiers(runner, monkeypatch):
+    """click --modifiers 非法键 → INVALID_ARGS。"""
+    from dp_cli.main import cli
+    from dp_cli.commands.element import register as _reg
+    ele = FakeEle()
+    ele.rect = type('R', (), {'location': (0, 0), 'size': (50, 20)})()
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage(ele=ele))
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['click', '#btn', '--modifiers', 'Bogus',
+                            '--no-wait', '--force'])
+    assert '未知修饰键' in r.output or 'INVALID_ARGS' in r.output
+
+
+@pytest.mark.unit
+def test_click_cdp_path_dispatches(runner, monkeypatch):
+    """click --button right：走 CDP dispatchMouseEvent（pressed+released）。"""
+    from dp_cli.main import cli
+    calls = []
+
+    class P(FakePage):
+        def run_cdp(self, method, **kw):
+            calls.append((method, kw))
+
+    ele = FakeEle()
+    ele.rect = type('R', (), {'location': (10, 20), 'size': (40, 20)})()
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P(ele=ele))
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(_utils, 'load_refs', lambda s: {})
+    r = runner.invoke(cli, ['click', '#btn', '--button', 'right',
+                            '--no-wait', '--force'])
+    assert r.exit_code == 0, r.output
+    types = [kw['type'] for m, kw in calls if m == 'Input.dispatchMouseEvent']
+    assert types == ['mouseMoved', 'mousePressed', 'mouseReleased']
+    assert any(kw.get('button') == 'right' for m, kw in calls)
+
+
+@pytest.mark.unit
+def test_dialog_policy_writes_session(runner, monkeypatch, tmp_path):
+    """dialog-policy --accept 写 session['dialog_policy']。"""
+    from dp_cli.main import cli
+    import dp_cli.commands.page as page_mod
+    saved = {}
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {'a': 1})
+    monkeypatch.setattr('dp_cli.session.save_session',
+                        lambda s, d: saved.update(d))
+    r = runner.invoke(cli, ['dialog-policy', '--accept'])
+    assert r.exit_code == 0, r.output
+    assert saved.get('dialog_policy', {}).get('action') == 'accept'
+
+
+@pytest.mark.unit
+def test_dialog_policy_requires_flag(runner, monkeypatch):
+    from dp_cli.main import cli
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {'a': 1})
+    r = runner.invoke(cli, ['dialog-policy'])
+    assert 'INVALID_ARGS' in r.output or '请指定' in r.output
+
+
+@pytest.mark.unit
+def test_state_load_playwright_format(runner, monkeypatch, tmp_path):
+    """state-load 识别 pw storageState（cookies=list + origins.localStorage）。"""
+    from dp_cli.main import cli
+    import dp_cli.commands.misc as misc_mod
+    import json as _json
+    state = {
+        'cookies': [{'name': 'sid', 'value': 'v1', 'domain': '.ex.com',
+                     'path': '/', 'secure': True, 'httpOnly': True,
+                     'sameSite': 'Lax', 'expires': -1}],
+        'origins': [{'origin': 'https://ex.com',
+                     'localStorage': [{'name': 'tok', 'value': 'abc'}]}],
+    }
+    f = tmp_path / 'st.json'
+    f.write_text(_json.dumps(state))
+    set_ck = []
+    js_calls = []
+
+    class _Set:
+        def cookies(self, ck):
+            set_ck.append(ck)
+
+    class P(FakePage):
+        set = _Set()
+
+        def run_js(self, s, *a, **k):
+            js_calls.append(s)
+
+    monkeypatch.setattr(misc_mod, '_get_page', lambda s: P())
+    r = runner.invoke(cli, ['state-load', str(f)])
+    assert r.exit_code == 0, r.output
+    assert set_ck and set_ck[0]['name'] == 'sid'
+    assert set_ck[0]['secure'] is True and set_ck[0]['httpOnly'] is True
+    assert any('localStorage.setItem' in c and 'tok' in c for c in js_calls)
+
+
+@pytest.mark.unit
+def test_wait_actionable_occluded_reports(runner):
+    """wait_actionable：elementFromPoint 遮挡 → occluded + 遮挡者信息。"""
+    from dp_cli.commands._utils import wait_actionable
+
+    class E(FakeEle):
+        def run_js(self, s, *a, **k):
+            return {'ok': False, 'reason': 'occluded',
+                    'occluder': {'tag': 'div', 'id': 'overlay', 'cls': 'mask'},
+                    'rect': [0, 0, 10, 10], 'center': [5, 5]}
+
+    class Ctx:
+        def ele(self, loc, index=1, timeout=0.3):
+            return E()
+
+    ele, fail = wait_actionable(Ctx(), '#x', timeout=0.5)
+    assert fail and fail['reason'] == 'occluded'
+    assert fail['occluder']['id'] == 'overlay'
+
+
+@pytest.mark.unit
+def test_wait_actionable_stable_returns(runner):
+    """wait_actionable：ok+rect 稳定两拍 → 返回元素。"""
+    from dp_cli.commands._utils import wait_actionable
+
+    class E(FakeEle):
+        def run_js(self, s, *a, **k):
+            return {'ok': True, 'reason': 'ok',
+                    'rect': [0, 0, 10, 10], 'center': [5, 5]}
+
+    class Ctx:
+        def ele(self, loc, index=1, timeout=0.3):
+            return E()
+
+    ele, fail = wait_actionable(Ctx(), '#x', timeout=2.0, settle=0.1)
+    assert fail is None and ele is not None

@@ -8,6 +8,7 @@ from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import (
     session_option, _get_page, resolve_locator, wait_network_idle,
 )
+from dp_cli.session import load_session, save_session
 from dp_cli.human import human_options, human_type, _rand
 
 # ponytail: 提取重复的 findScrollable JS 函数
@@ -23,6 +24,40 @@ function findScrollable(el) {
   return document.scrollingElement || document.documentElement;
 }
 """
+
+
+def _key_maps():
+    from DrissionPage._functions.keys import Keys
+    key_map = {
+        'enter': '\ue007', 'tab': '\ue004', 'escape': '\ue00c', 'esc': '\ue00c',
+        'backspace': '\ue003', 'delete': '\ue017', 'space': ' ',
+        'arrowup': '\ue013', 'arrowdown': '\ue015',
+        'arrowleft': '\ue012', 'arrowright': '\ue014',
+    }
+    mod_map = {'control': Keys.CTRL, 'ctrl': Keys.CTRL,
+               'shift': Keys.SHIFT, 'alt': Keys.ALT,
+               'meta': Keys.META, 'cmd': Keys.COMMAND,
+               'command': Keys.COMMAND}
+    # 常见键名别名 → Keys 枚举名（枚举用下划线风格，如 PAGE_UP；
+    # 映射失败会回退为字面输入，带修饰键时会误触浏览器快捷键，
+    # 所以别名必须覆盖常用名）
+    key_alias = {
+        'pageup': 'PAGE_UP', 'pgup': 'PAGE_UP',
+        'pagedown': 'PAGE_DOWN', 'pgdn': 'PAGE_DOWN',
+        'del': 'DEL', 'esc': 'ESCAPE', 'win': 'META',
+    }
+
+    def _key_token(name):
+        """键名 → Keys 枚举/特殊键码；未知键按字面输入。"""
+        low = name.strip().lower()
+        if low in key_map:
+            return key_map[low]
+        attr = key_alias.get(
+            low, low.upper().replace('-', '_').replace(' ', '_'))
+        k = getattr(Keys, attr, None)
+        return k if k is not None else name.strip()
+
+    return mod_map, _key_token
 
 
 def register(cli):
@@ -51,36 +86,7 @@ def register(cli):
         """
         page = _get_page(session)
         try:
-            from DrissionPage._functions.keys import Keys
-            key_map = {
-                'enter': '\ue007', 'tab': '\ue004', 'escape': '\ue00c', 'esc': '\ue00c',
-                'backspace': '\ue003', 'delete': '\ue017', 'space': ' ',
-                'arrowup': '\ue013', 'arrowdown': '\ue015',
-                'arrowleft': '\ue012', 'arrowright': '\ue014',
-            }
-            mod_map = {'control': Keys.CTRL, 'ctrl': Keys.CTRL,
-                       'shift': Keys.SHIFT, 'alt': Keys.ALT,
-                       'meta': Keys.META, 'cmd': Keys.COMMAND,
-                       'command': Keys.COMMAND}
-            # 常见键名别名 → Keys 枚举名（枚举用下划线风格，如 PAGE_UP；
-            # 映射失败会回退为字面输入，带修饰键时会误触浏览器快捷键，
-            # 所以别名必须覆盖常用名）
-            key_alias = {
-                'pageup': 'PAGE_UP', 'pgup': 'PAGE_UP',
-                'pagedown': 'PAGE_DOWN', 'pgdn': 'PAGE_DOWN',
-                'del': 'DEL', 'esc': 'ESCAPE', 'win': 'META',
-            }
-
-            def _key_token(name):
-                """键名 → Keys 枚举/特殊键码；未知键按字面输入。"""
-                low = name.strip().lower()
-                if low in key_map:
-                    return key_map[low]
-                attr = key_alias.get(
-                    low, low.upper().replace('-', '_').replace(' ', '_'))
-                k = getattr(Keys, attr, None)
-                return k if k is not None else name.strip()
-
+            mod_map, _key_token = _key_maps()
             if human:
                 page.actions.wait(_rand(human_min, human_max))
             if '+' in key:
@@ -431,3 +437,124 @@ def register(cli):
             }, msg=f'autoscroll 完成 ({reason})：{metric} {history[0]} → {history[-1]}')
         except Exception as e:
             error(f'自动滚动失败', code='AUTOSCROLL_FAILED', detail=str(e))
+
+    # ── 细分输入事件（对齐 playwright-cli keydown/keyup/mouse* 家族）──
+
+    @cli.command('keydown')
+    @click.argument('key')
+    @session_option
+    def cmd_keydown(key, session):
+        """按下键不放（配合 keyup 实现长按/组合态）。
+
+        \b
+        示例: dpx keydown Shift → dpx click e3 → dpx keyup Shift
+        """
+        page = _get_page(session)
+        try:
+            _, token = _key_maps()
+            page.actions.key_down(token(key))
+            ok({'key': key}, msg='keydown')
+        except Exception as e:
+            error(f'keydown 失败: {key}', code='KEY_FAILED', detail=str(e))
+
+    @cli.command('keyup')
+    @click.argument('key')
+    @session_option
+    def cmd_keyup(key, session):
+        """释放按住的键。"""
+        page = _get_page(session)
+        try:
+            _, token = _key_maps()
+            page.actions.key_up(token(key))
+            ok({'key': key}, msg='keyup')
+        except Exception as e:
+            error(f'keyup 失败: {key}', code='KEY_FAILED', detail=str(e))
+
+    def _mouse_pos(session, sess=None):
+        """读 session 里记录的光标位置（跨进程命令间持久），默认 (0,0)。"""
+        sess = sess if sess is not None else (load_session(session) or {})
+        p = sess.get('mouse_pos') or [0, 0]
+        return int(p[0]), int(p[1])
+
+    def _save_mouse_pos(session, sess, x, y):
+        sess['mouse_pos'] = [x, y]
+        save_session(session, sess)
+
+    _BUTTONS = {'left': 1, 'right': 2, 'middle': 4}
+
+    @cli.command('mousemove')
+    @click.argument('x', type=int)
+    @click.argument('y', type=int)
+    @session_option
+    def cmd_mousemove(x, y, session):
+        """移动鼠标到页面坐标 (x, y)。"""
+        page = _get_page(session)
+        try:
+            page.run_cdp('Input.dispatchMouseEvent', type='mouseMoved',
+                         x=x, y=y, buttons=0)
+            _save_mouse_pos(session, load_session(session) or {}, x, y)
+            ok({'x': x, 'y': y}, msg='鼠标已移动')
+        except Exception as e:
+            error('mousemove 失败', code='MOUSE_FAILED', detail=str(e))
+
+    @cli.command('mousedown')
+    @click.argument('button', default='left', required=False,
+                    type=click.Choice(['left', 'right', 'middle']))
+    @session_option
+    def cmd_mousedown(button, session):
+        """在当前光标位置按下鼠标键（配合 mouseup 自定义拖拽）。"""
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        x, y = _mouse_pos(session, sess)
+        try:
+            page.run_cdp('Input.dispatchMouseEvent', type='mousePressed',
+                         x=x, y=y, button=button, clickCount=1,
+                         buttons=_BUTTONS[button])
+            ok({'button': button, 'x': x, 'y': y}, msg='鼠标已按下')
+        except Exception as e:
+            error('mousedown 失败', code='MOUSE_FAILED', detail=str(e))
+
+    @cli.command('mouseup')
+    @click.argument('button', default='left', required=False,
+                    type=click.Choice(['left', 'right', 'middle']))
+    @session_option
+    def cmd_mouseup(button, session):
+        """在当前光标位置释放鼠标键。"""
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        x, y = _mouse_pos(session, sess)
+        try:
+            page.run_cdp('Input.dispatchMouseEvent', type='mouseReleased',
+                         x=x, y=y, button=button, clickCount=1,
+                         buttons=0)
+            ok({'button': button, 'x': x, 'y': y}, msg='鼠标已释放')
+        except Exception as e:
+            error('mouseup 失败', code='MOUSE_FAILED', detail=str(e))
+
+    @cli.command('mousewheel')
+    @click.argument('dx', type=int)
+    @click.argument('dy', type=int)
+    @session_option
+    def cmd_mousewheel(dx, dy, session):
+        """按像素滚动鼠标滚轮（dy>0 向下）。"""
+        page = _get_page(session)
+        sess = load_session(session) or {}
+        x, y = _mouse_pos(session, sess)
+        try:
+            page.run_cdp('Input.dispatchMouseEvent', type='mouseWheel',
+                         x=x, y=y, deltaX=dx, deltaY=dy, buttons=0)
+            ok({'dx': dx, 'dy': dy}, msg='滚轮已滚动')
+        except Exception as e:
+            error('mousewheel 失败', code='MOUSE_FAILED', detail=str(e))
+
+    @cli.command('devtools')
+    @session_option
+    def cmd_devtools(session):
+        """打开 DevTools 面板（发送 F12）。仅有头浏览器有效。"""
+        page = _get_page(session)
+        try:
+            _, token = _key_maps()
+            page.actions.type(token('f12'))
+            ok({}, msg='DevTools 已触发（F12）')
+        except Exception as e:
+            error('打开 DevTools 失败', code='MOUSE_FAILED', detail=str(e))

@@ -239,7 +239,8 @@ def warn_drift():
         marker.touch()
         import click
         shown = '、'.join(stale[:3]) + (' 等' if len(stale) > 3 else '')
-        click.echo(f'[dp-cli] skill 漂移 @ {shown} ≠ CLI {cur}'
-                   f'，运行 `dpx install --skills` 更新', err=True)
+        click.echo(f'[dp-cli] skill 漂移 @ {shown} ≠ CLI {cur}（包升级后 '
+                   f'skill 内容可能过期），运行 `dpx install --skills` 更新'
+                   f'（`--all` 覆盖全部 harness）', err=True)
     except Exception:
         pass

@@ -398,6 +398,61 @@ def register(cli):
             closed.append(s['name'])
         ok({'closed': closed}, msg=f'已关闭 {len(closed)} 个会话')
 
+    @cli.command('kill-all')
+    def kill_all():
+        """强制清理：关闭全部会话 + 停掉全部 bridge + 强杀 dpx 自管的
+        残留浏览器进程（user-data-dir 在本工具管理的 profiles/autoPortData
+        下；用户自己的浏览器/bridge 之外的进程不受影响）。"""
+        import os, signal, subprocess
+        from dp_cli.session import get_session_dir
+        from dp_cli.bridge_registry import iter_entries, unregister_bridge
+        from dp_cli.bridge_manager import stop_bridge
+
+        result = {'sessions_closed': [], 'bridges_stopped': 0,
+                  'procs_killed': 0}
+
+        # 1) 会话优雅关闭
+        for s in list_sessions():
+            try:
+                close_browser(s['name'], force=True)
+                result['sessions_closed'].append(s['name'])
+            except Exception as e:
+                debug(f"kill-all close {s['name']} 失败", e)
+
+        # 2) 停全部注册 bridge
+        for e in iter_entries():
+            try:
+                stop_bridge(int(e['pid']))
+                unregister_bridge(e['user_data_dir'])
+                result['bridges_stopped'] += 1
+            except Exception as ex:
+                debug(f"kill-all stop bridge pid={e.get('pid')} 失败", ex)
+
+        # 3) 强杀 dpx 自管的残留浏览器进程
+        #    特征：cmdline 含 --user-data-dir=<sessions/profiles|autoPortData>
+        profiles_root = str(get_session_dir() / 'profiles')
+        markers = (profiles_root, 'DrissionPage/autoPortData',
+                   'DrissionPage/userData')
+        try:
+            out = subprocess.run(
+                ['pgrep', '-f', 'user-data-dir'],
+                capture_output=True, text=True, timeout=5).stdout.split()
+            for pid_s in out:
+                try:
+                    pid = int(pid_s)
+                    if pid == os.getpid():
+                        continue
+                    cmdline = open(f'/proc/{pid}/cmdline', 'rb').read()
+                    if any(m.encode() in cmdline for m in markers):
+                        os.kill(pid, signal.SIGKILL)
+                        result['procs_killed'] += 1
+                except Exception:
+                    continue
+        except Exception as e:
+            debug('kill-all 进程扫描失败', e)
+
+        ok(result, msg='kill-all 完成')
+
     @cli.command('list')
     def cmd_list():
         """列出所有活跃会话。"""

@@ -257,6 +257,46 @@ def register(cli):
         except Exception as e:
             error(f'处理对话框失败', code='DIALOG_FAILED', detail=str(e))
 
+    @cli.command('dialog-policy')
+    @click.option('--accept', 'action', flag_value='accept',
+                  help='自动接受（confirm/alert 点确定，prompt 用默认值）')
+    @click.option('--dismiss', 'action', flag_value='dismiss',
+                  help='自动取消/关闭')
+    @click.option('--types', 'types_', default=None,
+                  help='生效的对话框类型，逗号分隔：alert,confirm,prompt,beforeunload；缺省 all')
+    @click.option('--clear', is_flag=True, help='清除已设策略')
+    @session_option
+    def dialog_policy(action, types_, clear, session):
+        """设置会话级 JS 对话框自动处理策略（写入 session，后续命令生效）。
+
+        未设策略时弹窗会阻塞后续命令（dpx dialog-accept/dismiss 手动处理）；
+        设策略后 attach 自动应用，agent 无人值守场景防挂死。
+
+        \b
+        示例:
+          dpx dialog-policy --accept                       # 全部自动接受
+          dpx dialog-policy --dismiss --types alert,confirm
+          dpx dialog-policy --clear
+        """
+        from dp_cli.session import load_session, save_session
+        sess = load_session(session)
+        if not sess:
+            error(f'会话不存在: {session}', code='SESSION_NOT_FOUND')
+            return
+        if clear:
+            sess.pop('dialog_policy', None)
+            save_session(session, sess)
+            ok(msg='dialog 策略已清除')
+            return
+        if not action:
+            error('请指定 --accept / --dismiss / --clear', code='INVALID_ARGS')
+            return
+        types = ([t.strip() for t in types_.split(',') if t.strip()]
+                 if types_ else [])
+        sess['dialog_policy'] = {'action': action, 'types': types}
+        save_session(session, sess)
+        ok({'action': action, 'types': types or ['all']}, msg='dialog 策略已设置')
+
     @cli.command('wait')
     @session_option
     @click.option('--url', default=None, help='等待 URL 包含此文本')

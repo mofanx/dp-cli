@@ -163,6 +163,41 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
             debug('browser_cdp 重放失败', e)
     _replay_persist_scripts(target, session, sess)
 
+    # dialog 预设策略重放：accept/dismiss 存 session，每条命令 attach 时应用
+    dpol = sess.get('dialog_policy')
+    if dpol:
+        try:
+            accept = dpol.get('action', 'accept') == 'accept'
+            types = set(dpol.get('types') or [])
+            if not types or 'all' in types:
+                target._alert.auto = accept
+            else:
+                _orig_open = target._on_alert_open
+
+                def _typed_open(_orig=_orig_open, _t=types,
+                                _a=accept, _tgt=target, **kw):
+                    _orig(**kw)
+                    if kw.get('type') in _t:
+                        try:
+                            _tgt._handle_alert(_a)
+                        except Exception:
+                            pass
+
+                target.driver.set_callback('Page.javascriptDialogOpening',
+                                           _typed_open, immediate=True)
+        except Exception as e:
+            debug('dialog_policy 应用失败', e)
+
+    # 挂起 dialog 检测：无策略且有弹窗时快速告警（否则后续命令挂死等待）
+    if not dpol and getattr(target, '_has_alert', False):
+        try:
+            import sys as _sys
+            print(f'[dp-cli] 警告：存在挂起的 JS 对话框'
+                  f'（dpx dialog-accept/dialog-dismiss 处理，'
+                  f'或 dpx dialog-policy 预设策略）', file=_sys.stderr)
+        except Exception:
+            pass
+
     return target
 
 
@@ -539,6 +574,113 @@ class CdpWaitGate:
     def _on_nav(self, **kw):
         self.nav.set()
         self.wake.set()
+
+
+_ACTIONABLE_JS = """
+const el=this;
+if(!el)return{ok:false,reason:'not_found'};
+  const cs=getComputedStyle(el);
+  const r=el.getBoundingClientRect();
+  const visible=r.width>0&&r.height>0&&cs.visibility!=='hidden'&&cs.display!=='none';
+  if(!visible)return{ok:false,reason:'hidden',rect:[r.x,r.y,r.width,r.height]};
+  if(el.disabled||el.getAttribute('aria-disabled')==='true')
+    return{ok:false,reason:'disabled'};
+  const cx=r.x+r.width/2,cy=r.y+r.height/2;
+  const hit=document.elementFromPoint(cx,cy);
+  let occluder=null;
+  if(hit&&hit!==el&&!el.contains(hit)&&!hit.contains(el))
+    occluder={tag:hit.tagName.toLowerCase(),id:hit.id||null,
+              cls:(hit.className||'').toString().slice(0,80)||null};
+  return{ok:!occluder,reason:occluder?'occluded':'ok',
+         rect:[r.x,r.y,r.width,r.height],center:[cx,cy],occluder};
+"""
+
+
+def wait_actionable(ctx, locator, index=1, timeout=10.0, settle=0.15,
+                    hit_check=True):
+    """PW 风格 actionability 等待：存在→可见→enabled→rect 两帧稳定→命中检测。
+
+    :param ctx: frame_ctx(page, frame, session) 返回值（有 .ele/.eles/.run_js）
+    :param hit_check: False 跳过 elementFromPoint 遮挡检查
+    :returns: (ele, None) 成功；(ele_or_None, {'reason':..., 'occluder':...}) 失败
+    """
+    deadline = perf_counter() + timeout
+    last_rect = None
+    stable_from = None
+    while True:
+        try:
+            ele = ctx.ele(locator, index=index, timeout=0.3)
+        except Exception:
+            ele = None
+        missing = (ele is None or ele.__class__.__name__ == 'NoneElement')
+        if missing:
+            info = {'reason': 'not_found'}
+        else:
+            try:
+                r = ele.run_js(_ACTIONABLE_JS)
+                if not isinstance(r, dict):
+                    r = {'ok': True, 'reason': 'ok'}
+            except Exception:
+                r = {'ok': True, 'reason': 'ok'}  # 求值失败不阻塞（保守放行）
+            info = r
+            if not hit_check and info.get('reason') == 'occluded':
+                info = dict(info); info['ok'] = True; info['reason'] = 'ok'
+        if info.get('ok'):
+            rect = tuple(info.get('rect') or ())
+            if rect and rect == last_rect:
+                if stable_from is None:
+                    stable_from = perf_counter()
+                if perf_counter() - stable_from >= settle:
+                    return ele, None
+            else:
+                last_rect = rect
+                stable_from = None
+            if info.get('reason') == 'ok' and not rect:
+                return ele, None
+        else:
+            last_rect = None
+            stable_from = None
+        if perf_counter() >= deadline:
+            info.setdefault('reason', 'timeout')
+            return ele, info
+        _sleep(0.08)
+
+
+def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
+              hit_check=True, code='ELEMENT_FAILED', label='操作'):
+    """actionability 等待的统一入口：命中失败即 error 输出并返回 None。
+
+    :returns: 元素对象，或 None（错误已输出，调用方直接 return）
+    """
+    def _missing(e):
+        return e is None or e.__class__.__name__ == 'NoneElement'
+
+    if no_wait:
+        try:
+            ele = ctx.ele(locator, index=index, timeout=0)
+        except Exception:
+            ele = None
+        if _missing(ele):
+            error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
+            return None
+        return ele
+
+    ele, fail = wait_actionable(ctx, locator, index=index, timeout=timeout,
+                                hit_check=hit_check)
+    if fail is None:
+        return ele
+    reason = fail.get('reason', 'timeout')
+    if reason == 'not_found':
+        error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
+        return None
+    if reason == 'occluded':
+        occ = fail.get('occluder') or {}
+        detail = (f"遮挡者: <{occ.get('tag')}> id={occ.get('id')} "
+                  f"class={occ.get('cls')}")
+        error(f'{label}失败: 元素被遮挡 {locator}', code=code, detail=detail)
+        return None
+    error(f'{label}失败: 元素不可交互({reason}) {locator}', code=code)
+    return None
 
 
 def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30) -> bool:

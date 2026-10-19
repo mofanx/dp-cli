@@ -62,6 +62,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'FILL_FAILED':          (EXIT_RUNTIME, '输入失败'),
     'TYPE_FAILED':          (EXIT_RUNTIME, '按键输入失败'),
     'KEY_FAILED':           (EXIT_RUNTIME, '按键失败'),
+    'MOUSE_FAILED':         (EXIT_RUNTIME, '鼠标操作失败'),
     'SCROLL_FAILED':        (EXIT_RUNTIME, '滚动失败'),
     'AUTOSCROLL_FAILED':    (EXIT_RUNTIME, '自动滚动失败'),
     'HOVER_FAILED':         (EXIT_RUNTIME, '悬停失败'),

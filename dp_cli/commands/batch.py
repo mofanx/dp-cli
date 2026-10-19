@@ -85,6 +85,30 @@ def _invoke(argv: list) -> tuple:
         return code, result
 
 
+def _screenshot_evidence(shot_dir: str, seq: int, argv: list,
+                         result: dict) -> str:
+    """失败留证截图：复用默认 session 页面截到 DIR/fail-{seq}.png，附加 url。
+
+    截图自身失败静默（留证是 best-effort，不能反噬批处理结果）。
+    """
+    try:
+        from pathlib import Path
+        Path(shot_dir).mkdir(parents=True, exist_ok=True)
+        session = 'default'
+        if argv and '--session' in argv:
+            i = argv.index('--session')
+            if i + 1 < len(argv):
+                session = argv[i + 1]
+        from dp_cli.session import get_browser
+        page = get_browser(session)
+        page = page.latest_tab or page
+        path = Path(shot_dir) / f'fail-{seq}.png'
+        page.get_screenshot(path=str(path))
+        return str(path)
+    except (Exception, SystemExit):
+        return None
+
+
 def _invalid(msg: str) -> tuple:
     return 2, {'status': 'error', 'code': 'INVALID_ARGS', 'message': msg}
 
@@ -98,7 +122,9 @@ def _invalid(msg: str) -> tuple:
               help='向子命令透传 debug 日志（等价于子命令加 -v）')
 @click.option('--no-summary', is_flag=True,
               help='不在末尾输出统计行')
-def batch(file, keep_going, verbose, no_summary):
+@click.option('--screenshot-on-fail', 'shot_dir', default=None, metavar='DIR',
+              help='命令失败时自动截图到目录（留证排查）')
+def batch(file, keep_going, verbose, no_summary, shot_dir):
     """批量顺序执行 dpx 子命令（FILE 或 stdin，每行一条）。
 
     同一进程内执行，浏览器 attach 结果在各命令间复用，远快于逐条
@@ -148,6 +174,12 @@ def batch(file, keep_going, verbose, no_summary):
                 code, result = _invalid(f'批处理内不允许嵌套 {cmd_name}')
             else:
                 code, result = _invoke((['-v'] if verbose else []) + argv)
+
+        if code != 0 and shot_dir:
+            shot = _screenshot_evidence(shot_dir, seq, argv, result)
+            if shot:
+                result = dict(result or {})
+                result['screenshot'] = shot
 
         print(json.dumps({'seq': seq, 'line': lineno, 'cmd': text,
                           'exit': code, 'result': result},

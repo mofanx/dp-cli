@@ -152,21 +152,47 @@ def register(cli):
         page = _get_page(session)
         try:
             state = json.loads(Path(filename).read_text(encoding='utf-8'))
-            if 'cookies' in state:
-                for name, value in state['cookies'].items():
+            cookies = state.get('cookies')
+            n_cookies = 0
+            if isinstance(cookies, list):
+                # Playwright storageState：cookies 为对象数组（全字段恢复）
+                same_site_map = {'Lax': 'Lax', 'Strict': 'Strict',
+                                 'None': 'None', 'no_restriction': 'None'}
+                for c in cookies:
+                    try:
+                        ck = {'name': c['name'], 'value': c['value']}
+                        for f in ('domain', 'path', 'secure', 'httpOnly', 'expires'):
+                            if c.get(f) is not None:
+                                ck[f] = c[f]
+                        if c.get('sameSite') in same_site_map:
+                            ck['sameSite'] = same_site_map[c['sameSite']]
+                        page.set.cookies(ck)
+                        n_cookies += 1
+                    except Exception as e:
+                        debug(f'恢复 cookie {c.get("name")} 失败', e)
+            elif isinstance(cookies, dict):
+                for name, value in cookies.items():
                     try:
                         page.set.cookies({'name': name, 'value': value})
+                        n_cookies += 1
                     except Exception as e:
                         debug(f'恢复 cookie {name} 失败', e)
-            if 'localStorage' in state and state['localStorage']:
-                for k, v in state['localStorage'].items():
-                    try:
-                        page.run_js(f'localStorage.setItem({json.dumps(k)}, {json.dumps(v)})',
-                                    as_expr=True)
-                    except Exception as e:
-                        debug(f'恢复 localStorage[{k}] 失败', e)
+            # localStorage：dp 格式顶层 dict；pw 格式 origins[].localStorage
+            ls_map = {}
+            if isinstance(state.get('localStorage'), dict):
+                ls_map.update(state['localStorage'])
+            for origin in (state.get('origins') or []):
+                for item in (origin.get('localStorage') or []):
+                    ls_map[item['name']] = item['value']
+            for k, v in ls_map.items():
+                try:
+                    page.run_js(f'localStorage.setItem({json.dumps(k)}, {json.dumps(v)})',
+                                as_expr=True)
+                except Exception as e:
+                    debug(f'恢复 localStorage[{k}] 失败', e)
             ok({'filename': filename,
-                'cookies_restored': len(state.get('cookies', {}))}, msg='状态已加载')
+                'cookies_restored': n_cookies,
+                'localStorage_restored': len(ls_map)}, msg='状态已加载')
         except FileNotFoundError:
             error(f'状态文件不存在: {filename}', code='FILE_NOT_FOUND')
         except Exception as e:

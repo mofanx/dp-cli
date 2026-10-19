@@ -17,13 +17,14 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'], max_content_width=10
 
 
 @click.group(context_settings=CONTEXT_SETTINGS, invoke_without_command=True)
-@click.version_option(None, '-V', '--version', message='%(version)s')
+@click.option('-V', '--version', 'show_version', is_flag=True,
+              help='显示版本号并退出')
 @click.option('-v', '--verbose', is_flag=True, envvar='DP_DEBUG',
               help='输出 debug 日志到 stderr（也可设环境变量 DP_DEBUG=1）')
 @click.option('--compact', is_flag=True, envvar='DP_CLI_COMPACT',
               help='紧凑单行 JSON 输出（也可设环境变量 DP_CLI_COMPACT=1）')
 @click.pass_context
-def cli(ctx, verbose, compact):
+def cli(ctx, show_version, verbose, compact):
     """
     \b
     dp-cli —— DrissionPage 命令行工具
@@ -40,6 +41,7 @@ def cli(ctx, verbose, compact):
     agent 文档:
       dpx catalog --md          完整命令表（实时生成，永不过期）
       dpx install --skills      安装 SKILL.md 到 ~/.claude/skills/
+      dpx install --skills --check  # 校验已装 skill 是否同步（升级后跑）
     """
     if verbose:
         from dp_cli.logs import set_debug
@@ -47,8 +49,11 @@ def cli(ctx, verbose, compact):
     if compact:
         from dp_cli.output import set_compact
         set_compact(True)
-    from dp_cli.skill_dist import warn_drift
+    from dp_cli.skill_dist import warn_drift, cli_version
     warn_drift()
+    if show_version:
+        click.echo(cli_version())   # 版本号到 stdout；告警已走 stderr
+        ctx.exit()
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

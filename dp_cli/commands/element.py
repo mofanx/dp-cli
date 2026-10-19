@@ -252,7 +252,21 @@ def register(cli):
                 ele.select.by_value(value)
             ok({'locator': locator, 'value': value}, msg='选择成功')
         except Exception as e:
-            error(f'选择失败: {locator}', code='SELECT_FAILED', detail=str(e))
+            # 失败时枚举可用 option（agent 自查 next-step 不需要第二轮探测）
+            detail = str(e)
+            try:
+                opts = ele.eles('tag:option') if ele else []
+                if opts:
+                    avail = []
+                    for o in opts[:50]:
+                        v = o.attr('value')
+                        t = (o.raw_text or '').strip()[:40]
+                        avail.append(f'{v}({t})' if v else t)
+                    if avail:
+                        detail += '。可用选项: ' + ', '.join(avail)
+            except Exception:
+                pass
+            error(f'选择失败: {locator}', code='SELECT_FAILED', detail=detail)
 
     @cli.command('hover')
     @click.argument('locator')

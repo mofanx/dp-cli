@@ -382,6 +382,11 @@ def register(cli):
             if download_dir:
                 Path(download_dir).mkdir(parents=True, exist_ok=True)
                 page.set.download_path(download_dir)
+                # 持久化到 session——跨进程 wait --download 据此前置判定
+                # 并在新进程里重新武装 _dl_mgr（进程退出回调即失）
+                sess = load_session(session) or {}
+                sess['download_dir'] = str(Path(download_dir).resolve())
+                save_session(session, sess)
             if when_exists:
                 page.set.when_download_file_exists(when_exists)
 

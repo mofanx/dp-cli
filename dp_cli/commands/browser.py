@@ -286,11 +286,12 @@ def register(cli):
                 return
 
         if url:
-            _allowed = (load_session(session) or {}).get(
-                'intercept', {}).get('allowed_domains') or []
+            _icfg = (load_session(session) or {}).get('intercept') or {}
+            _allowed = _icfg.get('allowed_domains') or []
             if _allowed:
                 from dp_cli.commands.emulate import _host_allowed
-                if not _host_allowed(normalize_url(url), _allowed):
+                if not _host_allowed(normalize_url(url), _allowed,
+                                     _icfg.get('allow_file', False)):
                     error(f'目标域名不在白名单: {url}',
                           code='FORBIDDEN_DOMAIN',
                           detail=f'allowed={_allowed}')
@@ -321,11 +322,12 @@ def register(cli):
           dpx goto example.com --timeout 60
         """
         page = _get_page(session)
-        _allowed = (load_session(session) or {}).get(
-            'intercept', {}).get('allowed_domains') or []
+        _icfg = (load_session(session) or {}).get('intercept') or {}
+        _allowed = _icfg.get('allowed_domains') or []
         if _allowed:
             from dp_cli.commands.emulate import _host_allowed
-            if not _host_allowed(normalize_url(url), _allowed):
+            if not _host_allowed(normalize_url(url), _allowed,
+                                 _icfg.get('allow_file', False)):
                 error(f'目标域名不在白名单: {url}', code='FORBIDDEN_DOMAIN',
                       detail=f'allowed={_allowed}')
                 return

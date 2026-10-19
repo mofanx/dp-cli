@@ -405,6 +405,22 @@ def register(cli):
         save_session(session, sess)
         ok({'action': action, 'types': types or ['all']}, msg='dialog 策略已设置')
 
+    @cli.command('sleep')
+    @click.argument('seconds', type=float)
+    def cmd_sleep(seconds):
+        """无条件定时等待（脚本节奏控制）。
+
+        \b
+        示例:
+          dpx sleep 2        # 等 2 秒
+          dpx sleep 0.5      # 半秒节流
+        """
+        if seconds < 0:
+            error('秒数不能为负', code='INVALID_ARGS')
+            return
+        _sleep(seconds)
+        ok({'slept': seconds}, msg=f'已等待 {seconds}s')
+
     @cli.command('wait')
     @session_option
     @click.option('--url', default=None, help='等待 URL 包含此文本')
@@ -416,6 +432,10 @@ def register(cli):
     @click.option('--idle', type=float, is_flag=False, flag_value=2.0, default=None,
                   help='等待网络空闲（无请求持续 N 秒，默认 2），适合懒加载')
     @click.option('--downloads-done', is_flag=True, help='等待所有下载完成')
+    @click.option('--download', 'downloads_done_alias', is_flag=True,
+                  flag_value=True, help='--downloads-done 别名')
+    @click.option('--popup', is_flag=True,
+                  help='等待新 tab 弹出（点击触发后），返回新 tab id')
     @click.option('--js', 'js_expr', default=None,
                   help='等待 JS 表达式结果为真（轮询），如 "document.querySelector(\'#x\')!==null"')
     @click.option('--response', 'resp_pattern', default=None,
@@ -424,7 +444,8 @@ def register(cli):
     @click.option('--poll', '--no-events', 'force_poll', is_flag=True,
                   help='禁用事件驱动（--text/--js），强制纯轮询')
     def wait(session, url, title, locator, locator_gone, text, loaded, idle,
-             downloads_done, js_expr, resp_pattern, timeout, force_poll):
+             downloads_done, downloads_done_alias, popup, js_expr, resp_pattern,
+             timeout, force_poll):
         """等待条件满足。
 
         \b
@@ -489,9 +510,107 @@ def register(cli):
                     ok({'text': text}, msg='文本已出现')
                 else:
                     error(f'等待超时：文本未出现 "{text}"', code='WAIT_TIMEOUT')
-            elif downloads_done:
-                page.wait.downloads_done(timeout=timeout)
-                ok(msg='下载已完成')
+            elif downloads_done or downloads_done_alias:
+                # download_dir 是显式配置标记（download --dir 写入）；
+                # page.download_path 是 DP 默认值（恒 truthy，不可作判定）
+                from dp_cli.session import load_session as _ls
+                _sess = _ls(session) or {}
+                _dl_dir = _sess.get('download_dir')
+                if not _dl_dir:
+                    error('下载目录未设置，无法等待下载完成——'
+                          '先运行 `dpx download --dir <path>` 设置',
+                          code='DOWNLOAD_FAILED')
+                    return
+                # 跨进程断链修复：本进程重新武装 _dl_mgr
+                # （download --dir 所在进程的 downloadProgress 回调随进程
+                #   退出已失效，missions 在新进程里永远空）
+                mgr = None
+                try:
+                    page.set.download_path(_dl_dir)
+                    mgr = getattr(getattr(page, 'browser', None),
+                                  '_dl_mgr', None)
+                except Exception as e:
+                    debug('download_path 重武装失败', e)
+                if mgr is None:
+                    error('下载管理器不可用（_dl_mgr 缺失），无法跟踪下载',
+                          code='DOWNLOAD_FAILED')
+                    return
+                end = perf_counter() + timeout
+                missions = []
+                while perf_counter() < end:
+                    missions = list(
+                        getattr(mgr, 'missions', {}).values())
+                    if missions and all(
+                            getattr(m, 'is_done', True) for m in missions):
+                        break
+                    _sleep(0.2)
+                done = [{'name': getattr(m, 'name', None),
+                         'path': getattr(m, 'final_path', None)
+                                 or str(getattr(m, 'folder', '') or ''),
+                         'state': getattr(m, 'state', None)}
+                        for m in missions]
+                if missions and all(
+                        getattr(m, 'is_done', True) for m in missions):
+                    ok({'missions': done,
+                        'download_dir': _dl_dir}, msg='下载已完成')
+                elif not missions:
+                    # 事后语义回退：本进程未观测到事件（跨进程断链），
+                    # 但前进程已完成的下载文件应可追溯——扫目录兜底
+                    from pathlib import Path as _P
+                    _skip_sfx = ('.crdownload', '.part', '.partial', '.tmp')
+                    try:
+                        files = [f for f in _P(_dl_dir).iterdir()
+                                 if f.is_file()
+                                 and f.suffix.lower() not in _skip_sfx]
+                    except OSError:
+                        files = []
+                    if files:
+                        files.sort(key=lambda f: f.stat().st_mtime,
+                                   reverse=True)
+                        ok({'missions': [{
+                            'name': f.name,
+                            'path': str(f),
+                            'state': 'completed（目录回扫）',
+                            'size': f.stat().st_size,
+                        } for f in files[:20]],
+                            'download_dir': _dl_dir,
+                            'note': '本进程未观测到下载事件，'
+                                    '结果为目录回扫（跨进程断链）'},
+                           msg='下载已完成（目录回扫）')
+                    else:
+                        error(f'{timeout}s 内无下载完成', code='WAIT_TIMEOUT',
+                              detail='未检测到下载任务，目录无已完成文件'
+                                     '（跨进程已完成下载不可追溯）')
+                else:
+                    error(f'{timeout}s 内无下载完成', code='WAIT_TIMEOUT',
+                          detail=json.dumps(done, ensure_ascii=False))
+            elif popup:
+                # 新 tab 等待：tab_ids 在浏览器级对象上（_get_page 返回的
+                # MixTab/ChromiumTab 没有该属性，需走 .browser 兜底）
+                _tab_host = getattr(page, 'browser', None) or page
+                _tab_ids = getattr(_tab_host, 'tab_ids', None)
+                if _tab_ids is None:
+                    error('当前页面对象不支持 tab 枚举（非 Chromium 会话）',
+                          code='POPUP_FAILED')
+                    return
+                baseline = set(_tab_ids)
+                new_id = None
+                end = perf_counter() + timeout
+                while perf_counter() < end:
+                    try:
+                        cur = set(_tab_host.tab_ids)
+                    except Exception:
+                        cur = baseline
+                    diff = cur - baseline
+                    if diff:
+                        new_id = sorted(diff)[0]
+                        break
+                    _sleep(0.2)
+                if new_id:
+                    ok({'tab_id': new_id}, msg='新 tab 已弹出')
+                else:
+                    error(f'等待超时：{timeout}s 内无新 tab',
+                          code='WAIT_TIMEOUT')
             elif js_expr:
                 gate = CdpWaitGate(page)
                 armed = gate.arm(f'({js_expr})', force_poll=force_poll)

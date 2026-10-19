@@ -111,7 +111,8 @@
 | 页面 | `eval` | <script>, [session], [locator], [timeout] |
 | 页面 | `pdf` | [session], [filename] |
 | 页面 | `screenshot` | [session], [locator], [filename], [full_page], [fmt], [annotate], [if_changed] |
-| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [js_expr], [resp_pattern], [timeout], [force_poll] |
+| 页面 | `sleep` | <seconds> |
+| 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [downloads_done_alias], [popup], [js_expr], [resp_pattern], [timeout], [force_poll] |
 | 批量 | `batch` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
 | 批量 | `exec` | [file], [keep_going], [verbose], [no_summary], [shot_dir] |
 | 批量 | `serve` | [session] |

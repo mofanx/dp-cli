@@ -45,21 +45,53 @@ def _playwright_storage_state(page):
             'sameSite': _pw_same_site(c.get('sameSite')),
         })
     origins = []
-    try:
-        u = urlparse(page.url or '')
-        if u.scheme in ('http', 'https'):
-            ls = page.run_js(
-                'JSON.stringify(Object.entries(localStorage)'
-                '.map(function(p){return {name:p[0],value:p[1]}}))',
-                as_expr=True)
-            items = json.loads(ls) if isinstance(ls, str) else ls
+    seen = set()
+    _LS_JS = ('JSON.stringify({o:location.origin,'
+              'items:Object.entries(localStorage)'
+              '.map(function(p){return {name:p[0],value:p[1]}})})')
+
+    def _collect(target):
+        """采单个 frame 的 localStorage 并入 origins（按 origin 去重）。"""
+        try:
+            raw = target.run_js(_LS_JS, as_expr=True)
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            if not isinstance(data, dict):
+                return
+            origin = data.get('o') or ''
+            items = data.get('items') or []
+            u = urlparse(origin)
+            if u.scheme not in ('http', 'https') or origin in seen:
+                return
+            seen.add(origin)
             if items:
                 origins.append({
-                    'origin': f'{u.scheme}://{u.netloc}',
+                    'origin': origin,
                     'localStorage': [
                         {'name': str(i.get('name', '')),
                          'value': str(i.get('value', ''))}
                         for i in items if isinstance(i, dict)]})
+        except Exception:
+            pass
+
+    def _walk(target, depth=0):
+        if depth > 4:
+            return
+        _collect(target)
+        try:
+            for fe in target.eles('tag:iframe'):
+                try:
+                    fr = getattr(fe, 'frame', None)
+                    if callable(fr):
+                        fr = fr()
+                except Exception:
+                    continue
+                if fr is not None:
+                    _walk(fr, depth + 1)
+        except Exception:
+            pass
+
+    try:
+        _walk(page)
     except Exception:
         pass
     return {'cookies': cookies, 'origins': origins}

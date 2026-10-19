@@ -2765,7 +2765,12 @@ class _StatePage:
 
     def run_js(self, js, **kw):
         import json as _j
-        return _j.dumps(self._ls) if self._ls is not None else '[]'
+        # 新契约：{o: location.origin, items: localStorage 条目}
+        return _j.dumps({'o': self.url.rsplit('/', 1)[0] or self.url,
+                         'items': self._ls or []})
+
+    def eles(self, *a, **kw):
+        return []
 
 
 def _save_state(runner, monkeypatch, tmp_path, page, *extra):
@@ -2887,9 +2892,15 @@ class _StrictExprPage:
         if 'Object.fromEntries' in js:
             items = self._ls_items or []
             return json.dumps({i['name']: i['value'] for i in items})
-        # storageState：entries → [{name,value}]
+        # storageState 新契约：{o: origin, items: [{name,value}]}
         items = self._ls_items or []
+        if 'location.origin' in js:
+            return json.dumps({'o': 'https://app.example.com',
+                               'items': items})
         return json.dumps(items)
+
+    def eles(self, *a, **kw):
+        return []
 
 
 @pytest.mark.unit
@@ -3292,3 +3303,253 @@ def test_host_allowed_unknown_scheme_denied():
     assert not _host_allowed('myapp://ex.com/open', ['ex.com'])
     assert _host_allowed('wss://api.ex.com/ws', ['ex.com'])
     assert not _host_allowed('wss://evil.com/ws', ['ex.com'])
+
+
+@pytest.mark.unit
+def test_wait_popup_diff_detects_new_tab(runner, monkeypatch):
+    """wait --popup：tab_ids 出现新 id → 返回 tab_id。"""
+    from dp_cli.main import cli
+
+    class P(FakePage):
+        _calls = 0
+
+        @property
+        def tab_ids(self):
+            self._calls += 1
+            return ['t1'] if self._calls < 3 else ['t1', 't2']
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['wait', '--popup', '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    assert '"tab_id": "t2"' in r.output
+
+
+@pytest.mark.unit
+def test_wait_popup_timeout(runner, monkeypatch):
+    from dp_cli.main import cli
+
+    class P(FakePage):
+        tab_ids = ['t1']
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['wait', '--popup', '--timeout', '1'])
+    assert 'WAIT_TIMEOUT' in r.output
+
+
+@pytest.mark.unit
+def test_sleep_negative_rejected(runner):
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['sleep', '--', '-1'])
+    assert 'INVALID_ARGS' in r.output or r.exit_code != 0
+
+
+@pytest.mark.unit
+def test_state_save_all_origins(runner, monkeypatch):
+    """state-save pw 格式：iframe 各 origin localStorage 都进 origins[]。"""
+    import dp_cli.commands.misc as misc_mod
+
+    class Frame:
+        def run_js(self, s, *a, **k):
+            return json.dumps({'o': 'https://cdn.x.com',
+                               'items': [{'name': 'k2', 'v': '2'}]})
+        def eles(self, *a, **k):
+            return []
+
+    class Fe:
+        frame = Frame()
+
+    class P(FakePage):
+        url = 'https://main.com'
+        def run_js(self, s, *a, **k):
+            return json.dumps({'o': 'https://main.com',
+                               'items': [{'name': 'k1', 'v': '1'}]})
+        def eles(self, *a, **k):
+            return [Fe()]
+        def cookies(self, **kw):
+            return []
+
+    st = misc_mod._playwright_storage_state(P())
+    origins = {o['origin'] for o in st['origins']}
+    assert origins == {'https://main.com', 'https://cdn.x.com'}
+
+
+@pytest.mark.unit
+def test_wait_download_no_dir_errors(runner, monkeypatch):
+    """wait --download 在 sess['download_dir'] 未设置时给出可行动错误。
+
+    判定用 session 标记而非 page.download_path（DP 默认 cwd 恒 truthy）。
+    """
+    from dp_cli.main import cli
+
+    class P(FakePage):
+        download_path = '/default/cwd'  # 恒 truthy 也不得放行
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
+    r = runner.invoke(cli, ['wait', '--download', '--timeout', '1'])
+    assert 'DOWNLOAD_FAILED' in r.output
+    assert 'dpx download --dir' in r.output
+
+
+@pytest.mark.unit
+def test_wait_popup_uses_browser_attr(runner, monkeypatch):
+    """wait --popup：MixTab 无 tab_ids 时经 .browser 枚举（v1 回归）。"""
+    from dp_cli.main import cli
+
+    class _Browser:
+        _calls = 0
+
+        @property
+        def tab_ids(self):
+            self._calls += 1
+            return ['t1'] if self._calls < 3 else ['t1', 't9']
+
+    class MixTabLike:
+        """模拟 _get_page 返回的 tab 对象：自身无 tab_ids，browser 有。"""
+        browser = _Browser()
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: MixTabLike())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['wait', '--popup', '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    assert '"tab_id": "t9"' in r.output
+
+
+@pytest.mark.unit
+def test_wait_popup_no_tab_enum_errors(runner, monkeypatch):
+    """tab_ids 完全不可得 → POPUP_FAILED 而非静默超时。"""
+    from dp_cli.main import cli
+
+    class Bare:
+        pass
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: Bare())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['wait', '--popup', '--timeout', '1'])
+    assert 'POPUP_FAILED' in r.output
+
+
+@pytest.mark.unit
+def test_wait_download_rearms_and_completes(runner, monkeypatch):
+    """sess 有 download_dir → 重武装 _dl_mgr 并轮询 missions 完成。"""
+    from dp_cli.main import cli
+
+    class _M:
+        name = 'f.bin'
+        final_path = '/tmp/dl/f.bin'
+        state = 'completed'
+        is_done = True
+
+    class _Mgr:
+        missions = {'g1': _M()}
+
+    class _Set:
+        def download_path(self, p):
+            self.path = p
+
+    class _Br:
+        _dl_mgr = _Mgr()
+
+    class P(FakePage):
+        set = _Set()
+        browser = _Br()
+
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session',
+                        lambda s: {'download_dir': '/tmp/dl'})
+    monkeypatch.setattr('dp_cli.session.load_session',
+                        lambda s: {'download_dir': '/tmp/dl'})
+    r = runner.invoke(cli, ['wait', '--download', '--timeout', '2'])
+    assert r.exit_code == 0, r.output
+    assert 'f.bin' in r.output
+
+
+@pytest.mark.unit
+def test_download_dir_persists_to_session(runner, monkeypatch, tmp_path):
+    """download --dir 写 sess['download_dir']（跨进程判定依据）。"""
+    from dp_cli.main import cli
+    import dp_cli.commands.emulate as em
+    saved = {}
+
+    class P(FakePage):
+        class _Set:
+            def download_path(self, p):
+                pass
+
+            def when_download_file_exists(self, w):
+                pass
+
+        set = _Set()
+        browser = type('B', (), {'_dl_mgr': None})()
+
+    monkeypatch.setattr(em, '_get_page', lambda s: P())
+    monkeypatch.setattr(em, 'load_session', lambda s: {})
+    monkeypatch.setattr(em, 'save_session',
+                        lambda s, d: saved.update(d))
+    r = runner.invoke(cli, ['download', '--dir', str(tmp_path),
+                            '--timeout', '1'])
+    assert r.exit_code == 0, r.output
+    assert saved.get('download_dir') == str(tmp_path.resolve())
+
+
+@pytest.mark.unit
+def test_wait_download_dir_fallback(runner, monkeypatch, tmp_path):
+    """missions 空时回扫 download_dir：返回已存在文件（排除 crdownload）。"""
+    from dp_cli.main import cli
+    (tmp_path / 'done.bin').write_bytes(b'x' * 10)
+    (tmp_path / 'wip.crdownload').write_bytes(b'x')
+
+    class _Mgr:
+        missions = {}
+
+    class _Set:
+        def download_path(self, p):
+            pass
+
+    class _Br:
+        _dl_mgr = _Mgr()
+
+    class P(FakePage):
+        set = _Set()
+        browser = _Br()
+
+    sess = {'download_dir': str(tmp_path)}
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: sess)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: sess)
+    r = runner.invoke(cli, ['wait', '--download', '--timeout', '1'])
+    assert r.exit_code == 0, r.output
+    assert 'done.bin' in r.output
+    assert 'wip.crdownload' not in r.output
+    assert '目录回扫' in r.output
+
+
+@pytest.mark.unit
+def test_wait_download_fallback_empty_dir(runner, monkeypatch, tmp_path):
+    """missions 空且目录也空 → WAIT_TIMEOUT + 明确 detail。"""
+    from dp_cli.main import cli
+
+    class _Mgr:
+        missions = {}
+
+    class _Set:
+        def download_path(self, p):
+            pass
+
+    class _Br:
+        _dl_mgr = _Mgr()
+
+    class P(FakePage):
+        set = _Set()
+        browser = _Br()
+
+    sess = {'download_dir': str(tmp_path)}
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: P())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: sess)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: sess)
+    r = runner.invoke(cli, ['wait', '--download', '--timeout', '1'])
+    assert 'WAIT_TIMEOUT' in r.output
+    assert '不可追溯' in r.output

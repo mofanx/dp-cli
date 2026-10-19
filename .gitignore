@@ -18,3 +18,10 @@ env/
 htmlcov/
 coverage.xml
 .pytest_cache/
+
+# 冒烟测试下载残留
+b.bin
+t.txt
+t2.json
+t3.json
+test.json

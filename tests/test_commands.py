@@ -3790,3 +3790,94 @@ def test_fill_form_eq_in_locator_hint(runner, monkeypatch):
     r = runner.invoke(cli, ['fill-form', '@name=pw', '--no-wait'])
     # 已有 '@name=' 引导改用 --data 的 INVALID_ARGS 提示
     assert 'INVALID_ARGS' in r.output and '--data' in r.output
+
+
+@pytest.mark.unit
+def test_agent_state_format(runner, monkeypatch):
+    """agent-state：Jev 控件表格式 + epoch 版本戳。"""
+    from dp_cli.main import cli
+
+    class N(dict):
+        def get(self, k, d=None):
+            return super().get(k, d)
+
+    tree = {'role': 'document', 'children': [
+        {'role': 'button', 'name': 'Login', 'locator': '#btn'},
+        {'role': 'textbox', 'name': 'Email', 'value': ''},
+        {'role': 'StaticText', 'name': 'skip'},
+        {'role': 'combobox', 'name': 'City', 'locator': '#sel'},
+    ]}
+    monkeypatch.setattr('dp_cli.snapshot.a11y.take_a11y_snapshot',
+                        lambda *a, **k: {'tree': tree})
+    _fp = FakePage()
+    _fp.url = 'https://x.com'
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: _fp)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.save_session',
+                        lambda *a, **k: None)
+    monkeypatch.setattr('dp_cli.agent.save_refs',
+                        lambda *a, **k: None)
+    r = runner.invoke(cli, ['agent-state'])
+    assert r.exit_code == 0, r.output
+    import json as _j
+    d = _j.loads(r.output)['data']
+    roles = [o['role'] for o in d['options']]
+    assert roles == ['button', 'textbox', 'combobox']  # StaticText 滤掉
+    assert d['epoch'] and d['state']['url'] == 'https://x.com'
+
+
+@pytest.mark.unit
+def test_decide_external_and_unsure(runner, monkeypatch):
+    """decide external：内联 answer → 动作回传；低置信 → AGENT_UNSURE。"""
+    from dp_cli.main import cli
+
+    monkeypatch.setattr('dp_cli.agent._page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'Go'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.save_session',
+                        lambda *a, **k: None)
+
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--answer',
+                            '{"action":"type","target":1,'
+                            '"done":false,"probs":{"type":0.9}}'])
+    assert r.exit_code == 0, r.output
+    assert '"needs_value": true' in r.output
+    assert '"ref": 1' in r.output
+
+    r2 = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                             '--answer', '{"action":"click","target":1,'
+                                         '"confidence":0.1}'])
+    assert 'AGENT_UNSURE' in r2.output
+
+
+@pytest.mark.unit
+def test_decide_stuck_detection(runner, monkeypatch):
+    """连续 N 步哈希不变 → stuck:true（确定性信号）。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'Go'}],
+                            'epoch': 'same', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session',
+                        lambda s: {'agent_hash_hist': ['same', 'same']})
+    monkeypatch.setattr(am, 'load_session',
+                        lambda s: {'agent_hash_hist': ['same', 'same']})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--answer',
+                            '{"action":"click","target":1,'
+                            '"confidence":0.9}'])
+    assert '"stuck": true' in r.output

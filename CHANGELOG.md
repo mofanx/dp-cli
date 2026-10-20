@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.1] - 2026-10-20
+
+### 修复（Windows 跨平台批）
+
+- `daemon` 传输层 Windows 不可用——socket.AF_UNIX 不存在；Windows 分流 TCP 回环（127.0.0.1+内核分配端口写 meta），POSIX AF_UNIX 语义不变。
+- `_flock` 异常路径 fd 泄漏——finally 防护；O_EXCL 锁加 stale pid 检测+自动回收（kill-9 残留场景）。
+- `decide` margin 单边 probs 静默降级——改 `margin_source` 三分支显式标注（real/conf_fallback/none）。
+- `kill-all` Windows 显式跳过守卫。
+- 新增 `AGENTS.md` 跨平台兼容清单（Unix-only API 降级表+开发铁律）。
+
 ## [0.15.0] - 2026-10-20
 
 ### 新增

@@ -368,10 +368,19 @@ def register(cli):
         # （实测 conf=1.00 也会错，margin 能拦 3/4 miss）
         _pa = sorted((probs.get('action') or {}).values(), reverse=True)
         _pt = sorted((probs.get('target') or {}).values(), reverse=True)
-        margin = min(_pa[0] - (_pa[1] if len(_pa) > 1 else 0),
-                     _pt[0] - (_pt[1] if len(_pt) > 1 else 0)) \
-            if _pa and _pt else conf
+        if _pa and _pt:
+            margin = min(_pa[0] - (_pa[1] if len(_pa) > 1 else 0),
+                         _pt[0] - (_pt[1] if len(_pt) > 1 else 0))
+            msrc = 'probs'
+        elif _pa or _pt:
+            one = _pa or _pt
+            margin = one[0] - (one[1] if len(one) > 1 else 0)
+            msrc = 'single_side'   # 单边 probs——非真 margin
+        else:
+            margin = conf
+            msrc = 'conf_fallback'  # 无 probs——静默降级为置信度
         result['margin'] = round(margin, 4)
+        result['margin_source'] = msrc
         if not done and (conf and conf < min_conf
                          or margin < min_margin):
             error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'

@@ -33,12 +33,36 @@ _SKIP_CMDS = {'serve', 'sh', 'batch', 'daemon-start', 'daemon-status',
               'daemon-stop', 'install', 'catalog'}
 
 
+_HAS_UNIX_SOCK = hasattr(_socket, 'AF_UNIX')   # Windows 无 AF_UNIX
+
+
 def _sock_path(session: str) -> Path:
     return _DIR / f'{session}.sock'
 
 
 def _meta_path(session: str) -> Path:
     return _DIR / f'{session}.session'
+
+
+def _daemon_ready(session: str) -> bool:
+    """daemon 就绪标记——Unix 看 .sock 文件，TCP 平台看 meta。"""
+    if _HAS_UNIX_SOCK:
+        return _sock_path(session).exists()
+    return _meta_path(session).exists()
+
+
+def _connect_endpoint(session: str):
+    """连接端点：POSIX→.sock 路径；Windows→('127.0.0.1', port)。
+
+    TCP 端口写进 meta 文件（{session}.session 的 "port" 字段）。
+    """
+    if _HAS_UNIX_SOCK:
+        return str(_sock_path(session))
+    try:
+        meta = json.loads(_meta_path(session).read_text(encoding='utf-8'))
+        return ('127.0.0.1', int(meta['port']))
+    except Exception:
+        return ('127.0.0.1', 0)
 
 
 def _session_of(argv: list) -> str:
@@ -69,12 +93,16 @@ def _cmd_timeout(argv: list) -> float:
 
 # ── 客户端 ─────────────────────────────────────────────────
 
-def _send_recv(sock_path: Path, payload: dict, read_timeout: float):
+def _send_recv(session: str, payload: dict, read_timeout: float):
     """一次 socket 往返 → dict 响应；异常返回 ('err', exc)。"""
     try:
-        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        ep = _connect_endpoint(session)
+        if _HAS_UNIX_SOCK:
+            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        else:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         s.settimeout(read_timeout)
-        s.connect(str(sock_path))
+        s.connect(ep)
         s.sendall((json.dumps(payload, ensure_ascii=False) + '\n').encode())
         buf = b''
         while True:
@@ -111,8 +139,30 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             yield
         finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
             f.close()
+
+    def _pid_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        if os.name == 'posix':
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+        try:    # Windows：OpenProcess 探测
+            import ctypes
+            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return False
+            ctypes.windll.kernel32.CloseHandle(h)
+            return True
+        except Exception:
+            return False
 
     @contextlib.contextmanager
     def _excl():
@@ -123,11 +173,33 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
                 fd = os.open(str(path), os.O_CREAT | os.O_EXCL
                              | os.O_WRONLY)
             except FileExistsError:
+                # stale 检测：锁文件记 pid，持有者死亡即回收
+                try:
+                    lp = int(path.read_text().strip() or '-1')
+                except (OSError, ValueError):
+                    lp = -1
+                # 刚创建的锁 pid 还没写——1s 内不算 stale
+                if lp <= 0:
+                    try:
+                        fresh = (time.time()
+                                 - path.stat().st_mtime) < 1.0
+                    except OSError:
+                        fresh = False
+                    alive = fresh
+                else:
+                    alive = _pid_alive(lp)
+                if not alive:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                    continue
                 if time.monotonic() > deadline:
                     raise TimeoutError(
                         f'spawn lock 超时: {path}')
                 time.sleep(0.05)
         try:
+            os.write(fd, str(os.getpid()).encode())
             yield
         finally:
             os.close(fd)
@@ -158,7 +230,7 @@ def _spawn_daemon(session: str) -> bool:
     _DIR.mkdir(parents=True, exist_ok=True)
     try:
         with _acquire_spawn_lock(_DIR / f'{session}.lock'):
-            if _sock_path(session).exists():
+            if _daemon_ready(session):
                 return True          # 前一轮已起好 → adopt
             try:
                 subprocess.Popen(
@@ -171,7 +243,7 @@ def _spawn_daemon(session: str) -> bool:
                 return False
             deadline = time.monotonic() + _SPAWN_WAIT
             while time.monotonic() < deadline:
-                if _sock_path(session).exists():
+                if _daemon_ready(session):
                     return True
                 time.sleep(0.15)
             return False
@@ -206,19 +278,18 @@ def try_daemon(argv: list):
     if cmd is None or cmd in _SKIP_CMDS:
         return None
     session = _session_of(argv)
-    sock = _sock_path(session)
     enabled = (os.environ.get('DPX_DAEMON') == '1'
-                   or sock.exists())
+               or _daemon_ready(session))
     if not enabled:
         return None
     payload = {'argv': argv}
     rt = _cmd_timeout(argv)
-    r = _send_recv(sock, payload, rt) if sock.exists() else ('err', None)
+    r = _send_recv(session, payload, rt) if _daemon_ready(session)         else ('err', None)
     if isinstance(r, tuple):
         # ENOENT/ECONNREFUSED → spawn → retry once
         if not _spawn_daemon(session):
             return None  # 起不来走本地，不阻塞
-        r = _send_recv(sock, payload, rt)
+        r = _send_recv(session, payload, rt)
     if isinstance(r, tuple) or r is None:
         return None     # daemon 仍不通 → 本地兜底
     sys.stdout.write(json.dumps(r.get('result', r), ensure_ascii=False) + '\n')
@@ -310,15 +381,26 @@ def run_daemon(session: str):
             p.unlink()
         except OSError:
             pass
-    srv = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-    srv.bind(str(sock_path))
+    if _HAS_UNIX_SOCK:
+        srv = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        srv.bind(str(sock_path))
+        transport = 'unix'
+        endpoint = str(sock_path)
+    else:
+        srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        srv.bind(('127.0.0.1', 0))
+        transport = 'tcp'
+        endpoint = f"127.0.0.1:{srv.getsockname()[1]}"
     srv.listen(16)
-    try:
-        os.chmod(sock_path, 0o600)
-    except OSError:
-        pass
+    if _HAS_UNIX_SOCK:
+        try:
+            os.chmod(sock_path, 0o600)
+        except OSError:
+            pass
     meta_path.write_text(json.dumps({
         'pid': os.getpid(), 'socket': str(sock_path),
+        'transport': transport, 'endpoint': endpoint,
+        'port': srv.getsockname()[1] if transport == 'tcp' else None,
         'session': session, 'started_at': time.time(),
         'owner': os.environ.get('USER') or os.environ.get('USERNAME', '')}, ensure_ascii=False))
     stop_ev = threading.Event()

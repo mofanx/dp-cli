@@ -3599,7 +3599,7 @@ def test_daemon_socket_roundtrip(tmp_path, monkeypatch):
         if sp.exists():
             break
         _t.sleep(0.1)
-    r = dm._send_recv(sp, {'argv': ['-V']}, 10)
+    r = dm._send_recv('test', {'argv': ['-V']}, 10)
     assert isinstance(r, dict) and r.get('exit') == 0
 
 
@@ -3657,7 +3657,7 @@ def test_daemon_stop_reaches_handler(tmp_path, monkeypatch):
         if (tmp_path / 'z.sock').exists():
             break
         _t.sleep(0.1)
-    r = dm._send_recv(tmp_path / 'z.sock', {'argv': ['daemon-stop']}, 10)
+    r = dm._send_recv('z', {'argv': ['daemon-stop']}, 10)
     assert isinstance(r, dict) and r.get('exit') == 0
     assert '退出中' in json.dumps(r, ensure_ascii=False)
 
@@ -3776,7 +3776,7 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
         if (tmp_path / 'ord.sock').exists():
             break
         _t.sleep(0.1)
-    r = dm._send_recv(tmp_path / 'ord.sock', {'argv': ['eval', '1']}, 10)
+    r = dm._send_recv('ord', {'argv': ['eval', '1']}, 10)
     assert order == ['arm', 'invoke']
 
 
@@ -4013,3 +4013,106 @@ def test_daemon_spawn_kwargs_platform():
     else:
         assert 'creationflags' in dm._spawn_kwargs() or \
             dm._spawn_kwargs() == {}
+
+
+@pytest.mark.unit
+def test_daemon_tcp_transport_windows(tmp_path, monkeypatch):
+    """无 AF_UNIX 平台：daemon 走 TCP 回环，meta 写 port。"""
+    import dp_cli.daemon as dm
+
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    # _connect_endpoint 从 meta 读端口
+    (tmp_path / 's.session').write_text(
+        '{"pid":1,"transport":"tcp","port":54321}', encoding='utf-8')
+    assert dm._connect_endpoint('s') == ('127.0.0.1', 54321)
+    assert dm._daemon_ready('s')
+    # meta 缺 port → 端点退化 0 号
+    (tmp_path / 'bad.session').write_text('{"pid":1}', encoding='utf-8')
+    assert dm._connect_endpoint('bad') == ('127.0.0.1', 0)
+    # POSIX 分支不动
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', True)
+    assert dm._connect_endpoint('s') == str(tmp_path / 's.sock')
+
+
+@pytest.mark.unit
+def test_daemon_send_recv_tcp_roundtrip(tmp_path, monkeypatch):
+    """TCP 模式 _send_recv 能连真实 localhost 服务。"""
+    import dp_cli.daemon as dm
+    import socket as sk, threading as th, json as js
+
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+
+    srv = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+    srv.bind(('127.0.0.1', 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    (tmp_path / 't.session').write_text(
+        js.dumps({'port': port}), encoding='utf-8')
+
+    def serve():
+        conn, _ = srv.accept()
+        conn.recv(4096)
+        conn.sendall(b'{"exit":0,"result":{"ok":1}}\n')
+        conn.close()
+        srv.close()
+    th.Thread(target=serve, daemon=True).start()
+
+    r = dm._send_recv('t', {'argv': ['x']}, 5)
+    assert r['exit'] == 0 and r['result']['ok'] == 1
+
+
+@pytest.mark.unit
+def test_decide_margin_source_field(runner, monkeypatch):
+    """margin_source 显式标注：probs 双侧/单边/conf_fallback。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+
+    # 单边 probs → single_side
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.9, 'type': 0.1}}}, {}))
+    r = runner.invoke(cli, ['decide', 'g', '--engine', 'external'])
+    assert '"margin_source": "single_side"' in r.output
+
+    # 无 probs → conf_fallback
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9}, {}))
+    r2 = runner.invoke(cli, ['decide', 'g', '--engine', 'external'])
+    assert '"margin_source": "conf_fallback"' in r2.output
+
+
+@pytest.mark.unit
+def test_spawn_lock_stale_reclaim(tmp_path, monkeypatch):
+    """O_EXCL stale：持锁进程死掉（pid 不存活）→ 锁自动回收。"""
+    import dp_cli.daemon as dm
+    import builtins
+    real_import = builtins.__import__
+
+    def no_fcntl(name, *a, **k):
+        if name == 'fcntl':
+            raise ImportError
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, '__import__', no_fcntl)
+
+    lp = tmp_path / 's.lock'
+    lp.write_text('-99999')   # 死 pid
+    import os as _o, time as _t
+    _o.utime(str(lp), (_t.time() - 10, _t.time() - 10))  # 老文件
+    with dm._acquire_spawn_lock(lp, timeout=2):
+        pass
+    assert not lp.exists()

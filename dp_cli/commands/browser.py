@@ -9,6 +9,7 @@ media / bypass-csp / throttle 的配置写入 session['browser_cdp']，
 由 _get_page 每条命令重放（每个 dpx 进程是独立 CDP session，必须重放）。
 """
 import json
+import sys
 from pathlib import Path
 from time import perf_counter, sleep as _sleep
 
@@ -461,6 +462,13 @@ def register(cli):
 
         # 3) 强杀 dpx 自管的残留浏览器进程
         #    特征：cmdline 含 --user-data-dir=<sessions/profiles|autoPortData>
+        if sys.platform.startswith('win'):
+            # pgrep+/proc+SIGKILL 是 POSIX 语义——Windows 走 bridge
+            # registry 的 taskkill 路径（上面已覆盖），进程扫描跳过
+            debug('kill-all 进程扫描暂不支持 Windows')
+            result['procs_skipped'] = 'platform'
+            ok(result, msg='kill-all 完成')
+            return
         profiles_root = str(get_session_dir() / 'profiles')
         markers = (profiles_root, 'DrissionPage/autoPortData',
                    'DrissionPage/userData')

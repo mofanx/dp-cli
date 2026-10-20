@@ -36,7 +36,12 @@ class FakeEle:
                 self._outer._clicked.append("click")
             def js(self, *a, **k):
                 self._outer._clicked.append("js")
+            def at(self, *a, **k):
+                self._outer._clicked.append("at")
         self.click = _Click(self)
+
+    def run_js(self, script, *a, **k):
+        self._clicked.append(f"js:{script}")
 
 
 class NoneEle:
@@ -376,6 +381,40 @@ def test_click_command_success(runner, monkeypatch):
     out = json.loads(result.output)
     assert out["status"] == "ok"
     assert "click" in ele._clicked
+
+
+@pytest.mark.unit
+def test_click_command_by_js(runner, monkeypatch):
+    """click --by-js：走 ele.run_js('this.click()') 而非已删的 clicker.js。"""
+    from dp_cli.main import cli
+    ele = FakeEle()
+    monkeypatch.setattr(_utils, "get_browser", lambda s: FakePage(ele=ele))
+    monkeypatch.setattr(_utils, "load_session", lambda s: {})
+    result = runner.invoke(cli, ["click", "css:#b", "--by-js"])
+    assert result.exit_code == 0
+    assert "js:this.click()" in ele._clicked
+
+
+@pytest.mark.unit
+def test_click_command_by_mouse(runner, monkeypatch):
+    """click --by-mouse：走 click.at() 坐标级鼠标（含 down/up）。"""
+    from dp_cli.main import cli
+    ele = FakeEle()
+    monkeypatch.setattr(_utils, "get_browser", lambda s: FakePage(ele=ele))
+    monkeypatch.setattr(_utils, "load_session", lambda s: {})
+    result = runner.invoke(cli, ["click", "css:#d", "--by-mouse"])
+    assert result.exit_code == 0
+    assert "at" in ele._clicked
+
+
+@pytest.mark.unit
+def test_click_command_by_js_by_mouse_mutex(runner, monkeypatch):
+    """--by-js 与 --by-mouse 互斥。"""
+    from dp_cli.main import cli
+    monkeypatch.setattr(_utils, "load_session", lambda s: {})
+    result = runner.invoke(cli, ["click", "css:#b", "--by-js", "--by-mouse"])
+    assert result.exit_code == 2
+    assert json.loads(result.output)["code"] == "INVALID_ARGS"
 
 
 @pytest.mark.unit

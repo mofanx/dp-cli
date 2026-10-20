@@ -286,6 +286,16 @@ dpx extract "css:.item-card" \
 - **Timing waits** — `dpx sleep N`, `dpx wait --popup` (new tab id), `dpx wait --download` (dir-rescan fallback)
 - **Select diagnostics** — failed `dpx select` lists available option value(text)
 
+## Testing & Smoke
+
+```bash
+make test       # unit suite (no browser needed)
+make smoke      # hostile-page smoke — real event assertions vs local Chrome
+make test-all   # release gate: both
+```
+
+`scripts/smoke_hostile.py` drives `tests/fixtures/hostile.html` (file://, no network) and asserts real DOM events for every click variant — `--by-js` / `--by-mouse` / disabled / occluded / `--force` / `dblclick` / dynamically-rendered. Unit mocks can't catch "API actually looks like this" bugs (e.g. a wrong `clicker.js` name) — run smoke before releasing or after touching interaction commands.
+
 ## Project Structure
 
 ```

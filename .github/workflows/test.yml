@@ -58,3 +58,8 @@ jobs:
 
       - name: Run integration tests (headless)
         run: pytest -m "integration" --timeout=120
+
+      # hostile 冒烟：事件断言页验证 click 变体真实触发
+      # （file:// fixture 无外网依赖）
+      - name: Hostile smoke (event assertions)
+        run: python scripts/smoke_hostile.py

@@ -34,6 +34,14 @@
 - `page.tab_ids` 在 `MixTab` 上不存在——popup 检测要走 `page.browser.tab_ids` 回退
 - `download_path` 默认是 cwd 而非"未配置"——不能当条件判据
 
+## 发版门禁
+
+发版前必跑 `make test-all`（单元 + `scripts/smoke_hostile.py` 真机冒烟）。
+smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click 各变体
+做事件断言——`--by-js`/`--by-mouse`/disabled/遮挡/`--force`/dblclick/动态渲染
+逐条验证真实触发。新 flag/交互命令合并前必须过冒烟，CLI 单元 mock 测不出
+"API 实际长这样"类缺陷（clicker.js 误名就是这么漏的）。
+
 ## 跨平台边界（Windows）
 
 | API | POSIX | Windows | 处理位置 |
@@ -52,3 +60,16 @@
 ## decide margin 契约
 
 `result.margin_source` ∈ `probs`（双侧真 margin）/ `single_side`（单边 probs，非真 margin）/ `conf_fallback`（无 probs 静默降级）——上层据此知 margin 可信度，勿当统一语义用。
+
+## 验证铁律（补充）
+
+- **新 flag/新命令路径：合并前必须真机跑一遍**。mock 通过不算验证——
+  API 名字错（clicker.js/click(count=2)）mock 永远抓不到，
+  只有 hostile.html + 真机冒烟能暴露。
+- **调用 DrissionPage API 前先查 `test_dp_contract.py`**——
+  每个新方法调用都要在契约表里登记，防"以为有但没有"。
+- **公共旗一致性由 `test_flag_matrix.py` 断言**——新命令注册
+  session/timeout 等公共旗必须用 `session_option`/`trim_options`
+  装饰器，不得裸写 `@click.option`。
+- **刁难控件冒烟清单**：`scripts/smoke_hostile.py`（9 用例，
+  事件计数断言非返回码断言）——发版前跑一遍。

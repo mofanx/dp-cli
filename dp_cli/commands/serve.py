@@ -167,7 +167,7 @@ def _warmup_imports():
 
 
 @click.command('serve')
-@click.option('--session', default=None,
+@click.option('-S', '--session', default=None,
               help='绑定默认会话名（子命令未指定 --session 时注入）')
 def serve(session):
     """常驻 JSONL 服务：stdin 每行一个命令请求，stdout 每行一个结果。

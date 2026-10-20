@@ -2,6 +2,22 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.2] - 2026-10-20
+
+### 新增
+
+- `click --by-mouse`：坐标级真鼠标序列点击（`click.at()`），覆盖 mousedown-only 型控件。
+- 发版门禁固化：`make test-all`（单元+真机冒烟）、`Makefile`、`test_flag_matrix.py` 旗标一致性矩阵、`test_dp_contract.py` DrissionPage API 存在性契约、`scripts/smoke_hostile.py` 事件断言冒烟（`tests/fixtures/hostile.html`，9 用例）、CI integration job 挂 Hostile smoke step。
+- AGENTS.md：跨平台边界表 + 验证铁律（新 flag/命令合并前必须真机跑）。
+
+### 修复
+
+- `click --by-js` 抛 `clicker object has no attribute js`——改 `run_js('this.click()')`。
+- `serve`/`sh`/`mcp`/`daemon-*` 裸 `--session` 缺 `-S` 短旗——统一 `session_option` 双通路。
+- `daemon` spawn 锁 `_flock` 异常不 close fd；O_EXCL 锁补 stale 检测（kill-9 残留自动回收）。
+- `decide` margin 单边 probs 静默降级——`margin_source` 三分支显式标注。
+- smoke `hits()` KeyError 兜底 + 结尾 `close` 防会话残留。
+
 ## [0.15.1] - 2026-10-20
 
 ### 修复（Windows 跨平台批）

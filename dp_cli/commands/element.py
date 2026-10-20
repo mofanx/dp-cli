@@ -46,7 +46,11 @@ def register(cli):
     @click.argument('locator')
     @session_option
     @click.option('--index', default=1, help='第几个匹配元素', show_default=True)
-    @click.option('--by-js', is_flag=True, help='使用 JavaScript 点击')
+    @click.option('--by-js', is_flag=True,
+                  help='使用 JavaScript 点击（仍过 actionability——'
+                       'hidden/disabled 会拦，语义=JS 派发非强制穿透）')
+    @click.option('--by-mouse', is_flag=True,
+                  help='坐标级鼠标点击（含 mousedown/mouseup，专治不响应 click 的控件）')
     @click.option('--button', type=click.Choice(['left', 'right', 'middle']),
                   default='left', show_default=True, help='鼠标按键')
     @click.option('--modifiers', default=None,
@@ -60,9 +64,9 @@ def register(cli):
     @human_options
     @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
-    def cmd_click(locator, session, index, by_js, button, modifiers, position,
-                  click_count, force, no_wait, human, human_min, human_max,
-                  frame, timeout):
+    def cmd_click(locator, session, index, by_js, by_mouse, button, modifiers,
+                  position, click_count, force, no_wait, human, human_min,
+                  human_max, frame, timeout):
         """点击元素（默认等待可见/稳定/无遮挡，--force 跳过）。
 
         \b
@@ -77,9 +81,12 @@ def register(cli):
           dpx click "#btn" --position 10,5 --click-count 2
         """
         advanced = any([button != 'left', modifiers, position, click_count > 1])
-        if human and (by_js or advanced):
-            error('--human 与 --by-js/--button/--modifiers/--position/--click-count 互斥',
+        if human and (by_js or by_mouse or advanced):
+            error('--human 与 --by-js/--by-mouse/--button/--modifiers/--position/--click-count 互斥',
                   code='INVALID_ARGS')
+            return
+        if by_js and by_mouse:
+            error('--by-js 与 --by-mouse 互斥', code='INVALID_ARGS')
             return
         locator = resolve_locator(locator, session)
         page = _get_page(session)
@@ -96,7 +103,9 @@ def register(cli):
             if ele is None:
                 return
             if by_js:
-                ele.click.js()
+                ele.run_js('this.click()')
+            elif by_mouse:
+                ele.click.at()
             elif human:
                 human_click(page, ele, human_min, human_max)
             elif advanced or force:

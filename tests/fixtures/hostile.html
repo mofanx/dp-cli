@@ -1,0 +1,22 @@
+<!doctype html><html><body>
+<script>window.__hit={click:0,mousedown:0,dblclick:0};</script>
+<!-- 刁难控件集：每处挂事件计数器 -->
+<button id="js-only" onclick="__hit.click++">JS-Only Click</button>
+<div id="md-only" style="width:80px;height:30px;background:#def"
+     onmousedown="__hit.mousedown++">MD-Only</div>
+<button id="dis" disabled onclick="__hit.click++">Disabled</button>
+<button id="cov" onclick="__hit.click++" style="position:relative">Covered</button>
+<div style="position:absolute;width:80px;height:30px;background:#f00;
+     opacity:.8;pointer-events:auto" id="overlay"></div>
+<button id="dbl" ondblclick="__hit.dblclick++">Double</button>
+<div id="dyn-slot"></div>
+<script>
+// 动态渲染：800ms 后插入按钮
+setTimeout(()=>{var b=document.createElement('button');b.id='dyn';
+  b.textContent='Dynamic';b.onclick=function(){__hit.click++};
+  document.getElementById('dyn-slot').appendChild(b);},800);
+// 遮挡定位：覆盖 cov 按钮
+document.getElementById('overlay').style.cssText+=
+  'top:'+document.getElementById('cov').offsetTop+'px;left:'+
+  document.getElementById('cov').offsetLeft+'px';
+</script></body></html>

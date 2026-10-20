@@ -152,7 +152,7 @@ def register(cli):
     from dp_cli.output import ok, error
 
     @cli.command('mcp')
-    @click.option('--session', default='default', show_default=True)
+    @click.option('-S', '--session', default='default', show_default=True)
     @click.option('--unsafe-eval', is_flag=True,
                   help='额外暴露 eval 工具——允许 MCP client 在页面'
                        '执行任意 JavaScript（默认不暴露；'

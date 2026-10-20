@@ -37,7 +37,7 @@
 | 快照 | `snapshot` | [session], [mode], [interactive], [selector], [fmt], [filename], [no_clickables], [include_low], [viewport_only], [locator_priority], [max_depth], [max_nodes], [pw_locators], [since] |
 | 提取/交互 | `check` | <locator>, [session], [check], [frame], [no_wait], [timeout] |
 | 提取/交互 | `clear` | <locator>, [session], [index], [frame], [no_wait], [timeout] |
-| 提取/交互 | `click` | <locator>, [session], [index], [by_js], [button], [modifiers], [position], [click_count], [force], [no_wait], [human], [human_min], [human_max], [frame], [timeout] |
+| 提取/交互 | `click` | <locator>, [session], [index], [by_js], [by_mouse], [button], [modifiers], [position], [click_count], [force], [no_wait], [human], [human_min], [human_max], [frame], [timeout] |
 | 提取/交互 | `count` | <locator>, [session], [frame], [timeout] |
 | 提取/交互 | `dblclick` | <locator>, [session], [index], [human], [human_min], [human_max], [frame], [no_wait], [timeout] |
 | 提取/交互 | `drag` | <from_locator>, <to_locator>, [session], [duration], [frame], [no_wait], [timeout] |

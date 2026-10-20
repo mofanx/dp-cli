@@ -3971,3 +3971,45 @@ def test_batch_or_fallback(runner, monkeypatch):
     assert '"exit": 0' in r.output
     assert '"used": "eval 1"' in r.output
     assert calls[0] == ['failcmd', 'x'] and calls[1] == ['eval', '1']
+
+
+@pytest.mark.unit
+def test_daemon_spawn_lock_no_fcntl(tmp_path, monkeypatch):
+    """fcntl 缺失（Windows）→ O_EXCL 原子锁降级路径。"""
+    import dp_cli.daemon as dm
+    import builtins
+    real_import = builtins.__import__
+
+    def no_fcntl(name, *a, **k):
+        if name == 'fcntl':
+            raise ImportError('No module named fcntl')
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, '__import__', no_fcntl)
+    lock = dm._acquire_spawn_lock(tmp_path / 's.lock', timeout=1)
+    with lock:
+        pass
+    assert not (tmp_path / 's.lock').exists()  # 释放即删
+
+    # 持有期第二把锁超时
+    held = dm._acquire_spawn_lock(tmp_path / 's2.lock', timeout=1)
+    held.__enter__()
+    try:
+        with pytest.raises(TimeoutError):
+            with dm._acquire_spawn_lock(tmp_path / 's2.lock',
+                                        timeout=0.2):
+                pass
+    finally:
+        held.__exit__(None, None, None)
+
+
+@pytest.mark.unit
+def test_daemon_spawn_kwargs_platform():
+    """spawn 脱离参数分平台：POSIX setsid / 非 POSIX creationflags。"""
+    import dp_cli.daemon as dm
+    import os as _os
+    if _os.name == 'posix':
+        assert dm._spawn_kwargs() == {'start_new_session': True}
+    else:
+        assert 'creationflags' in dm._spawn_kwargs() or \
+            dm._spawn_kwargs() == {}

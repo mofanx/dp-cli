@@ -91,6 +91,63 @@ def _send_recv(sock_path: Path, payload: dict, read_timeout: float):
         return ('err', e)
 
 
+def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
+    """跨平台排他锁（contextmanager）。
+
+    Unix：fcntl.flock；无 fcntl 平台（Windows）：O_CREAT|O_EXCL
+    原子创建 lock 文件 + 轮询重试——原子性足够防并发孤儿。
+    """
+    import contextlib
+
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+
+    @contextlib.contextmanager
+    def _flock():
+        f = path.open('w')
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            f.close()
+
+    @contextlib.contextmanager
+    def _excl():
+        deadline = time.monotonic() + timeout
+        fd = None
+        while fd is None:
+            try:
+                fd = os.open(str(path), os.O_CREAT | os.O_EXCL
+                             | os.O_WRONLY)
+            except FileExistsError:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f'spawn lock 超时: {path}')
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            os.close(fd)
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    return _flock() if fcntl is not None else _excl()
+
+
+def _spawn_kwargs() -> dict:
+    """daemon 子进程脱离参数——POSIX setsid / Windows DETACHED。"""
+    if os.name == 'posix':
+        return {'start_new_session': True}
+    flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | \
+        getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+    return {'creationflags': flags} if flags else {}
+
+
 def _spawn_daemon(session: str) -> bool:
     """spawn detached daemon，等 socket 就绪。
 
@@ -98,31 +155,30 @@ def _spawn_daemon(session: str) -> bool:
     一次（与 bridge_registry.acquire_or_spawn 同款），败者持锁后
     重查 socket 直接 adopt，不产生孤儿 daemon。
     """
-    import fcntl
     _DIR.mkdir(parents=True, exist_ok=True)
-    lock_f = (_DIR / f'{session}.lock').open('w')
     try:
-        fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
-        if _sock_path(session).exists():
-            return True          # 前一轮已起好 → adopt
-        try:
-            subprocess.Popen(
-                [sys.executable, '-m', 'dp_cli.daemon',
-                 '--session', session],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, start_new_session=True,
-                close_fds=True)
-        except OSError:
-            return False
-        deadline = time.monotonic() + _SPAWN_WAIT
-        while time.monotonic() < deadline:
+        with _acquire_spawn_lock(_DIR / f'{session}.lock'):
             if _sock_path(session).exists():
-                return True
-            time.sleep(0.15)
+                return True          # 前一轮已起好 → adopt
+            try:
+                subprocess.Popen(
+                    [sys.executable, '-m', 'dp_cli.daemon',
+                     '--session', session],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, close_fds=True,
+                    **_spawn_kwargs())
+            except OSError:
+                return False
+            deadline = time.monotonic() + _SPAWN_WAIT
+            while time.monotonic() < deadline:
+                if _sock_path(session).exists():
+                    return True
+                time.sleep(0.15)
+            return False
+    except TimeoutError as e:
+        error('获取 daemon spawn 锁超时', code='DAEMON_LOCK_TIMEOUT',
+              detail=str(e))
         return False
-    finally:
-        fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
-        lock_f.close()
 
 
 def try_daemon(argv: list):
@@ -257,11 +313,14 @@ def run_daemon(session: str):
     srv = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
     srv.bind(str(sock_path))
     srv.listen(16)
-    os.chmod(sock_path, 0o600)
+    try:
+        os.chmod(sock_path, 0o600)
+    except OSError:
+        pass
     meta_path.write_text(json.dumps({
         'pid': os.getpid(), 'socket': str(sock_path),
         'session': session, 'started_at': time.time(),
-        'owner': os.environ.get('USER', '')}, ensure_ascii=False))
+        'owner': os.environ.get('USER') or os.environ.get('USERNAME', '')}, ensure_ascii=False))
     stop_ev = threading.Event()
     threading.Thread(target=_idle_watcher,
                      args=(sock_path, meta_path, stop_ev, session),
@@ -311,8 +370,9 @@ def _status(session: str):
 
 
 def register(cli):
+    from dp_cli.commands._utils import session_option  # 惰性避环
     @cli.command('daemon-start')
-    @click.option('--session', default='default', show_default=True)
+    @session_option
     def daemon_start(session):
         """启动 session 常驻 daemon（后续 dpx 命令走 socket 免启动税）。"""
         if _sock_path(session).exists():
@@ -325,13 +385,13 @@ def register(cli):
             error('daemon 启动失败', code='DAEMON_FAILED')
 
     @cli.command('daemon-status')
-    @click.option('--session', default='default', show_default=True)
+    @session_option
     def daemon_status(session):
         """查看 session daemon 运行状态（pid/socket/uptime）。"""
         _status(session)
 
     @cli.command('daemon-stop')
-    @click.option('--session', default='default', show_default=True)
+    @session_option
     def daemon_stop(session):
         """停止 session daemon（socket 通知退出，或按元数据 kill）。"""
         sock = _sock_path(session)

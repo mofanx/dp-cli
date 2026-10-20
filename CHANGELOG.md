@@ -2,7 +2,7 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.15.0] - 2026-10-20
 
 ### 新增
 
@@ -11,6 +11,11 @@
 - `agent-setup`：决策引擎注册入 session。
 - `batch` 支持 `a || b || c` 行内回退链——首选失败自动降级备选。
 - `record-stop -f dp` 导出的回放脚本自动挂 `||` 备用定位器链（element.locators css/xpath），且输出去 `set -e` 改 batch-clean 头——`dpx batch` 直接重放。
+
+### 修复
+
+- `daemon` Windows 跨平台故障——fcntl Unix-only 防护（O_EXCL 降级锁）+`_spawn_kwargs` 平台分派+chmod/USERNAME 防护，Unix flock 语义不变。
+- `daemon-start/status/stop` 统一 `-S/--session` 双通路（对齐 `session_option` 全局契约）。
 
 ## [0.14.1] - 2026-10-19
 

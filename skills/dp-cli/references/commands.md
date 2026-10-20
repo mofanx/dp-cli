@@ -130,7 +130,10 @@
 | 提取 | `read` | [url], [session], [selector], [fmt], [output], [boundary] |
 | 元信息 | `catalog` | [as_md], [as_json] |
 | 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |
+| 其他 | `agent-setup` | session, eng, cmd |
+| 其他 | `agent-state` | session, top_k |
 | 其他 | `daemon-start` | session |
 | 其他 | `daemon-status` | session |
 | 其他 | `daemon-stop` | session |
+| 其他 | `decide` | goal, session, engine, answer, answer_file, min_conf, min_margin, cascade, top_k |
 | 其他 | `mcp` | session, unsafe_eval, domains |

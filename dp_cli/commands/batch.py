@@ -156,12 +156,18 @@ def batch(file, keep_going, verbose, no_summary, shot_dir):
     first_fail = None
     executed = 0
     for seq, (lineno, text) in enumerate(lines, 1):
-        try:
-            argv = shlex.split(text)
-        except ValueError as e:
-            code, result = _invalid(f'第 {lineno} 行命令解析失败: {e}')
-            argv = None
-        else:
+        # 'a || b || c' 行内回退：依次尝试直到一条成功
+        # （record 导出的备用定位器链）
+        parts = [p.strip() for p in text.split('||') if p.strip()]
+        code, result, argv = None, None, None
+        last_err = ''
+        for part_i, part in enumerate(parts):
+            try:
+                argv = shlex.split(part)
+            except ValueError as e:
+                code, result = _invalid(f'第 {lineno} 行命令解析失败: {e}')
+                argv = None
+                break
             if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
                 argv = argv[1:]
             # 跳过全局 flag 定位真实命令名，防止 "-v batch f.txt" 绕过嵌套防护
@@ -170,10 +176,22 @@ def batch(file, keep_going, verbose, no_summary, shot_dir):
                  if a not in ('-v', '--verbose', '--compact')), None)
             if cmd_name is None:
                 code, result = _invalid(f'第 {lineno} 行为空命令')
+                break
             elif cmd_name in _FORBIDDEN:
                 code, result = _invalid(f'批处理内不允许嵌套 {cmd_name}')
+                break
             else:
                 code, result = _invoke((['-v'] if verbose else []) + argv)
+                if code == 0:
+                    if part_i > 0:
+                        result = dict(result or {})
+                        result['fallback'] = {
+                            'tried': parts[:part_i],
+                            'used': part}
+                    break
+                last_err = json.dumps(result, ensure_ascii=False)[:200]
+        if argv is None and code is None:
+            code, result = _invalid(f'第 {lineno} 行命令解析失败: {last_err}')
 
         if code != 0 and shot_dir:
             shot = _screenshot_evidence(shot_dir, seq, argv, result)

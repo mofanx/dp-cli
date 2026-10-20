@@ -550,22 +550,51 @@ def export_actions(actions: list, fmt: str) -> str:
     raise ValueError(f'不支持的导出格式: {fmt}')
 
 
+def _fallback_locators(action: dict, primary: str) -> list:
+    """备用定位器链——best_locator 失效时 batch '||' 回退。"""
+    element = action.get('element') or {}
+    locs = element.get('locators') or {}
+    alts = []
+    for key in ('css', 'xpath'):
+        v = locs.get(key) or ''
+        if v and v != primary:
+            alts.append(v)
+    return alts
+
+
 def _export_dp_script(actions: list) -> str:
-    lines = ['#!/usr/bin/env bash', 'set -e', '']
+    lines = ['#!/usr/bin/env bash',
+             '# dpx 录制回放脚本——可直接 `dpx batch 本文件` 重放',
+             '# "a || b" 是定位器回退链：首选失效自动降级',
+             '']
     for action in actions:
         typ = action.get('type')
         if typ == '_final':
             continue                # 伪动作：终态 url 标记
         locator = _action_locator(action)
+        fall = _fallback_locators(action, locator)
+
+        def _with_fb(cmd):
+            """附备用定位器回退链——'cmd || cmd2' 由 batch 逐段尝试。"""
+            parts = [cmd]
+            for alt in fall:
+                parts.append(cmd.replace(shlex.quote(locator),
+                                         shlex.quote(alt)))
+            return ' || '.join(parts)
+
         if typ == 'click' and locator:
-            lines.append(f'dpx click {shlex.quote(locator)}')
+            lines.append(_with_fb(f'dpx click {shlex.quote(locator)}'))
         elif typ == 'fill' and locator:
-            lines.append(f'dpx fill {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
+            lines.append(_with_fb(
+                f'dpx fill {shlex.quote(locator)} '
+                f'{shlex.quote(action.get("value", ""))}'))
         elif typ == 'select' and locator:
-            lines.append(f'dpx select {shlex.quote(locator)} {shlex.quote(action.get("value", ""))}')
+            lines.append(_with_fb(
+                f'dpx select {shlex.quote(locator)} '
+                f'{shlex.quote(action.get("value", ""))}'))
         elif typ == 'check' and locator:
             lines.append(f'# check: {locator} -> {action.get("checked")}')
-            lines.append(f'dpx click {shlex.quote(locator)}')
+            lines.append(_with_fb(f'dpx click {shlex.quote(locator)}'))
         elif typ == 'press':
             key = action.get('key') or ''
             lines.append(f'dpx press {shlex.quote(key)}')

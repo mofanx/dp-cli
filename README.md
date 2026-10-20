@@ -263,6 +263,12 @@ dpx extract "css:.item-card" \
 ```
 
 
+## Unreleased
+
+- **Record → replay loop** — `dpx record-start` / `dpx record-stop -f dp` produces a batch-replayable script; every line carries a `||` fallback locator chain (css/xpath alternatives), `dpx batch` degrades automatically
+- **Batch inline fallback** — `a || b || c` per line: first failing segment falls through to the next
+- **Agent primitives (experimental)** — `dpx agent-state` emits a Jev-style control table (state+options+epoch stamp); `dpx decide <goal>` is a single-step decision primitive with three pluggable engines (`external`/`julia`/`jev`), `--cascade` top-3 shortlist mode and `--min-margin` ambiguity gating; `dpx agent-setup` registers the engine per session. Wave-0 measured Julia-1 top-1 accuracy below the admission gate, so these ship as experimental
+
 ## New in 0.14
 
 - **`dpx mcp`** — MCP stdio server: 34 whitelisted tools over the existing JSON contract; `eval` gated behind `--unsafe-eval`. Claude Desktop: `{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`

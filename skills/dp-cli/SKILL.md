@@ -433,6 +433,23 @@ dpx state-save auth.json --format playwright
 # 5) 固化：导出脚本拆进 pwtest Page Object，expect-gen 断言行直接粘贴
 ```
 
+**录制→回放闭环（dp 格式）**：`record-stop -f dp` 产出的脚本可直接 `dpx batch` 重放——每行挂 `||` 备用定位器回退链，首选定位失效自动降级到 css/xpath 备选：
+
+```bash
+dpx record-start
+# ... 人工操作 ...
+dpx record-stop -f dp -o replay.txt
+dpx batch replay.txt        # 行内 "a || b" 自动回退
+```
+
+**实验性决策原语**（波次 0 实测 Julia-1 准确率未达阈值，标 experimental）：
+
+```bash
+dpx agent-state                          # Jev 格式控件表+epoch 版本戳
+dpx agent-setup --engine external        # 注册引擎（external/julia/jev）
+dpx decide "打开 Espresso 词条" --cascade  # top-3 粗筛候选集给上层终裁
+```
+
 **dpx ↔ Playwright 映射表**
 
 | dpx 探查/操作 | Playwright 固化等价物 |

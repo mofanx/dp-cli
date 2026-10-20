@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增
+
+- `agent-state`：Jev 格式控件表输出（state+options[]+epoch 版本戳，top-K ≤20）——决策模型统一输入。
+- `decide`【experimental】：单步决策原语——扇出三问（action/target/done/stuck），三引擎（external/julia/jev）；`--cascade` top-3 粗筛级联、`--min-margin` 歧义门控。波次 0 实测 Julia-1 准确率未达立项阈值，标 experimental 不宣传。
+- `agent-setup`：决策引擎注册入 session。
+- `batch` 支持 `a || b || c` 行内回退链——首选失败自动降级备选。
+- `record-stop -f dp` 导出的回放脚本自动挂 `||` 备用定位器链（element.locators css/xpath），且输出去 `set -e` 改 batch-clean 头——`dpx batch` 直接重放。
+
 ## [0.14.1] - 2026-10-19
 
 ### 修复（实测打磨批）

@@ -3790,3 +3790,184 @@ def test_fill_form_eq_in_locator_hint(runner, monkeypatch):
     r = runner.invoke(cli, ['fill-form', '@name=pw', '--no-wait'])
     # 已有 '@name=' 引导改用 --data 的 INVALID_ARGS 提示
     assert 'INVALID_ARGS' in r.output and '--data' in r.output
+
+
+@pytest.mark.unit
+def test_agent_state_format(runner, monkeypatch):
+    """agent-state：Jev 控件表格式 + epoch 版本戳。"""
+    from dp_cli.main import cli
+
+    class N(dict):
+        def get(self, k, d=None):
+            return super().get(k, d)
+
+    tree = {'role': 'document', 'children': [
+        {'role': 'button', 'name': 'Login', 'locator': '#btn'},
+        {'role': 'textbox', 'name': 'Email', 'value': ''},
+        {'role': 'StaticText', 'name': 'skip'},
+        {'role': 'combobox', 'name': 'City', 'locator': '#sel'},
+    ]}
+    monkeypatch.setattr('dp_cli.snapshot.a11y.take_a11y_snapshot',
+                        lambda *a, **k: {'tree': tree})
+    _fp = FakePage()
+    _fp.url = 'https://x.com'
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: _fp)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.save_session',
+                        lambda *a, **k: None)
+    monkeypatch.setattr('dp_cli.agent.save_refs',
+                        lambda *a, **k: None)
+    r = runner.invoke(cli, ['agent-state'])
+    assert r.exit_code == 0, r.output
+    import json as _j
+    d = _j.loads(r.output)['data']
+    roles = [o['role'] for o in d['options']]
+    assert roles == ['button', 'textbox', 'combobox']  # StaticText 滤掉
+    assert d['epoch'] and d['state']['url'] == 'https://x.com'
+
+
+@pytest.mark.unit
+def test_decide_external_and_unsure(runner, monkeypatch):
+    """decide external：内联 answer → 动作回传；低置信 → AGENT_UNSURE。"""
+    from dp_cli.main import cli
+
+    monkeypatch.setattr('dp_cli.agent._page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'Go'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.load_session', lambda s: {})
+    monkeypatch.setattr('dp_cli.agent.save_session',
+                        lambda *a, **k: None)
+
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--answer',
+                            '{"action":"type","target":1,'
+                            '"done":false,"probs":{"type":0.9}}'])
+    assert r.exit_code == 0, r.output
+    assert '"needs_value": true' in r.output
+    assert '"ref": 1' in r.output
+
+    r2 = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                             '--answer', '{"action":"click","target":1,'
+                                         '"confidence":0.1}'])
+    assert 'AGENT_UNSURE' in r2.output
+
+
+@pytest.mark.unit
+def test_decide_stuck_detection(runner, monkeypatch):
+    """连续 N 步哈希不变 → stuck:true（确定性信号）。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'Go'}],
+                            'epoch': 'same', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session',
+                        lambda s: {'agent_hash_hist': ['same', 'same']})
+    monkeypatch.setattr(am, 'load_session',
+                        lambda s: {'agent_hash_hist': ['same', 'same']})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--answer',
+                            '{"action":"click","target":1,'
+                            '"confidence":0.9}'])
+    assert '"stuck": true' in r.output
+
+
+@pytest.mark.unit
+def test_decide_cascade_returns_candidates(runner, monkeypatch):
+    """--cascade：返回 top-3 候选集，不自动执行。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'},
+                                        {'ref': 3, 'role': 'link',
+                                         'name': 'C'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'target': 2, 'probs': {'target': {'1': 0.6, '2': 0.3, '3': 0.1}}},
+        {}))
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--cascade'])
+    assert r.exit_code == 0, r.output
+    assert '"candidates"' in r.output and '"ref": 1' in r.output
+
+
+@pytest.mark.unit
+def test_decide_margin_gate(runner, monkeypatch):
+    """margin 门控：top1-top2 差小 → AGENT_UNSURE 即使 conf 高。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.55, 'type': 0.45},
+                   'target': {'1': 0.52, '2': 0.48}}},
+        {}))
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    # margin=0.03 < 默认 0.15 → AGENT_UNSURE
+    assert 'AGENT_UNSURE' in r.output
+
+
+@pytest.mark.unit
+def test_record_dp_export_fallback_chain(monkeypatch):
+    """dp 导出含 '||' 备用定位器回退链，且 batch-clean（无 set -e）。"""
+    from dp_cli.recorder import export_actions
+    actions = [{'type': 'click',
+                'best_locator': 'css:#btn',
+                'element': {'locators': {'css': 'css:.a > b',
+                                         'xpath': 'xpath://div[1]'}}}]
+    out = export_actions(actions, 'dp')
+    assert 'set -e' not in out
+    line = [l for l in out.splitlines() if l.startswith('dpx click')][0]
+    assert ' || ' in line and 'css:#btn' in line and 'xpath://div' in line
+
+
+@pytest.mark.unit
+def test_batch_or_fallback(runner, monkeypatch):
+    """batch 'a || b'：首选失败自动降级执行备选。"""
+    from dp_cli.main import cli
+    calls = []
+
+    def fake_invoke(argv):
+        calls.append(argv)
+        if argv and argv[0] == 'failcmd':
+            return 1, {'status': 'error', 'code': 'X'}
+        return 0, {'status': 'ok', 'data': argv[0]}
+
+    monkeypatch.setattr('dp_cli.commands.batch._invoke', fake_invoke)
+    import io, sys
+    r = runner.invoke(cli, ['batch'], input='failcmd x || eval 1\n')
+    assert '"exit": 0' in r.output
+    assert '"used": "eval 1"' in r.output
+    assert calls[0] == ['failcmd', 'x'] and calls[1] == ['eval', '1']

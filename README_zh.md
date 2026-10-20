@@ -95,6 +95,12 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 定位器优先 `pw:role=...`/`text:` 语义形式，css 兜底。全部输出为 JSON——错误带 `code`（如 `SESSION_NOT_FOUND`/`SESSION_DISCONNECTED`/`SKILL_DRIFT`）与退出码。
 
 
+## 未发布（Unreleased）
+
+- **录制→回放闭环**：`dpx record-start`/`record-stop -f dp` 产出可直接 `dpx batch` 重放的脚本——每行自动挂 `||` 备用定位器回退链（css/xpath 备选），首选失效自动降级。
+- **batch 行内回退**：`a || b || c` 依次尝试直到一条成功，回报 `{fallback:{tried,used}}` 审计字段。
+- **agent 决策原语（experimental）**：`dpx agent-state` 输出 Jev 格式控件表（state+options+epoch 版本戳）；`dpx decide <目标>` 单步决策——三引擎（external/julia/jev）+ `--cascade` top-3 粗筛 + `--min-margin` 歧义门控；`dpx agent-setup` 引擎注册。波次 0 实测 Julia-1 准确率未达立项阈值，标 experimental。
+
 ## 0.14 新特性
 
 - **`dpx mcp`** — MCP stdio server：34 个白名单工具透传 JSON 契约；`eval` 需 `--unsafe-eval` 显式开启。Claude Desktop：`{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`

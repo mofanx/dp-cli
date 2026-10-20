@@ -32,7 +32,14 @@ def _mk(case, fmt):
         state = f"URL: {s['url']}"
     label = (lambda o: f"{o['role']} {o['name']}" if fmt == 'rich-label'
              else o['name'])
-    if fmt == 'goal3':  # target+done-noul：action 由 role 代码映射
+    if fmt in ('goal3', 'sent'):  # target+done-noul：action 由 role 代码映射
+        def _lbl(o):
+            if fmt != 'sent':
+                return o['name']
+            act = ('Type into' if o['role'] in
+                   ('textbox', 'combobox', 'searchbox', 'spinbutton')
+                   else 'Select' if o['role'] == 'listbox' else 'Click')
+            return f"{act} the {o['name']} {o['role']}"
         return {'state': f"Page: {s.get('title','')} ({s['url']})\nGoal: {goal}",
                 'questions': {
                     'done': {'type': 'noul',
@@ -41,7 +48,7 @@ def _mk(case, fmt):
                     'target': {'type': 'choice',
                                'instructions': f"Goal: {goal}. "
                                                'Which element advances this goal?',
-                               'criteria': {str(o['ref']): o['name']
+                               'criteria': {str(o['ref']): _lbl(o)
                                             for o in case['options']}}}}
     ins_t = (f"Goal: {goal}. Which element advances this goal?"
              if fmt in ('goal', 'goal2') else 'which element?')
@@ -77,7 +84,7 @@ def main():
              if l.strip()]
     engine = load_model(str(SNAP), device='cpu')
     fmts = ([a.fmt] if a.fmt != 'all'
-            else ['base', 'goal', 'goal3'])
+            else ['goal3', 'sent'])
     out = {}
     for fmt in fmts:
         rows, dts = [], []
@@ -89,7 +96,12 @@ def main():
                 ans = r['answers']
                 got_t = int(ans['target'].get('choice', -1))
                 probs = ans['target'].get('probabilities', {})
-                if fmt == 'goal3':  # action 代码映射：done-noul + role→动作
+                ranked = sorted(probs, key=probs.get, reverse=True)
+                exp_ref = str(exp.get('ref', ''))
+                hit_at = {k: exp_ref in ranked[:k] for k in (1, 3, 5)}
+                top2 = sorted(probs.values(), reverse=True)[:2]
+                margin = round(top2[0] - (top2[1] if len(top2) > 1 else 0), 3)
+                if fmt in ('goal3', 'sent'):  # action 代码映射：done-noul + role→动作
                     done_p = (ans['done'].get('probabilities', {})
                               .get('true', 0))
                     if done_p >= 0.5:
@@ -105,17 +117,33 @@ def main():
                     got_a = ans['action'].get('choice')
             except Exception as e:  # noqa: BLE001
                 got_a, got_t, probs = f'ERR:{e}', -1, {}
+                hit_at = {k: False for k in (1, 3, 5)}
+                margin = 0.0
             dts.append(time.monotonic() - t)
             ok = (str(got_a or '').lower() == exp.get('action', '').lower()
                   and got_t == exp.get('ref', -2))
             rows.append({'ok': ok, 'expect': exp, 'got': got_t,
                          'got_action': got_a,
-                         'top_p': round(max(probs.values() or [0]), 3)})
-        n_ok = sum(r['ok'] for r in rows)
+                         'top_p': round(max(probs.values() or [0]), 3),
+                         'margin': margin,
+                         'hit1': hit_at[1], 'hit3': hit_at[3],
+                         'hit5': hit_at[5]})
         import statistics
+        n = len(rows)
+        recall = {f'top{k}_recall': round(sum(r[f'hit{k}'] for r in rows) / n, 3)
+                  for k in (1, 3, 5)}
+        hit_m = [r['margin'] for r in rows if r['hit1']]
+        mis_m = [r['margin'] for r in rows if not r['hit1']]
+        n_ok = sum(r['ok'] for r in rows)
         out[fmt] = {'acc': round(n_ok / len(rows), 3),
                     'n': len(rows), 'ms_p50': round(
                         statistics.median(dts) * 1000),
+                    **recall,
+                    'margin_hit_med': round(statistics.median(hit_m), 3)
+                    if hit_m else None,
+                    'margin_miss_med': round(statistics.median(mis_m), 3)
+                    if mis_m else None,
+                    'miss_margins': sorted(mis_m),
                     'fails': [r for r in rows if not r['ok']]}
     print(json.dumps(out, ensure_ascii=False, indent=2))
 

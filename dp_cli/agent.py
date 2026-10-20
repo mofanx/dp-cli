@@ -280,9 +280,13 @@ def register(cli):
                   help='external 引擎答复文件路径')
     @click.option('--min-conf', default=_CONF_FLOOR, show_default=True,
                   help='最低置信度，低于此 AGENT_UNSURE')
+    @click.option('--min-margin', default=0.15, show_default=True,
+                  help='top1-top2 margin 阈值（歧义判定，比绝对置信可靠）')
+    @click.option('--cascade', is_flag=True,
+                  help='级联模式：Julia 粗筛 top-3 候选集给上层终裁')
     @click.option('--top-k', default=_TOP_K, show_default=True)
     def decide(goal, session, engine, answer, answer_file,
-               min_conf, top_k):
+               min_conf, min_margin, cascade, top_k):
         """【experimental 未验证准确率】单步决策：扇出三问 → {op,ref,probs}。
 
         ⚠ 波次 0 实测：Julia-1 对浏览器控件任务准确率 ~40%，未达立项
@@ -306,6 +310,30 @@ def register(cli):
         eng = engine or sess.get('agent_engine') or 'external'
         state = _page_state(page, session, max_opts=top_k)
         prev_sig = _state_sig(session)
+        # --cascade：Julia 粗筛 top-3 候选集回传上层终裁，
+        # 不自动执行（top-3 召回实测 100%，top-1 仅 60%）
+        if cascade:
+            resp, request = _ask_questions(
+                state, goal, eng, session, answer, answer_file)
+            if '_error' in resp:
+                error('决策引擎失败', code='DECIDE_FAILED',
+                      detail=resp['_error'])
+                return
+            probs_t = (resp.get('probs') or {}).get('target') or {}
+            ranked = sorted(probs_t.items(), key=lambda x: -x[1])[:3]
+            if not ranked and resp.get('target'):
+                ranked = [(str(resp['target']),
+                           resp.get('confidence') or 0)]
+            ok({'candidates': [
+                {'ref': int(k) if str(k).isdigit() else k,
+                 'prob': round(float(v), 4),
+                 **next((o for o in state['options']
+                         if str(o['ref']) == str(k)), {})}
+                for k, v in ranked],
+                'epoch': state['epoch'],
+                'engine': eng, 'goal': goal,
+                'note': '级联模式——请上层引擎对候选集终裁后执行'})
+            return
         resp, request = _ask_questions(state, goal, eng, session,
                                        answer, answer_file)
         if '_error' in resp:
@@ -336,8 +364,17 @@ def register(cli):
         # TYPE 动作只回 ref——value 由上层补
         if action in ('type', 'type_text', 'fill'):
             result['needs_value'] = True
-        if conf and conf < min_conf and not done:
-            error(f'置信度 {conf:.2f} 低于 {min_conf}——'
+        # margin 门：top1-top2 概率差——绝对置信不可信
+        # （实测 conf=1.00 也会错，margin 能拦 3/4 miss）
+        _pa = sorted((probs.get('action') or {}).values(), reverse=True)
+        _pt = sorted((probs.get('target') or {}).values(), reverse=True)
+        margin = min(_pa[0] - (_pa[1] if len(_pa) > 1 else 0),
+                     _pt[0] - (_pt[1] if len(_pt) > 1 else 0)) \
+            if _pa and _pt else conf
+        result['margin'] = round(margin, 4)
+        if not done and (conf and conf < min_conf
+                         or margin < min_margin):
+            error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'
                   '候选不足或页面不适合当前决策模型',
                   code='AGENT_UNSURE',
                   detail=json.dumps(result, ensure_ascii=False))

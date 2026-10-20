@@ -3881,3 +3881,59 @@ def test_decide_stuck_detection(runner, monkeypatch):
                             '{"action":"click","target":1,'
                             '"confidence":0.9}'])
     assert '"stuck": true' in r.output
+
+
+@pytest.mark.unit
+def test_decide_cascade_returns_candidates(runner, monkeypatch):
+    """--cascade：返回 top-3 候选集，不自动执行。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'},
+                                        {'ref': 3, 'role': 'link',
+                                         'name': 'C'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'target': 2, 'probs': {'target': {'1': 0.6, '2': 0.3, '3': 0.1}}},
+        {}))
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
+                            '--cascade'])
+    assert r.exit_code == 0, r.output
+    assert '"candidates"' in r.output and '"ref": 1' in r.output
+
+
+@pytest.mark.unit
+def test_decide_margin_gate(runner, monkeypatch):
+    """margin 门控：top1-top2 差小 → AGENT_UNSURE 即使 conf 高。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.55, 'type': 0.45},
+                   'target': {'1': 0.52, '2': 0.48}}},
+        {}))
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    # margin=0.03 < 默认 0.15 → AGENT_UNSURE
+    assert 'AGENT_UNSURE' in r.output

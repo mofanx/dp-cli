@@ -137,3 +137,4 @@
 | 其他 | `daemon-stop` | session |
 | 其他 | `decide` | goal, session, engine, answer, answer_file, min_conf, min_margin, cascade, top_k |
 | 其他 | `mcp` | session, unsafe_eval, domains |
+

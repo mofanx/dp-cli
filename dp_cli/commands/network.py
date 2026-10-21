@@ -16,9 +16,10 @@ _PACKET_FIELDS = {'url', 'method', 'status', 'type', 'request_headers',
 
 
 def _requests_no_buffer(session):
-    error('无被动网络日志（需要 dpx serve 常驻进程托管事件缓冲；'
+    error('无被动网络日志（需要常驻进程托管事件缓冲；'
           '或使用 dpx listen 主动监听）', code='NO_NETLOG',
-          detail='dpx serve --session ' + session)
+          detail=f'dpx serve --session {session} 或 '
+                 f'dpx daemon-start -S {session} + DPX_DAEMON=1')
 
 
 def _register_requests(cli):

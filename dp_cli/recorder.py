@@ -551,7 +551,11 @@ def export_actions(actions: list, fmt: str) -> str:
 
 
 def _fallback_locators(action: dict, primary: str) -> list:
-    """备用定位器链——best_locator 失效时 batch '||' 回退。"""
+    """备用定位器链——best_locator 失效时 batch '||' 回退。
+
+    css/xpath 同绑 id 时属性漂移双失——补 text: 兜底（按钮/链接
+    文本最不易漂移，实测 id 漂移场景唯一存活定位方式）。
+    """
     element = action.get('element') or {}
     locs = element.get('locators') or {}
     alts = []
@@ -559,6 +563,12 @@ def _fallback_locators(action: dict, primary: str) -> list:
         v = locs.get(key) or ''
         if v and v != primary:
             alts.append(v)
+    # 文本兜底：element.text 或 locators.text（A/BUTTON 类最优）
+    txt = element.get('text') or locs.get('text') or ''
+    if txt and element.get('tag') in ('a', 'button'):
+        alt = 'text:' + txt
+        if alt != primary:
+            alts.append(alt)
     return alts
 
 

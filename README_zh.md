@@ -101,6 +101,8 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 - **batch 行内回退**：`a || b || c` 依次尝试直到一条成功，回报 `{fallback:{tried,used}}` 审计字段。
 - **agent 决策原语（experimental）**：`dpx agent-state` 输出 Jev 格式控件表（state+options+epoch 版本戳）；`dpx decide <目标>` 单步决策——三引擎（external/julia/jev）+ `--cascade` top-3 粗筛 + `--min-margin` 歧义门控；`dpx agent-setup` 引擎注册。波次 0 实测 Julia-1 准确率未达立项阈值，标 experimental。
 
+> **daemon 路由是 opt-in**：`dpx daemon-start` 只起进程不接管路由——后续命令走 daemon 需 `DPX_DAEMON=1`（或 socket 已存在时自动采用）。`requests`/`request`/`listen` 的 daemon netlog 需 0.15.3+ daemon；`serve`/`sh`/`batch`/`mcp`/`record-*`/`daemon-*`/`install`/`catalog` 始终本地执行不转发。
+
 ## 0.14 新特性
 
 - **`dpx mcp`** — MCP stdio server：34 个白名单工具透传 JSON 契约；`eval` 需 `--unsafe-eval` 显式开启。Claude Desktop：`{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`

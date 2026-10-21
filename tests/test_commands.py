@@ -4155,3 +4155,147 @@ def test_spawn_lock_stale_reclaim(tmp_path, monkeypatch):
     with dm._acquire_spawn_lock(lp, timeout=2):
         pass
     assert not lp.exists()
+
+
+@pytest.mark.unit
+def test_daemon_netlog_requests_contract(tmp_path, monkeypatch):
+    """daemon 托管 netlog：requests 读文件级 buffer 契约（NO_NETLOG 消除）。"""
+    import dp_cli.netlog as nl
+    import json as js
+    p = tmp_path / 'netlog-dn.jsonl'
+    p.write_text(js.dumps({'requestId': 'r1', 'url': 'https://a.com',
+                           'method': 'GET', 'status': 200,
+                           'type': 'Document'}) + '\n',
+                 encoding='utf-8')
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'netlog-{s}.jsonl')
+    entries = nl.read_entries('dn')
+    assert entries and entries[0]['url'] == 'https://a.com'
+    # 无文件 → None → NO_NETLOG（契约保留，daemon 已 arm 时不触发）
+    assert nl.read_entries('missing') is None
+
+
+@pytest.mark.unit
+def test_daemon_skip_mcp_record(monkeypatch, tmp_path):
+    """mcp/record-* 在 DPX_DAEMON=1 下仍走本地——不转发 daemon。"""
+    from dp_cli.daemon import try_daemon
+    monkeypatch.setenv('DPX_DAEMON', '1')
+    monkeypatch.setattr('dp_cli.daemon._daemon_ready', lambda s: True)
+    for cmd in ('mcp', 'record-start', 'record-stop', 'record-show',
+                'record-status'):
+        assert try_daemon([cmd]) is None, f'{cmd} 不应转发'
+
+
+@pytest.mark.unit
+def test_daemon_unknown_command_error(tmp_path, monkeypatch):
+    """daemon 未知 argv 返回结构化错误而非挂起。"""
+    import dp_cli.daemon as dm
+    import socket as sk, threading as th, json as js
+
+    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_IDLE_TTL', 99999)
+
+    t = th.Thread(target=dm.run_daemon, args=('u',), daemon=True)
+    t.start()
+    import time as _t
+    for _ in range(40):
+        if (tmp_path / 'u.sock').exists():
+            break
+        _t.sleep(0.1)
+    r = dm._send_recv('u', {'argv': ['nonexistcmd']}, 10)
+    assert isinstance(r, dict) and r.get('exit') != 0
+    assert r.get('result', {}).get('status') == 'error'
+
+
+@pytest.mark.unit
+def test_netlog_cross_process_lock(tmp_path):
+    """多进程并发 append+trim：文件锁下无丢行无撕裂。"""
+    import multiprocessing as mp
+    import dp_cli.netlog as nl
+
+    mp.set_start_method('fork', force=True)
+    p = tmp_path / 'netlog-x.jsonl'
+    lp = tmp_path / 'netlog-x.lock'
+
+    def worker(i):
+        nl._path = lambda s: tmp_path / f'netlog-{s}.jsonl'
+        nl._lock_path = lambda s: tmp_path / f'netlog-{s}.lock'
+        for j in range(50):
+            nl._append('x', {'requestId': f'p{i}-r{j}',
+                             'url': f'https://a.com/{i}/{j}',
+                             'method': 'GET'})
+
+    procs = [mp.Process(target=worker, args=(i,)) for i in range(4)]
+    [q.start() for q in procs]
+    [q.join(30) for q in procs]
+    lines = p.read_text(encoding='utf-8').splitlines()
+    import json as js
+    # 全部行合法 JSON 无撕裂
+    parsed = [js.loads(l) for l in lines]
+    assert all(isinstance(d, dict) for d in parsed)
+    # 500 上限（4×50=200 行不触发 trim，全保留）
+    assert len(lines) == 200
+
+
+@pytest.mark.unit
+def test_daemon_status_version_field(tmp_path, monkeypatch):
+    """daemon-status 响应含 version 字段（meta 写入）。"""
+    import dp_cli.daemon as dm
+    import json as js, os
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    (tmp_path / 'v.session').write_text(js.dumps(
+        {'pid': os.getpid(), 'version': '1.2.3'}))
+    (tmp_path / 'v.sock').touch()
+    out = []
+    monkeypatch.setattr(dm, 'ok', lambda d, **k: out.append(d))
+    dm._status('v')
+    assert out[0]['version'] == '1.2.3'
+
+
+@pytest.mark.unit
+def test_daemon_version_probe_warn(tmp_path, monkeypatch, capsys):
+    """版本不匹配 stderr 警告（每进程每 session 一次）。"""
+    import dp_cli.daemon as dm
+    import json as js
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    (tmp_path / 'w.session').write_text(js.dumps({'version': '9.9.9'}))
+    dm._VER_WARNED.clear()
+    monkeypatch.setattr(dm, '_dpx_version', lambda: '1.0.0')
+    dm._version_probe('w')
+    err = capsys.readouterr().err
+    assert 'daemon v9.9.9 vs dpx v1.0.0' in err
+    assert 'daemon-stop -S w' in err
+
+
+@pytest.mark.unit
+def test_by_js_hidden_actionable_hint():
+    """hidden 拦截错误含 --force 可行动提示（--by-js 共用该路径）。"""
+    import inspect
+    src = inspect.getsource(_utils)
+    assert 'use --force to bypass actionability' in src
+
+
+@pytest.mark.unit
+def test_assert_text_flake_repro(runner, monkeypatch):
+    """跨标签文本 flake 复现：page.html 搜不到，innerText 能搜到。"""
+    from dp_cli.main import cli
+    class _P:
+        html = 'Hello <b>World</b> &amp; Co'   # 序列化 markup
+        def run_js(self, j):
+            return 'Hello World & Co'          # innerText 可见文本
+    p = _P()
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: p)
+    monkeypatch.setattr('dp_cli.commands.assert_cmd._get_page',
+                        lambda s: p)
+    monkeypatch.setattr('dp_cli.commands.assert_cmd.frame_ctx',
+                        lambda *a, **k: p)
+    r = runner.invoke(cli, ['assert-text', 'Hello World & Co'])
+    assert r.exit_code == 0, r.output
+    assert '断言通过' in r.output

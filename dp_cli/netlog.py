@@ -22,16 +22,23 @@ def _path(session: str) -> Path:
     return Path.home() / '.dp_cli' / f'netlog-{session}.jsonl'
 
 
+def _lock_path(session: str) -> Path:
+    return Path.home() / '.dp_cli' / f'netlog-{session}.lock'
+
+
 def _append(session: str, entry: dict) -> None:
     p = _path(session)
     line = json.dumps(entry, ensure_ascii=False)
+    # 进程内线程锁 + 跨进程文件锁双保险（serve/daemon 并存同文件）
     with _lock:
         try:
-            with p.open('a', encoding='utf-8') as f:
-                f.write(line + '\n')
-            if p.stat().st_size > 0:
-                _maybe_trim(p)
-        except OSError:
+            from dp_cli.daemon import _acquire_spawn_lock
+            with _acquire_spawn_lock(_lock_path(session), timeout=5):
+                with p.open('a', encoding='utf-8') as f:
+                    f.write(line + '\n')
+                if p.stat().st_size > 0:
+                    _maybe_trim(p)
+        except (OSError, TimeoutError):
             pass
 
 
@@ -43,8 +50,11 @@ def _maybe_trim(p: Path) -> None:
     if len(lines) <= _TRIM_HIGH:
         return
     try:
-        p.write_text('\n'.join(lines[-_MAX_LINES:]) + '\n',
-                     encoding='utf-8')
+        # tmp+rename 原子重写——并发读永远见到完整旧文件或新文件
+        tmp = p.with_suffix(p.suffix + '.tmp')
+        tmp.write_text('\n'.join(lines[-_MAX_LINES:]) + '\n',
+                       encoding='utf-8')
+        tmp.replace(p)
     except OSError:
         pass
 

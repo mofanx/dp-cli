@@ -2,6 +2,22 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.3] - 2026-10-20
+
+### 新增
+
+- daemon netlog 取证链打通：`requests`/`request`/`listen`/`listen-stop` 在 `DPX_DAEMON=1` 下返回真实网络数据（文件级 ring buffer+socket 查询），NO_NETLOG 消除。
+- daemon 版本探测：`daemon-status` 透 `version` 字段；client 首连版本不匹配 stderr 警告（不拒绝）。
+- `record` 备用定位器三级兜底：css/xpath 失效自动 `text:` 降级（id 漂移场景真机实证命中）。
+
+### 修复
+
+- `_skipped` 路由：`mcp`/`record-*` 缺席时 DPX_DAEMON=1 会误转发挂起——改精确枚举 `_RECORD_CMDS`。
+- netlog 跨进程竞态：`_maybe_trim`/`_append`/`read_entries` 同文件锁临界区（fcntl/O_EXCL 双平台）+tmp+rename 原子重写。
+- `assert-text` flake：`innerText` 优先+空白归一化根治。
+- `--by-js` hidden 拦截错误含 `--force` 可行动提示；`daemon-stop` 签名修复。
+- daemon 协议兜底：未知 argv/非 JSON 回结构化错误非挂起。
+
 ## [0.15.2] - 2026-10-20
 
 ### 新增

@@ -192,9 +192,30 @@ def register(cli):
                 ele = ctx.ele(real_loc, timeout=0.5)
                 if _is_missing(ele):
                     return None
-                hay = (ele.raw_text or '').strip()
+                # innerText 优先（可见文本，跨标签/实体稳定），
+                # raw_text 兜底
+                try:
+                    hay = (ele.run_js(
+                        'return this.innerText||this.textContent||""')
+                        or ele.raw_text or '').strip()
+                except Exception:
+                    hay = (ele.raw_text or '').strip()
             else:
-                hay = page.html or ''
+                # body.innerText 而非 page.html——HTML 序列化下
+                # 跨标签文本/实体转义间歇 miss（flake 根因）
+                try:
+                    hay = (page.run_js(
+                        'return document.body'
+                        '?(document.body.innerText'
+                        '||document.body.textContent||"")'
+                        ':document.documentElement.innerText||""')
+                        or '').strip()
+                except Exception:
+                    hay = ''
+                if not hay:
+                    hay = page.html or ''
+            import re as _re
+            hay = _re.sub(r'\s+', ' ', hay)
             matched = hay == text if exact else text in hay
             if negate:
                 matched = not matched

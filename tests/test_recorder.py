@@ -81,6 +81,21 @@ def test_dp_script_fill():
 
 
 @pytest.mark.unit
+def test_dp_script_text_fallback():
+    """button/link 导出在 css/xpath 后追加 text: 兜底——属性漂移唯一存活定位。"""
+    a = _click()
+    a['element'] = {'tag': 'button', 'text': '保存草稿',
+                    'locators': {'css': 'css:#b1',
+                                 'xpath': 'xpath://*[@id="b1"]'}}
+    a['best_locator'] = 'css:#b1'
+    out = recorder._export_dp_script([a])
+    assert "text:保存草稿" in out
+    cmd_line = next(l for l in out.splitlines()
+                    if l.startswith('dpx click'))
+    assert cmd_line.count('||') == 2  # css || xpath || text 三级链
+
+
+@pytest.mark.unit
 def test_dp_script_scroll():
     """scroll 动作输出含 dp scroll --x 0 --y 300,且含 --mouse-x 10 --mouse-y 20。"""
     actions = [_scroll()]

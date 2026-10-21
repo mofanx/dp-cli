@@ -699,7 +699,8 @@ def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
                   f"class={occ.get('cls')}")
         error(f'{label}失败: 元素被遮挡 {locator}', code=code, detail=detail)
         return None
-    error(f'{label}失败: 元素不可交互({reason}) {locator}', code=code)
+    error(f'{label}失败: 元素不可交互({reason}) {locator} '
+          f'——use --force to bypass actionability', code=code)
     return None
 
 

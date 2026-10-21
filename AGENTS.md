@@ -73,3 +73,16 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
   装饰器，不得裸写 `@click.option`。
 - **刁难控件冒烟清单**：`scripts/smoke_hostile.py`（9 用例，
   事件计数断言非返回码断言）——发版前跑一遍。
+
+## netlog 文件锁（P3 已修）
+
+`netlog._append` 用进程内 `threading.Lock` + 跨进程文件锁（`~/.dp_cli/netlog-{session}.lock`，复用 `daemon._acquire_spawn_lock` 的 POSIX flock/Win O_EXCL+_pid_alive 双平台基建）——serve/daemon 并存写同 jsonl 不丢行不撕裂，append+trim 同临界区。
+
+## daemon 路由边界
+
+- `daemon._skipped()` 前缀匹配自动捕获未来命令：`record-*` 前缀族一律不转发 daemon（进程内监听断链教训同 listen-stop）。新增 `record-*`/stdio-server 类命令前先确认是否会被前缀误拦或漏拦。
+- `open` 自身初始导航不入 netlog（设计边界）——`open` 的 goto 发生在 arm 之前，`requests` 从第二条导航起才有数据。
+
+## daemon 版本探测
+
+`daemon-status` 响应含 `version`；`DPX_DAEMON=1` client 首次连接探测 meta 版本，不匹配仅 stderr 警告不拒绝（向后兼容，重连提示 `daemon-stop` 后重开）。

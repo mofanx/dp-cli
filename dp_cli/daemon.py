@@ -30,10 +30,47 @@ _IDLE_TTL = 3600          # headless 空闲自退秒数
 _SPAWN_WAIT = 8.0         # spawn 后等 socket 就绪
 _TIMEOUT_MARGIN = 15      # read 超时 margin（秒）
 _SKIP_CMDS = {'serve', 'sh', 'batch', 'daemon-start', 'daemon-status',
-              'daemon-stop', 'install', 'catalog'}
+              'daemon-stop', 'install', 'catalog', 'mcp'}
+# record-* 精确枚举（进程内录制状态，daemon 不可转发）——
+# 不用 record- 前缀匹配，避免误伤未来同名前缀的非进程内命令
+_RECORD_CMDS = {'record-start', 'record-stop', 'record-show',
+                'record-clear', 'record-status', 'record-export'}
+
+
+def _skipped(cmd: str) -> bool:
+    return cmd in _SKIP_CMDS or cmd in _RECORD_CMDS
 
 
 _HAS_UNIX_SOCK = hasattr(_socket, 'AF_UNIX')   # Windows 无 AF_UNIX
+
+
+def _dpx_version() -> str:
+    try:
+        import importlib.metadata as m
+        return m.version('dp-cli')
+    except Exception:
+        return 'dev'
+
+
+_VER_WARNED = set()   # 每进程每 session 只警告一次
+
+
+def _version_probe(session: str) -> None:
+    """连接成功后探测 daemon 版本——不匹配仅 stderr 警告不拒绝。"""
+    if session in _VER_WARNED:
+        return
+    _VER_WARNED.add(session)
+    try:
+        meta = json.loads(
+            _meta_path(session).read_text(encoding='utf-8'))
+        dv = meta.get('version')
+        cv = _dpx_version()
+        if dv and dv != cv:
+            print(f'daemon v{dv} vs dpx v{cv}——建议 '
+                  f'dpx daemon-stop -S {session} 后重开',
+                  file=sys.stderr)
+    except Exception:
+        pass
 
 
 def _sock_path(session: str) -> Path:
@@ -114,6 +151,7 @@ def _send_recv(session: str, payload: dict, read_timeout: float):
                 break
         s.close()
         line = buf.split(b'\n', 1)[0]
+        _version_probe(session)
         return json.loads(line.decode('utf-8'))
     except (OSError, json.JSONDecodeError) as e:
         return ('err', e)
@@ -275,7 +313,7 @@ def try_daemon(argv: list):
             continue
         cmd = a
         break
-    if cmd is None or cmd in _SKIP_CMDS:
+    if cmd is None or _skipped(cmd):
         return None
     session = _session_of(argv)
     enabled = (os.environ.get('DPX_DAEMON') == '1'
@@ -321,7 +359,7 @@ def _handle_conn(conn, session):
             # daemon-stop 先于 _SKIP_CMDS 判定（否则永远到不了退出分支）
             if cmd_name == 'daemon-stop':
                 code, result = 0, {'status': 'ok', 'message': 'daemon 退出中'}
-            elif cmd_name in _FORBIDDEN or cmd_name in _SKIP_CMDS:
+            elif cmd_name in _FORBIDDEN or _skipped(cmd_name):
                 code, result = _invalid(f'daemon 内不允许 {cmd_name}')
             else:
                 if ('--session' not in argv and '-S' not in argv
@@ -448,6 +486,7 @@ def _status(session: str):
             pass
     ok({'running': alive, 'session': session, 'pid': pid,
         'socket': str(sock_p), 'started_at': meta.get('started_at'),
+        'version': meta.get('version'),
         'owner': meta.get('owner')})
 
 
@@ -480,7 +519,7 @@ def register(cli):
         if not sock.exists():
             ok({'stopped': False}, msg='daemon 未在运行')
             return
-        r = _send_recv(sock, {'argv': ['daemon-stop']}, 10)
+        r = _send_recv(session, {'argv': ['daemon-stop']}, 10)
         if isinstance(r, dict):
             ok({'stopped': True}, msg='daemon 已停止')
             return

@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.5] - 2026-10-21
+
+### 修复
+
+- **Windows pid 探活根治**（用户实测反馈）：`OpenProcess` 对死 PID 也返回非零句柄→`daemon-status` 误判活、stale meta 永不清理、每命令 6s TCP 超时。改 `OpenProcess+GetExitCodeProcess` 校验 `STILL_ACTIVE(259)`+`tasklist` 兜底；spawn 就绪链经 `_daemon_ready` 判死清理+自动重启。
+- **Windows daemon 性能**：`_daemon_ready` 探活 2s TTL 缓存（POSIX 不变），避免每命令 meta+tcp+pid 三次探测。
+
 ## [0.15.4] - 2026-10-21
 
 ### 修复

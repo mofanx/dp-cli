@@ -4346,3 +4346,66 @@ def test_kill_all_darwin_ps_path():
     assert "sys.platform == 'darwin'" in src      # ps 分支
     assert "ps', '-p'" in src                      # ps 命令存在
     assert "sys.platform not in ('linux', 'darwin')" in src
+
+
+@pytest.mark.unit
+def test_pid_alive_windows_dead_handle(tmp_path, monkeypatch):
+    """Windows 死 PID：OpenProcess 返句柄但 exit≠259 → False。"""
+    import dp_cli.daemon as dm
+    class _K:
+        def OpenProcess(self, *a): return 42      # 假句柄（可拿到）
+        def GetExitCodeProcess(self, h, ref):
+            ref._obj.value = 0                   # 死进程 exit code
+            return 1
+        def CloseHandle(self, h): return 1
+    assert dm._win_pid_alive(_K(), 1234) is False
+    class _K2(_K):
+        def GetExitCodeProcess(self, h, ref):
+            ref._obj.value = 259               # STILL_ACTIVE
+            return 1
+    assert dm._win_pid_alive(_K2(), 1234) is True
+    # OpenProcess 失败 → False
+    class _K3(_K):
+        def OpenProcess(self, *a): return 0
+    assert dm._win_pid_alive(_K3(), 1234) is False
+
+
+@pytest.mark.unit
+def test_windows_ready_dead_daemon_cleanup(tmp_path, monkeypatch):
+    """Windows 死 daemon：TCP 拒连+pid 死 → ready False+meta 清除。"""
+    import dp_cli.daemon as dm
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    (tmp_path / 'd.session').write_text(
+        '{"pid": 9999, "port": 54321}')
+    monkeypatch.setattr(dm, '_tcp_alive', lambda s: False)
+    monkeypatch.setattr(dm, '_pid_alive', lambda p: False)
+    assert dm._daemon_ready('d') is False
+    assert not (tmp_path / 'd.session').exists()
+
+
+@pytest.mark.unit
+def test_daemon_ready_ttl_cache(tmp_path, monkeypatch):
+    """Windows 探活 2s TTL：二次调用不重复 TCP probe。"""
+    import dp_cli.daemon as dm
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    (tmp_path / 'c.session').write_text(
+        '{"pid": 1, "port": 1}')
+    calls = []
+    monkeypatch.setattr(dm, '_tcp_alive',
+                        lambda s: calls.append(s) or True)
+    dm._READY_CACHE.clear()
+    assert dm._daemon_ready('c') is True
+    assert dm._daemon_ready('c') is True
+    assert len(calls) == 1            # 二次命中缓存
+    # TTL 过期重探
+    dm._READY_CACHE['c'] = (dm.time.monotonic() - 3, True)
+    assert dm._daemon_ready('c') is True
+    assert len(calls) == 2

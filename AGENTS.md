@@ -99,3 +99,7 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 ## kill-all 平台分流（f1 闭环）
 
 `browser.py kill-all` 三分支：win→bridge taskkill（已有）/linux→`pgrep`+`/proc/pid/cmdline`/darwin→`pgrep`+`ps -p -o command=`；其余平台显式 `procs_skipped=platform`。**语义级教训**：合法 API `open('/proc/...')` 在 macOS 抛异常被 `except` 吞→杀 0 进程无提示——平台守卫必须先于 per-pid 循环内的文件读。
+
+## Windows pid 探活教训
+
+`OpenProcess` 对死 PID 可返非零句柄——必须再 `GetExitCodeProcess` 校验 `code==259(STILL_ACTIVE)`，否则死 daemon 被误判活。`_pid_alive` Windows 分支：OpenProcess(0x0400)+GetExitCodeProcess，ctypes 失败回退 `tasklist /FI "PID eq N"`。

@@ -53,15 +53,34 @@ def _pid_alive(pid: int) -> bool:
             return True
         except OSError:
             return False
-    try:    # Windows：OpenProcess 探测
+    try:    # Windows：OpenProcess+GetExitCodeProcess——
+        # 死 PID 也能拿到句柄（exit code≠STILL_ACTIVE）
         import ctypes
-        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-        if not h:
-            return False
-        ctypes.windll.kernel32.CloseHandle(h)
-        return True
+        return _win_pid_alive(ctypes.windll.kernel32, pid)
     except Exception:
+        # 回退 tasklist 兜底（ctypes 失败时仍别误判活）
+        try:
+            import subprocess as _sp
+            r = _sp.run(['tasklist', '/FI', f'PID eq {pid}'],
+                        capture_output=True, text=True, timeout=3)
+            return str(pid) in r.stdout
+        except Exception:
+            return False
+
+
+def _win_pid_alive(k32, pid: int) -> bool:
+    """kernel32 注入 seam（可测）：OpenProcess+GetExitCodeProcess。"""
+    import ctypes
+    h = k32.OpenProcess(0x0400, False, pid)   # PROCESS_QUERY_INFORMATION
+    if not h:
         return False
+    try:
+        code = ctypes.c_ulong()
+        if not k32.GetExitCodeProcess(h, ctypes.byref(code)):
+            return False
+        return code.value == 259            # STILL_ACTIVE
+    finally:
+        k32.CloseHandle(h)
 
 
 def _dpx_version() -> str:
@@ -130,6 +149,7 @@ def _meta_pid_alive(session: str) -> bool:
 
 def _clean_stale(session: str) -> None:
     """stale 标记清理——meta/sock 残留删干净防超时。"""
+    _READY_CACHE.pop(session, None)      # 探活缓存同步失效
     for p in (_meta_path(session), _sock_path(session)):
         try:
             p.unlink()
@@ -137,17 +157,27 @@ def _clean_stale(session: str) -> None:
             pass
 
 
+_READY_CACHE = {}   # session → (ts, alive)——Windows 探活 2s TTL
+
+
 def _daemon_ready(session: str) -> bool:
     """daemon 就绪标记——Unix 看 .sock；Windows 看 meta+TCP/pid 探活，
-    死标记自动清理（防每条命令先吃超时）。"""
+    死标记自动清理（防每条命令先吃超时）。Windows 探活 2s TTL 缓存：
+    try_daemon 一次调用链探两次，TTL 复用省一倍 connect_ex。"""
     if _HAS_UNIX_SOCK:
         return _sock_path(session).exists()
-    if not _meta_path(session).exists():
-        return False
-    if _tcp_alive(session) or _meta_pid_alive(session):
-        return True
-    _clean_stale(session)          # 死标记回收
-    return False
+    now = time.monotonic()
+    hit = _READY_CACHE.get(session)
+    if hit and now - hit[0] < 2.0:
+        return hit[1]
+    ok_ = False
+    if _meta_path(session).exists():
+        if _tcp_alive(session) or _meta_pid_alive(session):
+            ok_ = True
+        else:
+            _clean_stale(session)      # 死标记回收
+    _READY_CACHE[session] = (now, ok_)
+    return ok_
 
 
 def _connect_endpoint(session: str):
@@ -568,6 +598,7 @@ def register(cli):
         if not marker:
             ok({'stopped': False}, msg='daemon 未在运行')
             return
+        _READY_CACHE.pop(session, None)
         r = _send_recv(session, {'argv': ['daemon-stop']}, 10)
         if isinstance(r, dict):
             _clean_stale(session)

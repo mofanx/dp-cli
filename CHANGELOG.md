@@ -2,6 +2,17 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.4] - 2026-10-21
+
+### 修复
+
+- **Windows daemon 管理命令**（用户实测反馈）：`daemon-status` 活报 `running:false`（只查 AF_UNIX socket 文件，Windows 是 TCP meta 端口）→`_daemon_ready` 加 `_tcp_alive`/`_meta_pid_alive` 双平台探活；`daemon-stop` 因误报 false 停不掉→按 pid/TCP 真实探活杀；daemon 异常死亡 meta 残留致每条命令先吃 TCP 超时→`_clean_stale` 判死自动清理。
+- **macOS `kill-all`**：`/proc/cmdline` 扫描在 darwin 静默失效（win 守卫漏 darwin）→`ps` 分流+非 POSIX 显式跳过。
+
+### 规则
+
+- `AGENTS.md` 升级「跨平台开发纪律（原子级）」——不止扫 API 名，用任何方法前先问三平台假设是否成立（`sock.exists()=alive` 语义级教训登记）。
+
 ## [0.15.3] - 2026-10-20
 
 ### 新增

@@ -469,9 +469,22 @@ def register(cli):
             result['procs_skipped'] = 'platform'
             ok(result, msg='kill-all 完成')
             return
+        if sys.platform not in ('linux', 'darwin'):
+            debug(f'kill-all 进程扫描暂不支持 {sys.platform}')
+            result['procs_skipped'] = 'platform'
+            ok(result, msg='kill-all 完成')
+            return
         profiles_root = str(get_session_dir() / 'profiles')
         markers = (profiles_root, 'DrissionPage/autoPortData',
                    'DrissionPage/userData')
+
+        def _cmdline_of(pid: int) -> bytes:
+            if sys.platform == 'darwin':   # macOS 无 /proc
+                return subprocess.run(
+                    ['ps', '-p', str(pid), '-o', 'command='],
+                    capture_output=True, timeout=2).stdout
+            return open(f'/proc/{pid}/cmdline', 'rb').read()
+
         try:
             out = subprocess.run(
                 ['pgrep', '-f', 'user-data-dir'],
@@ -481,7 +494,7 @@ def register(cli):
                     pid = int(pid_s)
                     if pid == os.getpid():
                         continue
-                    cmdline = open(f'/proc/{pid}/cmdline', 'rb').read()
+                    cmdline = _cmdline_of(pid)
                     if any(m.encode() in cmdline for m in markers):
                         os.kill(pid, signal.SIGKILL)
                         result['procs_killed'] += 1

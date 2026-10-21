@@ -4065,6 +4065,7 @@ def test_daemon_tcp_transport_windows(tmp_path, monkeypatch):
     (tmp_path / 's.session').write_text(
         '{"pid":1,"transport":"tcp","port":54321}', encoding='utf-8')
     assert dm._connect_endpoint('s') == ('127.0.0.1', 54321)
+    monkeypatch.setattr(dm, '_tcp_alive', lambda s: True)
     assert dm._daemon_ready('s')
     # meta 缺 port → 端点退化 0 号
     (tmp_path / 'bad.session').write_text('{"pid":1}', encoding='utf-8')
@@ -4299,3 +4300,49 @@ def test_assert_text_flake_repro(runner, monkeypatch):
     r = runner.invoke(cli, ['assert-text', 'Hello World & Co'])
     assert r.exit_code == 0, r.output
     assert '断言通过' in r.output
+
+
+@pytest.mark.unit
+def test_daemon_windows_ready_stale(tmp_path, monkeypatch):
+    """Windows 路径：meta 在但 TCP 拒连+pid 死 → stale 清理。"""
+    import dp_cli.daemon as dm
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    (tmp_path / 'w.session').write_text(
+        '{"pid": -99999, "port": 1}')
+    monkeypatch.setattr(dm, '_tcp_alive', lambda s: False)
+    monkeypatch.setattr(dm, '_pid_alive', lambda p: False)
+    assert dm._daemon_ready('w') is False
+    assert not (tmp_path / 'w.session').exists()   # 已清
+
+
+@pytest.mark.unit
+def test_daemon_windows_stop_via_meta(tmp_path, monkeypatch):
+    """Windows 无 .sock——meta 在+TCP 死 → stop 走清理不跳过。"""
+    import dp_cli.daemon as dm
+    from dp_cli.main import cli
+    monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(dm, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(dm, '_sock_path',
+                        lambda s: tmp_path / f'{s}.sock')
+    (tmp_path / 'w.session').write_text(
+        '{"pid": -99999, "port": 1}')
+    monkeypatch.setattr(dm, '_send_recv', lambda *a: ('err', None))
+    from click.testing import CliRunner
+    r = CliRunner().invoke(cli, ['daemon-stop', '-S', 'w'])
+    assert '清理' in r.output or 'stopped' in r.output
+    assert not (tmp_path / 'w.session').exists()
+
+
+@pytest.mark.unit
+def test_kill_all_darwin_ps_path():
+    """macOS kill-all 分流：ps 替代 /proc + 非 linux/darwin 显式跳过。"""
+    import dp_cli.commands.browser as bc
+    src = open(bc.__file__).read()
+    assert "sys.platform == 'darwin'" in src      # ps 分支
+    assert "ps', '-p'" in src                      # ps 命令存在
+    assert "sys.platform not in ('linux', 'darwin')" in src

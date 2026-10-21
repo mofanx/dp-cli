@@ -44,6 +44,26 @@ def _skipped(cmd: str) -> bool:
 _HAS_UNIX_SOCK = hasattr(_socket, 'AF_UNIX')   # Windows 无 AF_UNIX
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == 'posix':
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    try:    # Windows：OpenProcess 探测
+        import ctypes
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not h:
+            return False
+        ctypes.windll.kernel32.CloseHandle(h)
+        return True
+    except Exception:
+        return False
+
+
 def _dpx_version() -> str:
     try:
         import importlib.metadata as m
@@ -81,11 +101,53 @@ def _meta_path(session: str) -> Path:
     return _DIR / f'{session}.session'
 
 
+def _tcp_alive(session: str) -> bool:
+    """TCP 探活：meta 端口 connect_ex（Windows 分流用）。"""
+    try:
+        meta = json.loads(
+            _meta_path(session).read_text(encoding='utf-8'))
+        port = int(meta.get('port') or 0)
+        if not port:
+            return False
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        ok_c = s.connect_ex(('127.0.0.1', port)) == 0
+        s.close()
+        return ok_c
+    except Exception:
+        return False
+
+
+def _meta_pid_alive(session: str) -> bool:
+    """meta pid 存活检测（复用 _pid_alive 跨平台）。"""
+    try:
+        meta = json.loads(
+            _meta_path(session).read_text(encoding='utf-8'))
+        return _pid_alive(int(meta.get('pid') or -1))
+    except Exception:
+        return False
+
+
+def _clean_stale(session: str) -> None:
+    """stale 标记清理——meta/sock 残留删干净防超时。"""
+    for p in (_meta_path(session), _sock_path(session)):
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+
 def _daemon_ready(session: str) -> bool:
-    """daemon 就绪标记——Unix 看 .sock 文件，TCP 平台看 meta。"""
+    """daemon 就绪标记——Unix 看 .sock；Windows 看 meta+TCP/pid 探活，
+    死标记自动清理（防每条命令先吃超时）。"""
     if _HAS_UNIX_SOCK:
         return _sock_path(session).exists()
-    return _meta_path(session).exists()
+    if not _meta_path(session).exists():
+        return False
+    if _tcp_alive(session) or _meta_pid_alive(session):
+        return True
+    _clean_stale(session)          # 死标记回收
+    return False
 
 
 def _connect_endpoint(session: str):
@@ -182,25 +244,6 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
             except OSError:
                 pass
             f.close()
-
-    def _pid_alive(pid: int) -> bool:
-        if pid <= 0:
-            return False
-        if os.name == 'posix':
-            try:
-                os.kill(pid, 0)
-                return True
-            except OSError:
-                return False
-        try:    # Windows：OpenProcess 探测
-            import ctypes
-            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-            if not h:
-                return False
-            ctypes.windll.kernel32.CloseHandle(h)
-            return True
-        except Exception:
-            return False
 
     @contextlib.contextmanager
     def _excl():
@@ -468,7 +511,9 @@ def run_daemon(session: str):
 def _status(session: str):
     meta_p = _meta_path(session)
     sock_p = _sock_path(session)
-    if not sock_p.exists():
+    marker = sock_p.exists() if _HAS_UNIX_SOCK \
+        else meta_p.exists()
+    if not marker:
         ok({'running': False, 'session': session})
         return
     meta = {}
@@ -477,13 +522,14 @@ def _status(session: str):
     except Exception:
         pass
     pid = meta.get('pid')
-    alive = False
-    if pid:
-        try:
-            os.kill(int(pid), 0)
-            alive = True
-        except (OSError, ValueError):
-            pass
+    if _HAS_UNIX_SOCK:
+        alive = _pid_alive(int(pid)) if pid else False
+    else:
+        # TCP 平台：端口可连或 pid 存活任一即活
+        alive = _tcp_alive(session) or \
+            (_pid_alive(int(pid)) if pid else False)
+        if not alive:
+            _clean_stale(session)
     ok({'running': alive, 'session': session, 'pid': pid,
         'socket': str(sock_p), 'started_at': meta.get('started_at'),
         'version': meta.get('version'),
@@ -516,24 +562,25 @@ def register(cli):
     def daemon_stop(session):
         """停止 session daemon（socket 通知退出，或按元数据 kill）。"""
         sock = _sock_path(session)
-        if not sock.exists():
+        meta_p = _meta_path(session)
+        marker = sock.exists() if _HAS_UNIX_SOCK \
+            else meta_p.exists()
+        if not marker:
             ok({'stopped': False}, msg='daemon 未在运行')
             return
         r = _send_recv(session, {'argv': ['daemon-stop']}, 10)
         if isinstance(r, dict):
+            _clean_stale(session)
             ok({'stopped': True}, msg='daemon 已停止')
             return
-        meta_p = _meta_path(session)
         try:
             pid = json.loads(meta_p.read_text()).get('pid')
             os.kill(int(pid), 15)
+            _clean_stale(session)
             ok({'stopped': True, 'pid': pid}, msg='daemon 已 SIGTERM')
         except Exception:
-            try:
-                sock.unlink(); meta_p.unlink()
-            except OSError:
-                pass
-            ok({'stopped': True}, msg='清理了失效 socket 文件')
+            _clean_stale(session)
+            ok({'stopped': True}, msg='清理了失效标记')
 
 
 if __name__ == '__main__':

@@ -57,6 +57,15 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 
 铁律：平台分支只放调用点一处（`_HAS_UNIX_SOCK`/`os.name`/`sys.platform` 判定），散落的 `import fcntl` 一律进 try/except 或 `_lazydeps` 式守卫。
 
+## 跨平台开发纪律（原子级）
+
+**不止扫 API 名——用任何方法前先问：这个假设在三平台（Linux/macOS/Windows）上都成立吗？**
+
+- **语义级假设同样致命**：`os.path.exists(sock)` 是合法跨平台 API，但"socket 文件存在=daemon 活着"只在 AF_UNIX 下成立——Windows 是 TCP 端口。改传输层/资源形态时，**所有判定/清理/状态命令必须同步分流**（本次 daemon-status/stop 教训）。
+- **macOS ≠ Linux**：`pgrep -f` 参数差异、`/proc` 不存在（用 `ps`/sysctl）、`getattr(socket,'AF_UNIX')` 存在但 launchd/ulimit 语义不同；`os.fork` 在 macOS 受 ObjC runtime 限制。
+- **禁单平台特有方法**：进程/文件/网络原语一律走双/三平台分流（`_HAS_UNIX_SOCK`/`os.name` 判定一处），不得裸写 `if linux else pass`。
+- **验证**：新平台分支必须 mock 该平台常量跑分支（`_HAS_UNIX_SOCK=False` 模拟）——不能只靠开发机原生环境。
+
 ## decide margin 契约
 
 `result.margin_source` ∈ `probs`（双侧真 margin）/ `single_side`（单边 probs，非真 margin）/ `conf_fallback`（无 probs 静默降级）——上层据此知 margin 可信度，勿当统一语义用。
@@ -86,3 +95,7 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 ## daemon 版本探测
 
 `daemon-status` 响应含 `version`；`DPX_DAEMON=1` client 首次连接探测 meta 版本，不匹配仅 stderr 警告不拒绝（向后兼容，重连提示 `daemon-stop` 后重开）。
+
+## kill-all 平台分流（f1 闭环）
+
+`browser.py kill-all` 三分支：win→bridge taskkill（已有）/linux→`pgrep`+`/proc/pid/cmdline`/darwin→`pgrep`+`ps -p -o command=`；其余平台显式 `procs_skipped=platform`。**语义级教训**：合法 API `open('/proc/...')` 在 macOS 抛异常被 `except` 吞→杀 0 进程无提示——平台守卫必须先于 per-pid 循环内的文件读。

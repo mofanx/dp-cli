@@ -2,6 +2,17 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.6] - 2026-10-21
+
+### 性能
+
+- **瘦入口提速**：`cli` 改 `_build_cli` 懒构建——daemon 转发路径（`DPX_DAEMON=1`）跳过 click+commands 注册税，`import dp_cli.main` 47.9→0.5ms（~92×），daemon eval 稳态 109ms（vs 本地 272ms，2.5×）。
+- daemon socket 双侧 `TCP_NODELAY`；`_daemon_ready` 探活 2s TTL 缓存。
+
+### 修复
+
+- `__getattr__` 懒加载补 `__dir__`——修复 IDE/pydoc/dir() 看不到 `cli` 的补全盲区。
+
 ## [0.15.5] - 2026-10-21
 
 ### 修复

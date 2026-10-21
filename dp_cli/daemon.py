@@ -231,6 +231,9 @@ def _send_recv(session: str, payload: dict, read_timeout: float):
         else:
             s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         s.settimeout(read_timeout)
+        if not _HAS_UNIX_SOCK:
+            s.setsockopt(_socket.IPPROTO_TCP,
+                         _socket.TCP_NODELAY, 1)   # 单包协议免 Nagle
         s.connect(ep)
         s.sendall((json.dumps(payload, ensure_ascii=False) + '\n').encode())
         buf = b''
@@ -521,6 +524,9 @@ def run_daemon(session: str):
     try:
         while True:
             conn, _ = srv.accept()
+            if not _HAS_UNIX_SOCK:
+                conn.setsockopt(_socket.IPPROTO_TCP,
+                               _socket.TCP_NODELAY, 1)
             _state['last_activity'] = time.time()
             try:
                 _handle_conn(conn, session)

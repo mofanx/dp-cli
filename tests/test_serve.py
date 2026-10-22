@@ -242,6 +242,34 @@ def test_repl_tier_fallback(monkeypatch):
 
 
 @pytest.mark.unit
+def test_repl_downgrade_tip(monkeypatch, capsys):
+    """L2/L3 降级进 _repl_bare 打一次 [repl] tip；L1 ptk 不打。"""
+    import dp_cli.commands.serve as sv
+    monkeypatch.setattr('builtins.input',
+                        lambda p='': (_ for _ in ()).throw(EOFError))
+
+    sv._repl_bare('x')
+    err = capsys.readouterr().err
+    assert err.count('dp-cli[repl]') == 1  # bare 打一次不刷屏
+
+    def fake_rl_import(name, *a, **k):
+        if name == 'readline':
+            m = type(sys)('readline')
+            for fn in ('read_history_file', 'set_completer',
+                       'parse_and_bind', 'write_history_file'):
+                setattr(m, fn, lambda *a, **k: None)
+            return m
+        return real_import(name, *a, **k)
+
+    import builtins, sys
+    real_import = builtins.__import__
+    monkeypatch.setattr(builtins, '__import__', fake_rl_import)
+    monkeypatch.setenv('HOME', '/tmp/dpx_test_rl')
+    sv._repl_readline('x')
+    assert 'dp-cli[repl]' in capsys.readouterr().err
+
+
+@pytest.mark.unit
 def test_exec_line_ping(monkeypatch, capsys):
     """_exec_line ping 直出 pong 不经 _invoke。"""
     import dp_cli.commands.serve as sv

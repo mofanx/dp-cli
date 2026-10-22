@@ -31,7 +31,18 @@
 
 - DOM 内动态重渲染后 `@e` meta 可能滞后（句柄失效由 actionability 拦截兜底）；`tab-list` 不清缓存属正确设计。
 
-## [Unreleased]
+## [0.15.9] - 2026-10-22
+
+### 修复（Windows 真机实测暴露）
+
+- **spawn 锁 EACCES 竞争窗口**：`O_EXCL` 建锁在 Windows pending-delete/EACCES 竞态下死锁——`eacces_misses` 容错重试。
+- **netlog stale 清理 8s 阻塞**：死 daemon meta 判死前每命令吃 TCP 超时→清理路径前置。
+- **GBK console 编码/路径**：Windows 默认 codepage 下输出/路径处理修正；`requires-python>=3.10` 对齐语法面；`FakeChrome.stop` running 协程 close RuntimeError 修复。
+- **REPL 降级显性化**：`dpx sh` 落到 readline/裸 `input()` 路径时 stderr 打一次
+  `[dp] tip: pip install "dp-cli[repl]" for TAB completion & history`
+  （once 不刷屏、仅 TTY 路径、stdout JSONL 契约不破）——静默降级用户不知道自己丢了补全。
+- **`@e` 补全失效集补齐**：`tab-new`/`tab-select`/`tab-close` 纳入导航失效集——
+  切 tab 后 refs 指向旧页元素，补全/执行均失效（`tab-list` 只读不清）。
 
 ## [0.15.6] - 2026-10-21
 

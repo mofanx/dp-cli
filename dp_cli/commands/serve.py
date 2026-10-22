@@ -252,6 +252,8 @@ def _repl_bare(session: str) -> int:
     """L3：裸 input()——零依赖，Windows 保底。"""
     sys.stderr.write(f'dp-cli REPL（session={session or "default"}，'
                      'help 查命令、exit 退出）\n')
+    sys.stderr.write('[dp] tip: pip install "dp-cli[repl]" '
+                     'for TAB completion & history\n')
     while True:
         try:
             line = input('dp> ').strip()

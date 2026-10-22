@@ -7,7 +7,7 @@ name = "dp-cli"
 version = "0.15.8"
 description = "A powerful CLI for DrissionPage — browser automation, structured data extraction, network listening and more."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = { text = "BSD-3-Clause" }
 keywords = ["drissionpage", "browser", "automation", "cli", "web-scraping"]
 classifiers = [

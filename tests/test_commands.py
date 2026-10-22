@@ -4179,7 +4179,9 @@ def test_spawn_lock_eacces_contention(tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, '__import__', no_fcntl)
 
     lp = tmp_path / 's.lock'
-    lp.write_text('-99999', encoding='utf-8')  # 死 pid
+    # 正的大死 pid（>Linux pid_max；Windows OpenProcess 必失败）——
+    # 走 lp>0 → _pid_alive 回收分支（stale_reclaim 用例覆盖 lp<=0 分支）
+    lp.write_text('99999999', encoding='utf-8')
     _o.utime(str(lp), (_t.time() - 10, _t.time() - 10))
 
     real_open = _o.open

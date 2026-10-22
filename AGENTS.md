@@ -103,3 +103,11 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 ## Windows pid 探活教训
 
 `OpenProcess` 对死 PID 可返非零句柄——必须再 `GetExitCodeProcess` 校验 `code==259(STILL_ACTIVE)`，否则死 daemon 被误判活。`_pid_alive` Windows 分支：OpenProcess(0x0400)+GetExitCodeProcess，ctypes 失败回退 `tasklist /FI "PID eq N"`。
+
+## 终端交互层 Unix-only
+
+`readline`/`termios`/`tty`/`curses` 全 Unix-only——`sh` REPL 三层降级：prompt_toolkit（`[repl]` 可选依赖）→readline→裸 `input()`。新交互功能选型默认 prompt_toolkit，不再加 readline-only 依赖。
+
+## @e 句柄补全失效契约
+
+ref→元素是 locator 映射非元素句柄——DOM 内变更（click/fill/eval）不清缓存（locator 重解析仍可能命中不同元素=meta 滞后的设计边界，执行端走 actionability 检查兜底）；导航类（open/goto/go-*/tab-new|select|close/reload/close）清缓存；`tab-list` 只读不清。

@@ -117,8 +117,8 @@
 | 页面 | `wait` | [session], [url], [title], [locator], [locator_gone], [text], [loaded], [idle], [downloads_done], [downloads_done_alias], [popup], [js_expr], [resp_pattern], [stable_loc], [stable_for], [timeout], [force_poll] |
 | 批量 | `batch` | [file], [keep_going], [on_error], [verbose], [no_summary], [shot_dir] |
 | 批量 | `exec` | [file], [keep_going], [on_error], [verbose], [no_summary], [shot_dir] |
-| 批量 | `serve` | [session] |
-| 批量 | `sh` | [session] |
+| 批量 | `serve` | [session], [warmup] |
+| 批量 | `sh` | [session], [warmup] |
 | 逆向 | `hook-clear` | [hid], [all_], [buf], [session] |
 | 逆向 | `hook-dump` | [out], [clear], [fields], [head], [session] |
 | 逆向 | `hook-list` | [session] |

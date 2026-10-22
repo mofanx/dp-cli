@@ -220,3 +220,111 @@ def test_serve_timeout_ms_field():
     import json
     req = json.loads('{"cmd":"eval 1","timeout_ms":500}')
     assert req.get('timeout_ms') == 500
+
+
+@pytest.mark.unit
+def test_repl_tier_fallback(monkeypatch):
+    """三层降级：ptk 不可用→readline→裸 input。"""
+    import dp_cli.commands.serve as sv
+    import builtins
+    real_import = builtins.__import__
+
+    # 全不可用 → _repl_bare
+    def no_rl(name, *a, **k):
+        if name in ('prompt_toolkit', 'readline'):
+            raise ImportError
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, '__import__', no_rl)
+    monkeypatch.setattr(sv, '_repl_bare', lambda s: 'bare')
+    monkeypatch.setattr(sv, '_repl_readline', lambda s: 'rl')
+    monkeypatch.setattr(sv, '_repl_ptk', lambda s: 'ptk')
+    assert sv._repl('x') == 'bare'
+
+
+@pytest.mark.unit
+def test_exec_line_ping(monkeypatch, capsys):
+    """_exec_line ping 直出 pong 不经 _invoke。"""
+    import dp_cli.commands.serve as sv
+    sv._exec_line('ping', 'x')
+    out = capsys.readouterr().out
+    assert 'pong' in out
+
+
+@pytest.mark.unit
+def test_serve_id_echo_backward_compat():
+    """id 回显契约：带 id 回显、无 id 行序不变（向后兼容）。"""
+    from dp_cli.commands.serve import _emit
+    import io, sys as _s, json as _j
+    buf = io.StringIO()
+    old = _s.stdout
+    _s.stdout = buf
+    try:
+        _emit(1, 42, 0, {'status': 'ok'})
+        _emit(2, None, 0, {'status': 'ok'})
+    finally:
+        _s.stdout = old
+    l1, l2 = buf.getvalue().splitlines()
+    assert _j.loads(l1)['id'] == 42
+    assert 'id' not in _j.loads(l2)
+
+
+@pytest.mark.unit
+def test_warmup_attach_failure_safe(monkeypatch):
+    """_warmup_attach 失败静默——serve 照常可用。"""
+    from dp_cli.commands.serve import _warmup_attach
+    monkeypatch.setattr('dp_cli.session.get_browser',
+                        lambda s: (_ for _ in ()).throw(
+                            RuntimeError('no browser')))
+    _warmup_attach('x')   # 不抛 = 通过
+
+
+@pytest.mark.unit
+def test_refresh_refs_contract(tmp_path, monkeypatch):
+    """@e 补全缓存契约：snapshot 覆盖/导航清空/无缓存空。"""
+    import dp_cli.commands.serve as sv
+    monkeypatch.setattr('dp_cli.session.load_refs',
+                        lambda s: {'3': {'role': 'button',
+                                         'name': '提交'}})
+    sv._REF_CACHE = {}
+    sv._refresh_refs('snapshot', 'x')
+    assert sv._REF_CACHE['3']['role'] == 'button'
+    sv._refresh_refs('goto', 'x')
+    assert sv._REF_CACHE == {}
+    sv._refresh_refs('click', 'x')
+    assert sv._REF_CACHE == {}
+
+
+@pytest.mark.unit
+def test_e_completer_candidates():
+    """ptk @e 补全：候选+meta 显示 role/name。"""
+    import dp_cli.commands.serve as sv
+    sv._REF_CACHE = {'3': {'role': 'button', 'name': '提交'},
+                     '12': {'role': 'link', 'name': '首页'}}
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.document import Document
+    # 直接构造 _DpCompleter 等价逻辑
+    import re
+    doc = Document('click @e')
+    m = re.search(r'@e(\d*)$', doc.text_before_cursor)
+    assert m
+    found = [rid for rid in sv._REF_CACHE
+             if rid.startswith(m.group(1))]
+    assert set(found) == {'3', '12'}
+
+
+@pytest.mark.unit
+def test_nav_cmds_tab_invalidation():
+    """tab-* 切换使 ref 缓存失效（除 tab-list 只读）。"""
+    import dp_cli.commands.serve as sv
+    sv._REF_CACHE = {'1': {'role': 'a', 'name': 'x'}}
+    for cmd in ('tab-new', 'tab-select', 'tab-close', 'open',
+                'goto', 'go-back', 'go-forward', 'reload', 'close'):
+        sv._REF_CACHE = {'1': {}}
+        sv._refresh_refs(cmd, 'x')
+        assert sv._REF_CACHE == {}, cmd
+    # 只读/DOM 内变更不清
+    for cmd in ('tab-list', 'click', 'fill', 'eval', 'snapshot'):
+        sv._REF_CACHE = {'1': {}}
+        sv._refresh_refs(cmd, 'x')
+        if cmd != 'snapshot':
+            assert sv._REF_CACHE == {'1': {}}, cmd

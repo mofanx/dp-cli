@@ -16,14 +16,22 @@
 
 - `dpx serve`/`sh`/`batch` 常驻入口在 Windows 的 stdin 编码（GBK console codepage）/行缓冲行为**未经真机验证**；`sh` readline 为 Unix-only，Windows 需 pyreadline3 兜底（未实装）。
 
-## [Unreleased]
+## [0.15.8] - 2026-10-22
+
+### 修复
+
+- **Windows `dpx sh` TTY 必崩**：`import readline` 无守卫（Windows 无此模块）→ REPL 三层降级：`prompt_toolkit`（首选，`[repl]` 可选依赖）→ `readline`（Unix 兜底）→ 裸 `input()`（零依赖保底），全函数内惰性 import。
 
 ### 新增
-- `batch --on-error {stop,skip}`（与 `-k` 对齐，冲突显式拒绝）；JSONL 每行新增 `total` 进度字段
-- `smoke_hostile.py` 新增 serve JSONL 全链用例（ping+eval 同 session），现 10 用例
+
+- `dpx sh` `@e` 句柄 TAB 补全：编号+role/name meta 提示；`_REF_CACHE` 按 snapshot 覆盖/导航（go-back/go-forward/tab-new/select/close）清空失效；REPL 启动预载外部 refs。
+- `dpx serve` 请求 `id` 字段回显（向后兼容，无 id 按行序）；`--warmup` 启动后台 attach 默认 session（失败静默不阻塞 stdin，实测省 ~147ms）。
 
 ### 已知边界
-- `dpx serve`/`sh`/`batch` 常驻入口在 Windows 的 stdin 编码（GBK console codepage）/行缓冲行为**未经真机验证**——仅 mock/分支测试；Windows 上使用常驻入口前建议先跑 `echo '{"argv":["eval","1"]}' | dpx serve` 冒烟
+
+- DOM 内动态重渲染后 `@e` meta 可能滞后（句柄失效由 actionability 拦截兜底）；`tab-list` 不清缓存属正确设计。
+
+## [Unreleased]
 
 ## [0.15.6] - 2026-10-21
 

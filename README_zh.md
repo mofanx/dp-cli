@@ -110,7 +110,8 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 | 单发命令 | `dpx <cmd>` | ~270ms（本地）/~110ms（daemon） | 直接用 |
 | 高频/Agent 批量 | `dpx serve`（JSONL stdin↔stdout） | ~20-50ms | **一个 serve 只绑一个 session**——多 session 开多个 serve 实例 |
 | 交互调试 | `dpx sh` | ~20-50ms | JSONL 常驻 shell |
-| CI/录制回放 | `dpx batch file` | ~30-40ms | `-k`/`--on-error skip` 失败继续；`--screenshot-on-fail` 留证 |
+
+> `dpx sh` REPL 体验按可用库三层降级：`prompt_toolkit`（全平台富补全/历史，`pip install dp-cli[repl]`）→ readline（Unix）→ 裸 `input()`（零依赖保底）| CI/录制回放 | `dpx batch file` | ~30-40ms | `-k`/`--on-error skip` 失败继续；`--screenshot-on-fail` 留证 |
 
 ```bash
 dpx serve            # stdin: {"argv":["open","https://example.com"]} → stdout 每行一个 JSON 结果

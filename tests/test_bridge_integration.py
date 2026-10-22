@@ -151,11 +151,12 @@ class FakeChrome:
             self._server.close()
             await self._server.wait_closed()
 
+        coro = _shutdown()
         try:
-            fut = asyncio.run_coroutine_threadsafe(_shutdown(), loop)
+            fut = asyncio.run_coroutine_threadsafe(coro, loop)
             fut.result(timeout=3)
         except Exception:
-            pass
+            coro.close()
         loop.call_soon_threadsafe(loop.stop)
         if self._thread:
             self._thread.join(timeout=3)

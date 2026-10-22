@@ -362,10 +362,10 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         _sig.setitimer(_sig.ITIMER_REAL, 0)
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
-        _maybe_arm_netlog(session)
+        _maybe_arm_netlog()
 
 
-def _maybe_arm_netlog(default_session) -> None:
+def _maybe_arm_netlog() -> None:
     """命令执行后尝试挂载被动网络日志（本进程已 attach 的会话）。
 
     只遍历 _PAGE_CACHE——未缓存的会话走 get_browser 会触发全量重连，

@@ -3807,7 +3807,7 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
     import dp_cli.commands.serve as sv
     import dp_cli.commands.batch as bt
     monkeypatch.setattr(sv, '_maybe_arm_netlog',
-                        lambda s: order.append('arm'))
+                        lambda: order.append('arm'))
     monkeypatch.setattr(bt, '_invoke',
                         lambda argv: (order.append('invoke'), (0, {}))[1])
 
@@ -4159,6 +4159,55 @@ def test_spawn_lock_stale_reclaim(tmp_path, monkeypatch):
     with dm._acquire_spawn_lock(lp, timeout=2):
         pass
     assert not lp.exists()
+
+
+@pytest.mark.unit
+def test_spawn_lock_eacces_contention(tmp_path, monkeypatch):
+    """Windows EACCES 竞争窗口：文件存在但 O_EXCL 报 PermissionError
+    （sharing/pending-delete）→ 走 stale 回收而非上抛；文件不存在
+    才是真权限错——照抛。"""
+    import dp_cli.daemon as dm
+    import builtins
+    import os as _o
+    import time as _t
+    real_import = builtins.__import__
+
+    def no_fcntl(name, *a, **k):
+        if name == 'fcntl':
+            raise ImportError
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, '__import__', no_fcntl)
+
+    lp = tmp_path / 's.lock'
+    lp.write_text('-99999', encoding='utf-8')  # 死 pid
+    _o.utime(str(lp), (_t.time() - 10, _t.time() - 10))
+
+    real_open = _o.open
+    state = {'n': 0}
+
+    def win_open(p, flags, *a, **k):
+        if str(p) == str(lp) and state['n'] == 0:
+            state['n'] += 1
+            raise PermissionError(13, 'Permission denied', str(p))
+        return real_open(p, flags, *a, **k)
+
+    monkeypatch.setattr(_o, 'open', win_open)
+    with dm._acquire_spawn_lock(lp, timeout=2):
+        pass
+    assert not lp.exists()
+
+    # 文件不存在的 EACCES = 真权限错——不进入重试，直接抛
+    missing = tmp_path / 'ro.lock'
+
+    def deny_open(p, flags, *a, **k):
+        if str(p) == str(missing):
+            raise PermissionError(13, 'Permission denied', str(p))
+        return real_open(p, flags, *a, **k)
+
+    monkeypatch.setattr(_o, 'open', deny_open)
+    with pytest.raises(PermissionError):
+        with dm._acquire_spawn_lock(missing, timeout=0.5):
+            pass
 
 
 @pytest.mark.unit

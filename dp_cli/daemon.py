@@ -282,36 +282,53 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
     def _excl():
         deadline = time.monotonic() + timeout
         fd = None
+        eacces_misses = 0
         while fd is None:
             try:
                 fd = os.open(str(path), os.O_CREAT | os.O_EXCL
                              | os.O_WRONLY)
+                break
             except FileExistsError:
-                # stale 检测：锁文件记 pid，持有者死亡即回收
-                try:
-                    lp = int(path.read_text().strip() or '-1')
-                except (OSError, ValueError):
-                    lp = -1
-                # 刚创建的锁 pid 还没写——1s 内不算 stale
-                if lp <= 0:
-                    try:
-                        fresh = (time.time()
-                                 - path.stat().st_mtime) < 1.0
-                    except OSError:
-                        fresh = False
-                    alive = fresh
+                eacces_misses = 0
+            except PermissionError:
+                # Windows 竞争窗口：锁文件处于 sharing/pending-delete
+                # 态时 CreateFile 报 EACCES 而非 EEXIST。文件存在 →
+                # 与 FileExistsError 同走 stale 回收；不存在 → 多半
+                # 是 open/stat 间的瞬时态（TOCTOU），短重试；连续多次
+                # 仍不存在才是真权限错（目录不可写等），照抛。
+                if path.exists():
+                    eacces_misses = 0
                 else:
-                    alive = _pid_alive(lp)
-                if not alive:
-                    try:
-                        path.unlink()
-                        continue
-                    except OSError:
-                        pass
-                if time.monotonic() > deadline:
-                    raise TimeoutError(
-                        f'spawn lock 超时: {path}')
-                time.sleep(0.05)
+                    eacces_misses += 1
+                    if eacces_misses > 5:
+                        raise
+                    time.sleep(0.05)
+                    continue
+            # stale 检测：锁文件记 pid，持有者死亡即回收
+            try:
+                lp = int(path.read_text().strip() or '-1')
+            except (OSError, ValueError):
+                lp = -1
+            # 刚创建的锁 pid 还没写——1s 内不算 stale
+            if lp <= 0:
+                try:
+                    fresh = (time.time()
+                             - path.stat().st_mtime) < 1.0
+                except OSError:
+                    fresh = False
+                alive = fresh
+            else:
+                alive = _pid_alive(lp)
+            if not alive:
+                try:
+                    path.unlink()
+                    continue
+                except OSError:
+                    pass
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f'spawn lock 超时: {path}')
+            time.sleep(0.05)
         try:
             os.write(fd, str(os.getpid()).encode())
             yield
@@ -453,7 +470,7 @@ def _handle_conn(conn, session):
                 # 才能被捕获（后置会丢该命令全程流量）
                 try:
                     from dp_cli.commands.serve import _maybe_arm_netlog
-                    _maybe_arm_netlog(session)
+                    _maybe_arm_netlog()
                 except Exception:
                     pass
                 code, result = _invoke(argv)

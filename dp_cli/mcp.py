@@ -131,7 +131,7 @@ def run_mcp(session: str, unsafe_eval: bool, allowed_domains):
         # netlog 前置武装：本条 tool 导航的流量也要进缓冲
         try:
             from dp_cli.commands.serve import _maybe_arm_netlog
-            _maybe_arm_netlog(session)
+            _maybe_arm_netlog()
         except Exception:
             pass
         from dp_cli.commands.batch import _invoke

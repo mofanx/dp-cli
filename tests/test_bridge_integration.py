@@ -156,7 +156,12 @@ class FakeChrome:
             fut = asyncio.run_coroutine_threadsafe(coro, loop)
             fut.result(timeout=3)
         except Exception:
-            coro.close()
+            # 只有从未被 loop 执行的协程才要显式 close 防
+            # RuntimeWarning；已在执行的协程 close 抛 RuntimeError
+            try:
+                coro.close()
+            except RuntimeError:
+                pass
         loop.call_soon_threadsafe(loop.stop)
         if self._thread:
             self._thread.join(timeout=3)

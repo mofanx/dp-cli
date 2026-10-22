@@ -2,6 +2,14 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 改进
+
+- **`snapshot --since` diff 输出注明观测边界**：文本渲染头部+JSON `scope: dom-snapshot-only`
+  注明「仅 DOM 快照比对，不含样式/网络层变化」——churn/增删为观测数据非断言建议，
+  断言点判断归用户。
+
 ## [0.15.7] - 2026-10-22
 
 ### 新增

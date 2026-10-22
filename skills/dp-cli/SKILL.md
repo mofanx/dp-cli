@@ -625,3 +625,22 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 - `dpx requests`/`dpx request <id>`：serve 托管被动网络日志
 - `dpx daemon-start|daemon-status|daemon-stop`：socket 常驻免启动税（DPX_DAEMON=1 强制路由）
 - `dpx sleep N`、`dpx wait --popup`、`dpx wait --download`：定时/新tab/下载等待
+
+## 菜谱：ref meta → 原生 Playwright locator
+
+`snapshot`/`agent-state` 的 `[N]`/`@eN` 元素带 `role`+`name` meta（a11y accessible name 快照）。人工翻译成原生 Playwright（不绑任何测试框架）：
+
+| meta | Playwright 等价 |
+|---|---|
+| `role=button name="提交"` | `page.get_by_role("button", name="提交")` |
+| `role=textbox name="邮箱"` | `page.get_by_role("textbox", name="邮箱")` |
+| `role=link name="更多"` | `page.get_by_role("link", name="更多")` |
+| 无 role 但 text 稳定 | `page.get_by_text("文本")` |
+| meta 不全/失效 | 退回 `||` 链里的 css/xpath 兜底：`page.locator("#save")` |
+
+**边界清单（如实）**：
+
+- **accessible-name 双引擎差异**——dp-cli a11y 树与 Playwright 的 name 计算规则不同（aria-label 优先级/空白归一化/隐式 role 推断路径不一致），meta 里的 name 是**快照时刻的 dp-cli 视角**，写进 Playwright 脚本前务必在该页跑一次 `get_by_role` 验证命中。
+- **`@eN` 是 locator 映射不是句柄**——DOM 重渲染后同 `@e3` 可能指不同元素；meta 不做正确性担保，执行端以当前 DOM 为准。
+- **隐式 role 推断**——`<button>`→button、`<a href>`→link、`<input type=text>`→textbox 等；自定义组件/无 a11y 属性元素 meta 可能为空，此时用 css/xpath 兜底。
+- **观测面边界**——meta 只反映 DOM 快照，不含样式/网络层变化。

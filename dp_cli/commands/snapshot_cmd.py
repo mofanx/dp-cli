@@ -145,6 +145,7 @@ def register(cli):
             if fmt == 'json':
                 output = _dump({'status': 'ok', 'data': {
                     'since': base['ts'], 'now': ts, 'url': url,
+                    'scope': 'dom-snapshot-only',
                     **diff,
                     'summary': {k: len(v) for k, v in diff.items()},
                 }})

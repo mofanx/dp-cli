@@ -105,7 +105,8 @@ def render_diff_text(diff: dict, url: str, base_ts: str) -> str:
         name, _, loc = rest.partition('|')
         return f'{role} "{name}"' + (f' → {loc}' if loc else '')
 
-    lines = [f'### Snapshot Diff (vs {base_ts})', f'- URL: {url}', '']
+    lines = [f'### Snapshot Diff (vs {base_ts})', f'- URL: {url}',
+             '- 边界：仅 DOM 快照比对，不含样式/网络层变化', '']
     for it in diff['added']:
         lines.append(f'+ {fmt(it["sig"])}')
     for it in diff['removed']:

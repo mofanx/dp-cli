@@ -141,3 +141,16 @@ def test_render_diff_text_churn_marker():
     out = render_diff_text(d, 'u', 't0')
     assert '↻ link "a"' in out and '重建换血' in out
     assert '（无变化）' not in out   # 仅 churn 也要如实显示
+
+
+@pytest.mark.unit
+def test_render_boundary_note_and_churn():
+    """diff 输出注明 DOM-only 边界+churn 如实呈现（观测非建议）。"""
+    old = {'1': 'button|ok|', '2': 'link|a|'}
+    new = {'1': 'button|ok|', '3': 'link|a|', '4': 'div|n|'}
+    d = diff_items(old, new)
+    txt = render_diff_text(d, 'http://x', '2026-01-01')
+    assert '仅 DOM 快照比对' in txt
+    assert '↻' in txt                      # churn 重建换血呈现
+    assert len(d['churn']) == 1 and len(d['added']) == 1
+    assert 'confidence' not in txt.lower()  # 无置信度打分

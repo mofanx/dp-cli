@@ -366,21 +366,20 @@ def _serve(session: str = None, tty: bool = False) -> int:
 
 
 def _maybe_arm_netlog(default_session) -> None:
-    """命令执行后尝试挂载被动网络日志（会话存在且未挂过）。
+    """命令执行后尝试挂载被动网络日志（本进程已 attach 的会话）。
 
-    开销一次 attach + Network.enable；挂载后请求/响应事件持续写入
+    只遍历 _PAGE_CACHE——未缓存的会话走 get_browser 会触发全量重连，
+    stale 会话（浏览器已关/auto-connect 等授权）可阻塞主链路数秒，
+    违背"绝不阻塞主链路"契约。挂载后请求/响应事件持续写入
     ~/.dp_cli/netlog-{session}.jsonl ring buffer，供 dpx requests 离线读。
-    失败静默——被动日志是增强项，绝不阻塞主链路。
+    失败静默——被动日志是增强项。
     """
     try:
-        from dp_cli.session import load_session, get_browser
+        from dp_cli.session import _PAGE_CACHE
         from dp_cli.netlog import arm_netlog, _armed
-        sess = default_session or 'default'
-        if sess in _armed or not load_session(sess):
-            return
-        page = get_browser(sess)
-        target = page.latest_tab or page
-        arm_netlog(target, sess)
+        for sess, page in list(_PAGE_CACHE.items()):
+            if sess not in _armed:
+                arm_netlog(page.latest_tab or page, sess)
     except Exception:
         pass
 

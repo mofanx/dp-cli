@@ -94,8 +94,11 @@ def test_install_skills_check(runner, fake_home):
     assert r.exit_code == 0
     # 改版本戳 → 漂移
     md = _skill_dir(fake_home) / 'SKILL.md'
-    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
-                                         'dp_cli_version: 9.9.9'))
+    md.write_text(
+        md.read_text(encoding='utf-8').replace(
+            f'dp_cli_version: {sd.cli_version()}',
+            'dp_cli_version: 9.9.9'),
+        encoding='utf-8')
     r = runner.invoke(cli, ['install', '--skills', '--check'])
     assert r.exit_code == 1
 
@@ -128,8 +131,11 @@ def test_warn_drift_stderr_only(fake_home):
     sep = _sep_runner()
     sep.invoke(cli, ['install', '--skills'])
     md = _skill_dir(fake_home) / 'SKILL.md'
-    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
-                                         'dp_cli_version: 0.0.1'))
+    md.write_text(
+        md.read_text(encoding='utf-8').replace(
+            f'dp_cli_version: {sd.cli_version()}',
+            'dp_cli_version: 0.0.1'),
+        encoding='utf-8')
     (fake_home / '.dp_cli').mkdir(exist_ok=True)
     r = sep.invoke(cli, ['catalog'])
     assert r.exit_code == 0
@@ -245,7 +251,7 @@ def test_installed_copies_requires_skill_md(fake_home, monkeypatch):
     dst.mkdir(parents=True)
     (dst / 'SKILL.md').write_text('x', encoding='utf-8')
     copies = sd.installed_copies()
-    assert len(copies) == 1 and str(dst) in str(copies.keys())
+    assert len(copies) == 1 and dst in copies
 
 
 @pytest.mark.unit
@@ -261,8 +267,10 @@ def test_drift_multi_target(runner, fake_home, monkeypatch):
     # 只改 devin 目标的版本戳 → 仍检出
     md = (fake_home / '.config' / 'devin' / 'skills' / 'dp-cli'
           / 'SKILL.md')
-    md.write_text(md.read_text().replace(
-        f'dp_cli_version: {cur}', 'dp_cli_version: 0.0.1'))
+    md.write_text(
+        md.read_text(encoding='utf-8').replace(
+            f'dp_cli_version: {cur}', 'dp_cli_version: 0.0.1'),
+        encoding='utf-8')
     copies, cur, drift, diffs = sd.check_drift()
     assert drift
     stale = [str(t) for t, v in copies.items() if v != cur]
@@ -280,7 +288,7 @@ def test_drift_same_stamp_stale_content(runner, fake_home, monkeypatch):
     assert not drift
     # 篡改正文但保留版本戳（改名批场景：旧内容盖了新戳）
     md = dst / 'SKILL.md'
-    md.write_text(md.read_text() + '\n过期内容 marker\n',
+    md.write_text(md.read_text(encoding='utf-8') + '\n过期内容 marker\n',
                   encoding='utf-8')
     copies, cur, drift, diffs = sd.check_drift()
     assert drift                          # 戳相同也检出
@@ -304,8 +312,11 @@ def test_warn_drift_multi_target_message(fake_home, monkeypatch):
     sep.invoke(cli, ['install', '--skills', '--all'])
     md = (fake_home / '.config' / 'devin' / 'skills' / 'dp-cli'
           / 'SKILL.md')
-    md.write_text(md.read_text().replace(f'dp_cli_version: {sd.cli_version()}',
-                                         'dp_cli_version: 0.0.1'))
+    md.write_text(
+        md.read_text(encoding='utf-8').replace(
+            f'dp_cli_version: {sd.cli_version()}',
+            'dp_cli_version: 0.0.1'),
+        encoding='utf-8')
     (fake_home / '.dp_cli').mkdir(exist_ok=True)
     r = sep.invoke(cli, ['catalog'])
     assert 'tools' in json.loads(r.stdout)
@@ -324,16 +335,17 @@ def test_install_agents_md_flag(runner, fake_home, monkeypatch):
     r = runner.invoke(cli, ['install', '--skills', '--agents-md'])
     assert r.exit_code == 0
     assert json.loads(r.output)['data']['agents_md'] == 'created'
-    md = (proj / 'AGENTS.md').read_text()
+    md = (proj / 'AGENTS.md').read_text(encoding='utf-8')
     assert 'dp-cli-skill' in md and 'dpx catalog --md' in md
     # 二次 → unchanged（幂等）
     r = runner.invoke(cli, ['install', '--skills', '--agents-md'])
     assert json.loads(r.output)['data']['agents_md'] == 'unchanged'
     # 已有其他内容 → 段注入且不破坏既有内容
-    (proj / 'AGENTS.md').write_text('# 项目约定\n\n用自己的 lint。\n')
+    (proj / 'AGENTS.md').write_text('# 项目约定\n\n用自己的 lint。\n',
+                                   encoding='utf-8')
     r = runner.invoke(cli, ['install', '--skills', '--agents-md'])
     assert json.loads(r.output)['data']['agents_md'] == 'updated'
-    md = (proj / 'AGENTS.md').read_text()
+    md = (proj / 'AGENTS.md').read_text(encoding='utf-8')
     assert '用自己的 lint' in md and 'dp-cli-skill' in md
 
 

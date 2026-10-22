@@ -12,7 +12,9 @@ def test_session_dir_is_per_test_tmp():
     真实 HOME 的会话残留不再可见。"""
     d = sm.get_session_dir()
     assert str(d).startswith('/tmp/pytest') or 'pytest' in str(d)
-    assert not str(d).startswith(str(Path.home()))
+    # Windows 的 %TEMP% 本就在 C:\Users\<user>\ 下——不能断言"不在 HOME"，
+    # 只需保证不是默认的真实会话目录
+    assert d != Path.home() / '.dp_cli' / 'sessions'
 
 
 @pytest.mark.unit

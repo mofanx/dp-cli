@@ -5,11 +5,12 @@
 每处断言真实事件触发（__hit 计数），不是"命令返回 ok"。
 """
 import json, subprocess, sys, time
+from pathlib import Path
 
 SES = 'hostile'
 DPX = ['dpx']
-BASE = 'file://' + __file__.replace('scripts/smoke_hostile.py',
-                                    'tests/fixtures/hostile.html')
+BASE = (Path(__file__).resolve().parent.parent
+        / 'tests' / 'fixtures' / 'hostile.html').as_uri()
 
 def run(*a, raw=False):
     r = subprocess.run(DPX + list(a) + ['--session', SES], capture_output=True,
@@ -49,6 +50,7 @@ CASES = [
 ]
 
 def main():
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     run('open', BASE, '--headless')  # CI 无 display 必带
     time.sleep(1.5)          # 动态渲染 800ms
     ok = fail = 0

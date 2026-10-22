@@ -22,6 +22,12 @@ def _isolate_session_state(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(session_mod, '_SESSION_DIR', d)
     monkeypatch.delenv('DP_CLI_NO_STUB', raising=False)
     session_mod._PAGE_CACHE.clear()
+    # bridge 注册表同样隔离——find_bridge/acquire_or_spawn 直读
+    # Path.home()，不隔离会让用例污染并被真实 ~/.dp_cli/bridges 残留命中
+    import dp_cli.bridge_registry as reg_mod
+    bd = tmp_path / '.dp_cli' / 'bridges'
+    bd.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(reg_mod, '_bridges_dir', lambda: bd)
     yield
     session_mod._PAGE_CACHE.clear()
 

@@ -7,6 +7,7 @@
 import filecmp
 import os
 import re
+import shutil
 import subprocess
 import warnings
 from pathlib import Path
@@ -144,6 +145,8 @@ def test_skill_home_copy_sync_status():
 
 
 @pytest.mark.unit
+@pytest.mark.skipif(not shutil.which('bash'),
+                    reason='sync-skill.sh 需要 bash（Windows 裸环境无）')
 def test_sync_skill_check_mode(tmp_path):
     """sync-skill.sh --check：DP_SKILL_DST 覆盖下的一致性判定。
 

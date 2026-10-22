@@ -305,9 +305,9 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
                 if not alive:
                     try:
                         path.unlink()
+                        continue
                     except OSError:
                         pass
-                    continue
                 if time.monotonic() > deadline:
                     raise TimeoutError(
                         f'spawn lock 超时: {path}')
@@ -320,7 +320,15 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
             try:
                 path.unlink()
             except OSError:
-                pass
+                # Windows 下竞争者瞬时打开会让 unlink 失败——残留的
+                # 含"活 pid"锁文件会让等待方误判锁仍被持有（活 pid
+                # 永不 stale），全员退化为每个 _excl 吃满 timeout。
+                # 清空内容作为释放哨兵：读取方 lp<=0 且 mtime>1s 判
+                # stale 回收，最坏 ~1s 即可恢复。
+                try:
+                    path.write_text('')
+                except OSError:
+                    pass
 
     return _flock() if fcntl is not None else _excl()
 

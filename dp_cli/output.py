@@ -147,6 +147,20 @@ def _dump(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
+def _write_out(s: str) -> None:
+    """JSON 输出走 UTF-8 字节写——pipe/重定向在非 UTF-8 locale
+    （如 Windows GBK）下 stdout 编码是 locale，含 ⚡/⚠/💡 等字符的
+    JSON 会触发 UnicodeEncodeError 静默吞掉响应（daemon/serve
+    长流程静默失败根因）。TTY 路径仍走 print（Windows 控制台经
+    WriteConsoleW 无编码面）。"""
+    buf = getattr(sys.stdout, 'buffer', None)
+    if buf is not None and not sys.stdout.isatty():
+        buf.write(s.encode('utf-8') + b'\n')
+        buf.flush()
+    else:
+        print(s)
+
+
 def _exit_code_for(code: str) -> int:
     """错误码 → 退出码；未注册码按通用运行时失败处理（向后兼容）。"""
     return ERROR_CODES.get(code, (EXIT_RUNTIME, ''))[0]
@@ -159,7 +173,7 @@ def ok(data: Any = None, msg: str = None) -> None:
         result['message'] = msg
     if data is not None:
         result['data'] = data
-    print(_dump(result))
+    _write_out(_dump(result))
 
 
 def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
@@ -171,7 +185,7 @@ def error(msg: str, code: str = 'ERROR', detail: str = None) -> None:
     result = {'status': 'error', 'code': code, 'message': msg}
     if detail:
         result['detail'] = detail
-    print(_dump(result))
+    _write_out(_dump(result))
     sys.exit(_exit_code_for(code))
 
 

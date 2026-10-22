@@ -25,7 +25,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import error
+from dp_cli.output import error, _write_out
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
@@ -94,8 +94,7 @@ def _emit(seq: int, req_id, code: int, result: dict,
         out['id'] = req_id
     if elapsed_ms is not None:
         out['elapsed_ms'] = elapsed_ms
-    sys.stdout.write(json.dumps(out, ensure_ascii=False) + '\n')
-    sys.stdout.flush()
+    _write_out(json.dumps(out, ensure_ascii=False))
 
 
 def _ping() -> tuple:
@@ -162,8 +161,7 @@ def _exec_line(line: str, session: str) -> None:
     cmd = argv[0]
     if cmd == 'ping':
         _, r = _ping()
-        sys.stdout.write(json.dumps(r, ensure_ascii=False) + '\n')
-        sys.stdout.flush()
+        _write_out(json.dumps(r, ensure_ascii=False))
         return
     if cmd in _FORBIDDEN:
         sys.stderr.write(f'REPL 内不允许 {cmd}\n')
@@ -173,9 +171,7 @@ def _exec_line(line: str, session: str) -> None:
         argv = argv + ['--session', session]
     try:
         code, result = _invoke(argv)
-        sys.stdout.write(
-            json.dumps(result, ensure_ascii=False) + '\n')
-        sys.stdout.flush()
+        _write_out(json.dumps(result, ensure_ascii=False))
         _refresh_refs(cmd, session)
     except KeyboardInterrupt:
         sys.stderr.write('（已中断）\n')

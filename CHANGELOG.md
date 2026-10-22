@@ -2,6 +2,29 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.7] - 2026-10-22
+
+### 新增
+
+- **`dpx serve` 协议三字段**：响应新增 `elapsed_ms`（命令耗时）、请求级 `timeout_ms` 覆盖、`ping` 健康检查（返回 ok+version 零副作用）。
+- **`dpx sh` 交互式 REPL**：stdin 是 TTY 时启用 readline 模式——裸命令输入、历史、TAB 补全、`help`/`exit` 内联、友好错误（非堆栈）；非 TTY 保持 JSONL 协议不变，一个入口两用。
+- `batch --on-error {stop,skip}`（与 `-k` 对齐，冲突显式拒绝）；JSONL 每行新增 `total` 进度字段。
+- README/README_zh/commands.md 新增「执行模式选型决策表」：单发→daemon、批量/agent→serve、交互→sh、CI→batch；一 serve 绑一 session 契约。
+- `smoke_hostile.py` 新增 serve JSONL 全链用例，现 10 用例。
+
+### 已知边界
+
+- `dpx serve`/`sh`/`batch` 常驻入口在 Windows 的 stdin 编码（GBK console codepage）/行缓冲行为**未经真机验证**；`sh` readline 为 Unix-only，Windows 需 pyreadline3 兜底（未实装）。
+
+## [Unreleased]
+
+### 新增
+- `batch --on-error {stop,skip}`（与 `-k` 对齐，冲突显式拒绝）；JSONL 每行新增 `total` 进度字段
+- `smoke_hostile.py` 新增 serve JSONL 全链用例（ping+eval 同 session），现 10 用例
+
+### 已知边界
+- `dpx serve`/`sh`/`batch` 常驻入口在 Windows 的 stdin 编码（GBK console codepage）/行缓冲行为**未经真机验证**——仅 mock/分支测试；Windows 上使用常驻入口前建议先跑 `echo '{"argv":["eval","1"]}' | dpx serve` 冒烟
+
 ## [0.15.6] - 2026-10-21
 
 ### 性能

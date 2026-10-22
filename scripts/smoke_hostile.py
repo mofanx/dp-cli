@@ -75,6 +75,25 @@ def main():
     dyn = r.get('status') == 'ok' and hits().get('click', 0) >= 3
     print(f'{"✅" if dyn else "❌"} 动态渲染按钮')
     ok += dyn; fail += not dyn
+
+    # serve JSONL 全链冒烟：单进程 ping→eval（同 session 共享 page）
+    try:
+        reqs = ('{"argv":["ping"]}\n'
+                f'{{"argv":["eval","-S","{SES}","window.__hit.click"]}}\n')
+        sp = subprocess.run(DPX + ['serve'], input=reqs, capture_output=True,
+                            text=True, timeout=30)
+        rlines = [json.loads(l) for l in sp.stdout.strip().splitlines() if l.strip()]
+        ping_ok = (rlines[0].get('result', {}).get('status') == 'ok'
+                   or rlines[0].get('status') == 'ok')
+        ev = rlines[1].get('result', rlines[1])
+        ev_ok = (ev.get('status') == 'ok'
+                 and ev.get('data', {}).get('result', 0) >= 3)
+        hit = ping_ok and ev_ok
+    except Exception as e:
+        hit = False
+        print(f'  serve 异常: {e}')
+    print(f'{"✅" if hit else "❌"} serve JSONL 全链（ping+eval 同 session）')
+    ok += hit; fail += not hit
     print(f'== {ok} passed, {fail} failed ==')
     run('close')                    # 防 hostile session 残留
     sys.exit(0 if fail == 0 else 1)

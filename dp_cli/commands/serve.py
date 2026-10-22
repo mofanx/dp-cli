@@ -21,6 +21,7 @@ import json
 import shlex
 import sys
 import threading
+from pathlib import Path
 
 import click
 
@@ -28,6 +29,19 @@ from dp_cli.output import error
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
+
+
+class _TimeoutInterrupt(Exception):
+    pass
+
+
+def _install_timeout_handler():
+    try:
+        import signal as _sig
+        _sig.signal(_sig.SIGALRM,
+                    lambda *a: (_ for _ in ()).throw(_TimeoutInterrupt()))
+    except Exception:
+        pass
 _GLOBAL_FLAGS = ('-v', '--verbose', '--compact')
 
 
@@ -73,16 +87,106 @@ def _accepts_session(cmd_name: str) -> bool:
         return False
 
 
-def _emit(seq: int, req_id, code: int, result: dict) -> None:
+def _emit(seq: int, req_id, code: int, result: dict,
+          elapsed_ms: int = None) -> None:
     out = {'seq': seq, 'exit': code, 'result': result}
     if req_id is not None:
         out['id'] = req_id
+    if elapsed_ms is not None:
+        out['elapsed_ms'] = elapsed_ms
     sys.stdout.write(json.dumps(out, ensure_ascii=False) + '\n')
     sys.stdout.flush()
 
 
+def _ping() -> tuple:
+    from dp_cli.skill_dist import cli_version
+    return 0, {'status': 'ok', 'pong': True, 'version': cli_version()}
+
+
+def _repl_cmds() -> list:
+    """TAB 补全候选：已注册命令名。"""
+    try:
+        from dp_cli.main import cli as _cli
+        return sorted(_cli.commands)
+    except Exception:
+        return []
+
+
+def _repl(session: str) -> int:
+    """TTY REPL：裸命令行（非 JSONL）+历史+TAB 补全+友好错误。"""
+    import readline, rlcompleter, atexit, shlex as _sh
+    hist = Path.home() / '.dp_cli' / 'sh_history'
+    try:
+        hist.parent.mkdir(parents=True, exist_ok=True)
+        readline.read_history_file(str(hist))
+    except Exception:
+        pass
+    atexit.register(lambda: _safe_hist(hist))
+    _cmds = _repl_cmds()
+    readline.set_completer(
+        lambda t, st: ([c for c in _cmds if c.startswith(t)] + [None])[st])
+    readline.parse_and_bind('tab: complete')
+    sys.stderr.write(f'dp-cli REPL（session={session or "default"}，'
+                     'help 查命令、exit 退出）\n')
+    while True:
+        try:
+            line = input('dp> ').strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.stderr.write('\n')
+            return 0
+        if not line:
+            continue
+        if line in ('exit', 'quit'):
+            return 0
+        if line == 'help':
+            sys.stderr.write('可用命令: ' + ' '.join(_cmds[:20])
+                             + ' ...（dpx catalog --md 查全表）\n')
+            continue
+        try:
+            argv = _sh.split(line)
+        except ValueError as e:
+            sys.stderr.write(f'解析失败: {e}\n')
+            continue
+        if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
+            argv = argv[1:]
+        if not argv:
+            continue
+        cmd = argv[0]
+        if cmd == 'ping':
+            _, r = _ping()
+            sys.stdout.write(json.dumps(r, ensure_ascii=False) + '\n')
+            sys.stdout.flush()
+            continue
+        if cmd in _FORBIDDEN:
+            sys.stderr.write(f'REPL 内不允许 {cmd}\n')
+            continue
+        if (session and '--session' not in argv
+                and '-S' not in argv and _accepts_session(cmd)):
+            argv = argv + ['--session', session]
+        try:
+            code, result = _invoke(argv)
+            sys.stdout.write(
+                json.dumps(result, ensure_ascii=False) + '\n')
+            sys.stdout.flush()
+        except KeyboardInterrupt:
+            sys.stderr.write('（已中断）\n')
+        except Exception as e:
+            sys.stderr.write(f'错误: {e}\n')
+
+
+def _safe_hist(hist):
+    try:
+        import readline
+        readline.set_history_length(500)
+        readline.write_history_file(str(hist))
+    except Exception:
+        pass
+
+
 def _serve(session: str = None, tty: bool = False) -> int:
-    """主循环：readline → 解析 → _invoke → 应答。"""
+    """主循环：TTY→REPL 裸命令；非 TTY→JSONL 解析 → _invoke → 应答。"""
+    if tty:
+        return _repl(session)
     seq = 0
     while True:
         if tty:
@@ -100,6 +204,8 @@ def _serve(session: str = None, tty: bool = False) -> int:
         if line in ('quit', 'exit', '.quit'):
             return 0
         seq += 1
+        import time as _t
+        _t0 = _t.monotonic()
 
         argv, req_id, err = _parse_request(line)
         if err:
@@ -107,7 +213,9 @@ def _serve(session: str = None, tty: bool = False) -> int:
         else:
             cmd_name = next(
                 (a for a in argv if a not in _GLOBAL_FLAGS), None)
-            if cmd_name is None:
+            if cmd_name == 'ping':
+                code, result = _ping()
+            elif cmd_name is None:
                 code, result = _invalid('空命令')
             elif cmd_name in _FORBIDDEN:
                 code, result = _invalid(f'serve 内不允许嵌套 {cmd_name}')
@@ -118,8 +226,24 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         and '-S' not in argv
                         and _accepts_session(cmd_name)):
                     argv = argv + ['--session', session]
+                _tm = None
                 try:
-                    code, result = _invoke(argv)
+                    _tm = json.loads(line).get('timeout_ms')
+                except Exception:
+                    pass
+                _armed_alarm = False
+                if _tm and hasattr(__import__('signal'), 'setitimer'):
+                    import signal as _sig
+                    _sig.setitimer(_sig.ITIMER_REAL,
+                                   float(_tm) / 1000.0)
+                    _armed_alarm = True
+                try:
+                    try:
+                        code, result = _invoke(argv)
+                    except _TimeoutInterrupt:
+                        code, result = 1, {
+                            'status': 'error', 'code': 'TIMEOUT',
+                            'message': f'命令超时 {_tm}ms'}
                 except KeyboardInterrupt:
                     code, result = 1, {
                         'status': 'error', 'code': 'INTERRUPTED',
@@ -128,7 +252,11 @@ def _serve(session: str = None, tty: bool = False) -> int:
                     code, result = 1, {
                         'status': 'error', 'code': 'ERROR',
                         'message': f'serve 执行异常: {e}'}
-        _emit(seq, req_id, code, result)
+                finally:
+                    if _armed_alarm:
+                        _sig.setitimer(_sig.ITIMER_REAL, 0)
+        _emit(seq, req_id, code, result,
+              int((_t.monotonic() - _t0) * 1000))
         _maybe_arm_netlog(session)
 
 
@@ -191,6 +319,7 @@ def serve(session):
       dpx sh                             # 交互别名（TTY 下提示符）
     """
     _warmup_imports()
+    _install_timeout_handler()
     return _serve(session=session, tty=sys.stdin.isatty())
 
 

@@ -103,6 +103,19 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 
 > **daemon 路由是 opt-in**：`dpx daemon-start` 只起进程不接管路由——后续命令走 daemon 需 `DPX_DAEMON=1`（或 socket 已存在时自动采用）。`requests`/`request`/`listen` 的 daemon netlog 需 0.15.3+ daemon；`serve`/`sh`/`batch`/`mcp`/`record-*`/`daemon-*`/`install`/`catalog` 始终本地执行不转发。
 
+### 执行模式选型——按负载选入口
+
+| 场景 | 入口 | 每命令开销 | 说明 |
+|---|---|---|---|
+| 单发命令 | `dpx <cmd>` | ~270ms（本地）/~110ms（daemon） | 直接用 |
+| 高频/Agent 批量 | `dpx serve`（JSONL stdin↔stdout） | ~20-50ms | **一个 serve 只绑一个 session**——多 session 开多个 serve 实例 |
+| 交互调试 | `dpx sh` | ~20-50ms | JSONL 常驻 shell |
+| CI/录制回放 | `dpx batch file` | ~30-40ms | `-k`/`--on-error skip` 失败继续；`--screenshot-on-fail` 留证 |
+
+```bash
+dpx serve            # stdin: {"argv":["open","https://example.com"]} → stdout 每行一个 JSON 结果
+```
+
 ## 0.14 新特性
 
 - **`dpx mcp`** — MCP stdio server：34 个白名单工具透传 JSON 契约；`eval` 需 `--unsafe-eval` 显式开启。Claude Desktop：`{"mcpServers":{"dpx":{"command":"dpx","args":["mcp"]}}}`

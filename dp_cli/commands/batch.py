@@ -117,14 +117,17 @@ def _invalid(msg: str) -> tuple:
 @click.argument('file', required=False, default='-',
                 metavar='[FILE|-]')
 @click.option('-k', '--keep-going', is_flag=True,
-              help='某条命令失败后继续执行后续命令（默认首条失败即停）')
+              help='某条命令失败后继续执行后续命令（等价于 --on-error skip）')
+@click.option('--on-error', 'on_error',
+              type=click.Choice(['stop', 'skip']), default=None,
+              help='失败策略：stop 首条失败即停（默认）/ skip 继续执行')
 @click.option('-v', '--verbose', is_flag=True,
               help='向子命令透传 debug 日志（等价于子命令加 -v）')
 @click.option('--no-summary', is_flag=True,
               help='不在末尾输出统计行')
 @click.option('--screenshot-on-fail', 'shot_dir', default=None, metavar='DIR',
               help='命令失败时自动截图到目录（留证排查）')
-def batch(file, keep_going, verbose, no_summary, shot_dir):
+def batch(file, keep_going, on_error, verbose, no_summary, shot_dir):
     """批量顺序执行 dpx 子命令（FILE 或 stdin，每行一条）。
 
     同一进程内执行，浏览器 attach 结果在各命令间复用，远快于逐条
@@ -147,6 +150,12 @@ def batch(file, keep_going, verbose, no_summary, shot_dir):
       cat cmds.txt | dpx batch      # stdin
       dpx batch -k cmds.txt         # 失败继续
     """
+    # --on-error 与 -k 对齐：skip 等价于 keep_going；两者冲突显式拒绝
+    if keep_going and on_error == 'stop':
+        error('-k 与 --on-error stop 冲突', code='INVALID_ARGS')
+        return
+    if on_error == 'skip':
+        keep_going = True
     lines = _read_lines(file)
     if not lines:
         error('批处理输入为空（无有效命令行）', code='INVALID_ARGS')
@@ -199,7 +208,8 @@ def batch(file, keep_going, verbose, no_summary, shot_dir):
                 result = dict(result or {})
                 result['screenshot'] = shot
 
-        print(json.dumps({'seq': seq, 'line': lineno, 'cmd': text,
+        print(json.dumps({'seq': seq, 'total': len(lines),
+                          'line': lineno, 'cmd': text,
                           'exit': code, 'result': result},
                          ensure_ascii=False))
         executed = seq

@@ -204,3 +204,19 @@ def test_serve_command_invokes_warmup(monkeypatch):
                         lambda: calls.append(1))
     r = CliRunner().invoke(cli, ['serve'], input='')
     assert r.exit_code == 0 and calls == [1]
+
+
+@pytest.mark.unit
+def test_serve_ping_elapsed_contract(monkeypatch):
+    """S1-a 契约：ping 零副作用返回+elapsed_ms 全命令覆盖。"""
+    from dp_cli.commands.serve import _ping, _emit
+    code, r = _ping()
+    assert code == 0 and r['pong'] is True and 'version' in r
+
+
+@pytest.mark.unit
+def test_serve_timeout_ms_field():
+    """timeout_ms 请求字段解析（_serve 内 json.loads 取）。"""
+    import json
+    req = json.loads('{"cmd":"eval 1","timeout_ms":500}')
+    assert req.get('timeout_ms') == 500

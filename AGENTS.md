@@ -108,6 +108,8 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 
 `readline`/`termios`/`tty`/`curses` 全 Unix-only——`sh` REPL 三层降级：prompt_toolkit（`[repl]` 可选依赖）→readline→裸 `input()`。新交互功能选型默认 prompt_toolkit，不再加 readline-only 依赖。
 
+**可选依赖测试纪律**：optional extras 的功能测试必须 `pytest.importorskip("模块")` 守卫——本地装了≠CI 装了（0.15.8 CI 红教训：`test_e_completer` 裸依赖 prompt_toolkit，CI 只装 `.[test]`）。对应 CI extra 要同步加进 workflow install。
+
 ## @e 句柄补全失效契约
 
 ref→元素是 locator 映射非元素句柄——DOM 内变更（click/fill/eval）不清缓存（locator 重解析仍可能命中不同元素=meta 滞后的设计边界，执行端走 actionability 检查兜底）；导航类（open/goto/go-*/tab-new|select|close/reload/close）清缓存；`tab-list` 只读不清。

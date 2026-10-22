@@ -106,7 +106,7 @@ def run_mcp(session: str, unsafe_eval: bool, allowed_domains):
         from mcp.types import Tool, TextContent
     except ImportError:
         import sys
-        sys.stderr.write('mcp SDK 未安装：pip install "dp-cli[mcp]"\n')
+        _write_err('mcp SDK 未安装：pip install "dp-cli[mcp]"\n')
         return 1
     import anyio
 
@@ -149,7 +149,7 @@ def run_mcp(session: str, unsafe_eval: bool, allowed_domains):
 
 def register(cli):
     import click
-    from dp_cli.output import ok, error
+    from dp_cli.output import ok, error, _write_err
 
     @cli.command('mcp')
     @click.option('-S', '--session', default='default', show_default=True)

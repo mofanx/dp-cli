@@ -356,3 +356,25 @@ def test_nav_cmds_tab_invalidation():
         sv._refresh_refs(cmd, 'x')
         if cmd != 'snapshot':
             assert sv._REF_CACHE == {'1': {}}, cmd
+
+
+@pytest.mark.unit
+def test_write_err_tty_vs_pipe(monkeypatch):
+    """_write_err：TTY→sys.stderr.write；非 TTY→buffer UTF-8 字节（非 ASCII 不炸）。"""
+    import io, sys as _s
+    from dp_cli.output import _write_err
+
+    class FakeTTY(io.StringIO):
+        def isatty(self): return True
+    tty = FakeTTY()
+    monkeypatch.setattr(_s, 'stderr', tty)
+    _write_err('警告中文\n')
+    assert '警告中文' in tty.getvalue()
+
+    class FakePipe:
+        def __init__(self): self.buffer = io.BytesIO()
+        def isatty(self): return False
+    pipe = FakePipe()
+    monkeypatch.setattr(_s, 'stderr', pipe)
+    _write_err('警告中文\n')   # GBK locale 下 text 层会炸，字节写不炸
+    assert '警告中文'.encode('utf-8') in pipe.buffer.getvalue()

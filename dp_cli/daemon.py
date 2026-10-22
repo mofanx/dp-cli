@@ -105,9 +105,9 @@ def _version_probe(session: str) -> None:
         dv = meta.get('version')
         cv = _dpx_version()
         if dv and dv != cv:
-            print(f'daemon v{dv} vs dpx v{cv}——建议 '
-                  f'dpx daemon-stop -S {session} 后重开',
-                  file=sys.stderr)
+            from dp_cli.output import _write_err
+            _write_err(f'daemon v{dv} vs dpx v{cv}——建议 '
+                       f'dpx daemon-stop -S {session} 后重开\n')
     except Exception:
         pass
 

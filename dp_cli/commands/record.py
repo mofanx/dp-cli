@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 
 from dp_cli.commands._utils import session_option, _get_page
-from dp_cli.output import ok, error, debug
+from dp_cli.output import ok, error, debug, _write_err
 from dp_cli.session import load_session, save_session
 from dp_cli.recorder import (inject_recorder, stop_recorder, get_recorded_actions,
                              clear_recorded_actions, get_recorder_status,
@@ -31,7 +31,7 @@ def _get_active_page_for_record(session):
                 if tab:
                     return tab
     except Exception as e:
-        print(f'[record] Failed to get active tab via CDP: {e}', file=sys.stderr)
+        _write_err(f'[record] Failed to get active tab via CDP: {e}' + '\n')
 
     # 回退到 latest_tab
     try:

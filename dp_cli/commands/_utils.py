@@ -191,10 +191,10 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     # 挂起 dialog 检测：无策略且有弹窗时快速告警（否则后续命令挂死等待）
     if not dpol and getattr(target, '_has_alert', False):
         try:
-            import sys as _sys
-            print(f'[dp-cli] 警告：存在挂起的 JS 对话框'
-                  f'（dpx dialog-accept/dialog-dismiss 处理，'
-                  f'或 dpx dialog-policy 预设策略）', file=_sys.stderr)
+            from dp_cli.output import _write_err
+            _write_err(f'[dp-cli] 警告：存在挂起的 JS 对话框'
+                       f'（dpx dialog-accept/dialog-dismiss 处理，'
+                       f'或 dpx dialog-policy 预设策略）\n')
         except Exception:
             pass
 

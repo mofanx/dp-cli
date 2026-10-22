@@ -163,11 +163,10 @@ def start_bridge(user_data_dir: str | os.PathLike,
 
     # 立即提示用户：bridge 正在连接；若 Chrome 弹出授权框请点击。
     # 写 stderr 避免污染 stdout 的 JSON 输出。
-    print('[dp] 正在启动 bridge 并连接浏览器（Chrome/Edge）…',
-          file=sys.stderr, flush=True)
-    print('[dp] 💡 若浏览器弹出 "Allow remote debugging" 对话框，'
-          '请切到浏览器窗口点击 "Allow"（后续命令会自动复用连接）',
-          file=sys.stderr, flush=True)
+    from dp_cli.output import _write_err
+    _write_err('[dp] 正在启动 bridge 并连接浏览器（Chrome/Edge）…' + '\n')
+    _write_err('[dp] 💡 若浏览器弹出 "Allow remote debugging" 对话框，'
+               '请切到浏览器窗口点击 "Allow"（后续命令会自动复用连接）\n')
 
     # 异步读 stderr，方便 timeout 时回显给用户
     import threading
@@ -234,10 +233,9 @@ def start_bridge(user_data_dir: str | os.PathLike,
             # ——browser-harness#554 已实证）。给用户可操作的指引。
             if notified and not escalated and elapsed > 8:
                 escalated = True
-                print('[dp] ⏳ 等待授权超 8s——若浏览器窗口被遮挡请切到前台；\n'
-                      '    若 Chrome/Edge 当前没有可见窗口，授权框无法渲染，\n'
-                      '    请先打开一个浏览器窗口再等待/重试。',
-                      file=sys.stderr, flush=True)
+                _write_err('[dp] ⏳ 等待授权超 8s——若浏览器窗口被遮挡请切到前台；\n'
+                           '    若 Chrome/Edge 当前没有可见窗口，授权框无法渲染，\n'
+                           '    请先打开一个浏览器窗口再等待/重试。\n')
             if proc.poll() is not None:
                 raise RuntimeError(
                     f'bridge 子进程提前退出 (code={proc.returncode})。stderr:\n{_collect_stderr()}'

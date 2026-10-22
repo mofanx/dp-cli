@@ -2,13 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.15.10] - 2026-10-22
 
 ### 改进
 
 - **`snapshot --since` diff 输出注明观测边界**：文本渲染头部+JSON `scope: dom-snapshot-only`
   注明「仅 DOM 快照比对，不含样式/网络层变化」——churn/增删为观测数据非断言建议，
   断言点判断归用户。
+- **stderr 输出统一走 `_write_err`**：非 TTY 经 `sys.stderr.buffer` 直写 UTF-8 字节——
+  Windows GBK locale 下 tip/警告/traceback 不再 `UnicodeEncodeError` 吞诊断
+  （`_write_out` 同构镜像；serve REPL/daemon 警告/logs debug 等 stderr 点收编统一入口）。
 
 ## [0.15.7] - 2026-10-22
 

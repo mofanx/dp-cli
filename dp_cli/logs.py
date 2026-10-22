@@ -35,4 +35,5 @@ def debug(msg: str, exc: BaseException = None) -> None:
         return
     if exc is not None:
         msg = f'{msg}: {type(exc).__name__}: {exc}'
-    print(f'[dp:debug] {msg}', file=sys.stderr)
+    from dp_cli.output import _write_err
+    _write_err(f'[dp:debug] {msg}' + '\n')

@@ -46,6 +46,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from dp_cli.logs import debug
+from dp_cli.output import _write_err
 
 IS_WINDOWS = sys.platform == 'win32'
 
@@ -96,7 +97,7 @@ def _locked(user_data_dir, blocking_msg: bool = True):
                 msvcrt.locking(lf.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError:
                 if blocking_msg:
-                    print(_LOCK_WAIT_MSG, file=sys.stderr, flush=True)
+                    _write_err(_LOCK_WAIT_MSG + '\n')
                 deadline = time.monotonic() + 600
                 while True:
                     try:
@@ -121,7 +122,7 @@ def _locked(user_data_dir, blocking_msg: bool = True):
             except OSError:
                 pass
             if not got and blocking_msg:
-                print(_LOCK_WAIT_MSG, file=sys.stderr, flush=True)
+                _write_err(_LOCK_WAIT_MSG + '\n')
             try:
                 if not got:
                     fcntl.flock(lf.fileno(), fcntl.LOCK_EX)

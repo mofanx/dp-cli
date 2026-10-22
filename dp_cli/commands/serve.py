@@ -25,7 +25,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import error, _write_out
+from dp_cli.output import error, _write_out, _write_err
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
@@ -146,13 +146,13 @@ def _exec_line(line: str, session: str) -> None:
     if line in ('exit', 'quit'):
         raise EOFError
     if line == 'help':
-        sys.stderr.write('可用命令: ' + ' '.join(_repl_cmds()[:20])
+        _write_err('可用命令: ' + ' '.join(_repl_cmds()[:20])
                          + ' ...（dpx catalog --md 查全表）\n')
         return
     try:
         argv = _sh.split(line)
     except ValueError as e:
-        sys.stderr.write(f'解析失败: {e}\n')
+        _write_err(f'解析失败: {e}\n')
         return
     if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
         argv = argv[1:]
@@ -164,7 +164,7 @@ def _exec_line(line: str, session: str) -> None:
         _write_out(json.dumps(r, ensure_ascii=False))
         return
     if cmd in _FORBIDDEN:
-        sys.stderr.write(f'REPL 内不允许 {cmd}\n')
+        _write_err(f'REPL 内不允许 {cmd}\n')
         return
     if (session and '--session' not in argv
             and '-S' not in argv and _accepts_session(cmd)):
@@ -174,9 +174,9 @@ def _exec_line(line: str, session: str) -> None:
         _write_out(json.dumps(result, ensure_ascii=False))
         _refresh_refs(cmd, session)
     except KeyboardInterrupt:
-        sys.stderr.write('（已中断）\n')
+        _write_err('（已中断）\n')
     except Exception as e:
-        sys.stderr.write(f'错误: {e}\n')
+        _write_err(f'错误: {e}\n')
 
 
 def _repl_ptk(session: str) -> int:
@@ -212,13 +212,13 @@ def _repl_ptk(session: str) -> int:
         completer=_DpCompleter())
     # 外部 snapshot 产出的 refs 也要能补——启动先载入（失败静默为空）
     _refresh_refs('snapshot', session)
-    sys.stderr.write(f'dp-cli REPL（session={session or "default"}，'
+    _write_err(f'dp-cli REPL（session={session or "default"}，'
                      'help 查命令、exit 退出）\n')
     while True:
         try:
             line = sess.prompt('dp> ').strip()
         except (EOFError, KeyboardInterrupt):
-            sys.stderr.write('\n')
+            _write_err('\n')
             return 0
         try:
             _exec_line(line, session)
@@ -246,15 +246,15 @@ def _repl_readline(session: str) -> int:
 
 def _repl_bare(session: str) -> int:
     """L3：裸 input()——零依赖，Windows 保底。"""
-    sys.stderr.write(f'dp-cli REPL（session={session or "default"}，'
+    _write_err(f'dp-cli REPL（session={session or "default"}，'
                      'help 查命令、exit 退出）\n')
-    sys.stderr.write('[dp] tip: pip install "dp-cli[repl]" '
+    _write_err('[dp] tip: pip install "dp-cli[repl]" '
                      'for TAB completion & history\n')
     while True:
         try:
             line = input('dp> ').strip()
         except (EOFError, KeyboardInterrupt):
-            sys.stderr.write('\n')
+            _write_err('\n')
             return 0
         try:
             _exec_line(line, session)
@@ -293,7 +293,7 @@ def _serve(session: str = None, tty: bool = False) -> int:
     seq = 0
     while True:
         if tty:
-            sys.stderr.write('dp> ')
+            _write_err('dp> ')
             sys.stderr.flush()
         try:
             raw = sys.stdin.readline()

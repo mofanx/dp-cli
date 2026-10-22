@@ -147,6 +147,17 @@ def _dump(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
+def _write_err(s: str) -> None:
+    """stderr 镜像 _write_out：非 TTY 走 UTF-8 字节写防 locale 炸。"""
+    buf = getattr(sys.stderr, 'buffer', None)
+    if buf is not None and not sys.stderr.isatty():
+        buf.write(s.encode('utf-8'))   # 不自动加 \n——prompt 类输出兼容
+        buf.flush()
+    else:
+        sys.stderr.write(s)
+        sys.stderr.flush()
+
+
 def _write_out(s: str) -> None:
     """JSON 输出走 UTF-8 字节写——pipe/重定向在非 UTF-8 locale
     （如 Windows GBK）下 stdout 编码是 locale，含 ⚡/⚠/💡 等字符的

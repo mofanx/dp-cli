@@ -25,7 +25,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import ok, error, debug, _dump
+from dp_cli.output import ok, error, debug, _dump, _write_err
 from dp_cli.session import load_session, save_session, save_refs, load_refs
 from dp_cli.commands._utils import session_option, _get_page
 
@@ -116,7 +116,7 @@ def _engine_external(request, answer, answer_file):
         raw = Path(answer_file).read_text(encoding='utf-8')
     else:
         # 交互态：请求写 stderr，答复从 stdin 读一行
-        sys.stderr.write(json.dumps(
+        _write_err(json.dumps(
             {'_request': 'decide-answer',
              'hint': '请给一行 JSON，如 {"action":"click","target":3,'
                      '"done":false,"stuck":false,"probs":{}}\n'},

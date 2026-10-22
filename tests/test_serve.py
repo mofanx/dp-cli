@@ -300,7 +300,7 @@ def test_e_completer_candidates():
     import dp_cli.commands.serve as sv
     sv._REF_CACHE = {'3': {'role': 'button', 'name': '提交'},
                      '12': {'role': 'link', 'name': '首页'}}
-    from prompt_toolkit.completion import Completer, Completion
+    pytest.importorskip("prompt_toolkit")
     from prompt_toolkit.document import Document
     # 直接构造 _DpCompleter 等价逻辑
     import re

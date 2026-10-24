@@ -59,8 +59,40 @@ def check_leakage(pairs):
 
 
 def main():
+    global BASE, OUT
     smoke = '--smoke' in sys.argv
-    src = next((a for a in sys.argv[1:] if not a.startswith('--')), None)
+    distill = '--distill' in sys.argv
+    base = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--model=')), None)
+    out = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--out=')), None)
+    if base: BASE = base
+    if out: OUT = Path(out)
+    src = next((a for a in sys.argv[1:]
+                if not a.startswith('--')), None)
+    if distill:
+        # 蒸馏路径——query/positive/negative[]/label[软分] 格式，
+        # MarginMSELoss 学教师 margin 非 0/1 硬标签
+        rows = json.loads(Path(src).read_text(encoding='utf-8'))
+        from datasets import Dataset
+        # 三元组(query,pos,neg)+教师 margin 差分标签——MarginMSELoss 支持格式
+        flat = [{'sentence1': r['query'], 'sentence2': r['positive'],
+                 'sentence3': n, 'label': r['label'][0] - r['label'][i + 1]}
+                for r in rows for i, n in enumerate(r['negative'])]
+        ds = Dataset.from_list(flat)
+        from sentence_transformers import CrossEncoder
+        from sentence_transformers.cross_encoder import (
+            CrossEncoderTrainer, CrossEncoderTrainingArguments)
+        from sentence_transformers.cross_encoder.losses import MarginMSELoss
+        m = CrossEncoder(BASE, num_labels=1)
+        args = CrossEncoderTrainingArguments(
+            output_dir=str(OUT), num_train_epochs=2,
+            per_device_train_batch_size=8, learning_rate=2e-5,
+            logging_steps=20, save_strategy='no')
+        tr = CrossEncoderTrainer(model=m, args=args, train_dataset=ds,
+                                 loss=MarginMSELoss(m))
+        tr.train()
+        m.save_pretrained(str(OUT))
+        print(f'distill trained {len(rows)} rows → {OUT}')
+        return
     if smoke:
         pairs = smoke_pairs()
     elif src and Path(src).exists():

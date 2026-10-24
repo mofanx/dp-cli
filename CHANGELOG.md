@@ -5,6 +5,9 @@
 ## [0.15.11] - 2026-10-23
 
 ### 新增
+- **decide conf 三档 advisory 分层**：响应新增 `tier` 字段
+  （act/confirm/refuse——`margin_source` 上限 cap，非真 margin 永不达 act；
+  softmax 过度自信为表达层边界，tier 非正确率承诺）。
 
 - **`decide --engine reranker` 本地语义引擎（`[agent]` extra）**：bge-reranker/MiniLM
   CrossEncoder 对 goal↔候选打分出 ref+conf——首个不接外部 LLM 即可用的决策引擎。

@@ -270,6 +270,30 @@ _SCROLL_KW = ('下方', '页底', '更多', '滚动', '向下', 'scroll', 'more'
               'below', 'find', '找到', '查看全部')
 
 
+_TIER = {'probs': ('act', 'confirm', 'refuse'),
+         'single_side': ('confirm', 'confirm', 'refuse'),
+         'conf_fallback': ('confirm', 'confirm', 'refuse')}
+_T_HI, _T_LO = 0.95, 0.40   # dev 集（38 disjoint）拟合：hit 簇 ≥0.90 / miss 簇密集 <0.40
+
+
+def _conf_tier(conf: float, margin_source: str | None = None) -> str:
+    """conf→act/confirm/refuse 三档——margin_source 契约对齐：
+
+    probs        双侧真 margin——可给 act（高 conf 直采建议）
+    single_side  单边 probs——上限 confirm（不当 act 证据）
+    conf_fallback 静默降级——上限 confirm（conf 无校准保证）
+
+    advisory 语义：act=高可信建议（仍不执行）/confirm=列 top-3 待确认/
+    refuse=建议放弃。dev 拟合阈值 _T_HI/_T_LO，miss conf 也可达 1.0
+    （softmax 过度自信）——tier 是表达档非正确率承诺。
+    """
+    src = margin_source if margin_source in _TIER else 'conf_fallback'
+    a, c, r = _TIER[src]
+    if conf >= _T_HI:
+        return a
+    return c if conf >= _T_LO else r
+
+
 def _meta_decide(state, goal):
     """meta 类决策确定性判定——命中返回 {action, deterministic}，否则 None。
 
@@ -547,6 +571,9 @@ def register(cli):
             msrc = 'conf_fallback'  # 无 probs——静默降级为置信度
         result['margin'] = round(margin, 4)
         result['margin_source'] = msrc
+        if eng == 'reranker':
+            result['tier'] = _conf_tier(
+                conf, msrc)              # act/confirm/refuse 三档
         if not done and (conf and conf < min_conf
                          or margin < min_margin):
             error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'

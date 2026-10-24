@@ -4525,3 +4525,15 @@ def test_reranker_backend_fallback(monkeypatch, tmp_path):
     m = agent._reranker_model()
     assert isinstance(m, dict) and 'agent]' in m['_error']
     agent._RERANKER = None
+
+
+def test_conf_tier_boundaries():
+    """conf 三档+margin_source 契约：probs 可 act，单边/降级上限 confirm。"""
+    from dp_cli.agent import _conf_tier
+    assert _conf_tier(0.98, 'probs') == 'act'
+    assert _conf_tier(0.98, 'single_side') == 'confirm'
+    assert _conf_tier(0.98, 'conf_fallback') == 'confirm'
+    assert _conf_tier(0.98, None) == 'confirm'
+    assert _conf_tier(0.5, 'probs') == 'confirm'
+    assert _conf_tier(0.2, 'probs') == 'refuse'
+    assert _conf_tier(0.2, 'single_side') == 'refuse'

@@ -1,0 +1,746 @@
+{
+  "engine": "ollama qwen2.5:1.5b",
+  "n_cases": 42,
+  "accuracy_full": 0.5952,
+  "topk_recall": 0.6905,
+  "latency_ms": {
+    "p50": 5256,
+    "p95": 11320
+  },
+  "rows": [
+    {
+      "id": "c01",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 5800
+    },
+    {
+      "id": "c02",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "pred": {
+        "action": "click",
+        "ref": 5
+      },
+      "candidates": [
+        "('click', 5)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4550
+    },
+    {
+      "id": "c03",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "click",
+        "ref": 3
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4304
+    },
+    {
+      "id": "c04",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4012
+    },
+    {
+      "id": "c05",
+      "expect": {
+        "action": "click",
+        "ref": 6
+      },
+      "pred": {
+        "action": "click",
+        "ref": 6
+      },
+      "candidates": [
+        "('click', 6)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 5186
+    },
+    {
+      "id": "t01",
+      "expect": {
+        "action": "type",
+        "ref": 3
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 2)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 4387
+    },
+    {
+      "id": "t02",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "pred": {
+        "action": "type",
+        "ref": 2
+      },
+      "candidates": [
+        "('type', 2)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4560
+    },
+    {
+      "id": "t03",
+      "expect": {
+        "action": "type",
+        "ref": 4
+      },
+      "pred": {
+        "action": "type",
+        "ref": 4
+      },
+      "candidates": [
+        "('type', 4)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4714
+    },
+    {
+      "id": "t04",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "pred": {
+        "action": "type",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 2)",
+        "('click', 3)",
+        "('scroll_up', None)",
+        "('type', 1)",
+        "('wait', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 7252
+    },
+    {
+      "id": "s01",
+      "expect": {
+        "action": "select",
+        "ref": 2
+      },
+      "pred": {
+        "action": "select",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 3)",
+        "('scroll_down', None)",
+        "('select', 2)",
+        "('type', 1)",
+        "('wait', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 7367
+    },
+    {
+      "id": "s02",
+      "expect": {
+        "action": "select",
+        "ref": 3
+      },
+      "pred": {
+        "action": "select",
+        "ref": 3
+      },
+      "candidates": [
+        "('select', 3)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4594
+    },
+    {
+      "id": "sc01",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "pred": {
+        "action": null,
+        "ref": null
+      },
+      "candidates": [],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 6616
+    },
+    {
+      "id": "sc02",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "pred": {
+        "action": "click",
+        "ref": 3
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 6428
+    },
+    {
+      "id": "sc03",
+      "expect": {
+        "action": "scroll_up",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null
+      },
+      "candidates": [
+        "('scroll_up', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4269
+    },
+    {
+      "id": "b01",
+      "expect": {
+        "action": "back",
+        "ref": null
+      },
+      "pred": {
+        "action": "back",
+        "ref": null
+      },
+      "candidates": [
+        "('back', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 3837
+    },
+    {
+      "id": "w01",
+      "expect": {
+        "action": "wait",
+        "ref": null
+      },
+      "pred": {
+        "action": "wait",
+        "ref": null
+      },
+      "candidates": [
+        "('wait', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 3452
+    },
+    {
+      "id": "d01",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 6733
+    },
+    {
+      "id": "d02",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "type",
+        "ref": 3
+      },
+      "candidates": [
+        "('type', 3)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 4362
+    },
+    {
+      "id": "d03",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "back",
+        "ref": null
+      },
+      "candidates": [
+        "('back', None)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 7734
+    },
+    {
+      "id": "x01",
+      "expect": {
+        "action": "blocked",
+        "ref": null
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 6111
+    },
+    {
+      "id": "a01",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "click",
+        "ref": 3
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4732
+    },
+    {
+      "id": "a02",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": "click",
+        "ref": 4
+      },
+      "candidates": [
+        "('click', 4)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 5174
+    },
+    {
+      "id": "a03",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": "click",
+        "ref": 4
+      },
+      "candidates": [
+        "('click', 4)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4720
+    },
+    {
+      "id": "a04",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 2)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4740
+    },
+    {
+      "id": "l01",
+      "expect": {
+        "action": "click",
+        "ref": 12
+      },
+      "pred": {
+        "action": "click",
+        "ref": 12
+      },
+      "candidates": [
+        "('click', 12)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 9762
+    },
+    {
+      "id": "l02",
+      "expect": {
+        "action": "select",
+        "ref": 8
+      },
+      "pred": {
+        "action": "select",
+        "ref": 8
+      },
+      "candidates": [
+        "('select', 8)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 8020
+    },
+    {
+      "id": "l03",
+      "expect": {
+        "action": "click",
+        "ref": 18
+      },
+      "pred": {
+        "action": "click",
+        "ref": 6
+      },
+      "candidates": [
+        "('click', 6)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 11320
+    },
+    {
+      "id": "m01",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "type",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 3)",
+        "('scroll_down', None)",
+        "('type', 1)",
+        "('type', 2)",
+        "(None, None)"
+      ],
+      "hit_full": false,
+      "topk": true,
+      "latency_ms": 6660
+    },
+    {
+      "id": "m02",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 11628
+    },
+    {
+      "id": "m03",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4309
+    },
+    {
+      "id": "m04",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "pred": {
+        "action": "click",
+        "ref": 5
+      },
+      "candidates": [
+        "('click', 5)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 5103
+    },
+    {
+      "id": "e01",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "pred": {
+        "action": "type",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 3)",
+        "('scroll_down', None)",
+        "('type', 1)",
+        "('type', 2)",
+        "('wait', None)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 6744
+    },
+    {
+      "id": "e02",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 2)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 4305
+    },
+    {
+      "id": "e03",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": null,
+        "ref": null
+      },
+      "candidates": [],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 4157
+    },
+    {
+      "id": "c06",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 2)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 9070
+    },
+    {
+      "id": "c07",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": null,
+        "ref": null
+      },
+      "candidates": [],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 5256
+    },
+    {
+      "id": "t05",
+      "expect": {
+        "action": "type",
+        "ref": 5
+      },
+      "pred": {
+        "action": "type",
+        "ref": 5
+      },
+      "candidates": [
+        "('type', 5)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 5621
+    },
+    {
+      "id": "c08",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)",
+        "('click', 2)",
+        "('click', 3)",
+        "('scroll_down', None)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "topk": true,
+      "latency_ms": 6899
+    },
+    {
+      "id": "c09",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)"
+      ],
+      "hit_full": true,
+      "topk": true,
+      "latency_ms": 3934
+    },
+    {
+      "id": "t06",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "pred": {
+        "action": "back",
+        "ref": null
+      },
+      "candidates": [
+        "('back', None)",
+        "('click', 3)",
+        "('type', 1)",
+        "('type', 2)"
+      ],
+      "hit_full": false,
+      "topk": true,
+      "latency_ms": 16242
+    },
+    {
+      "id": "d04",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2
+      },
+      "candidates": [
+        "('click', 2)"
+      ],
+      "hit_full": false,
+      "topk": false,
+      "latency_ms": 6341
+    },
+    {
+      "id": "c10",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "click",
+        "ref": 1
+      },
+      "candidates": [
+        "('click', 1)",
+        "('click', 3)",
+        "('scroll_down', None)",
+        "('wait', None)"
+      ],
+      "hit_full": false,
+      "topk": true,
+      "latency_ms": 6257
+    }
+  ]
+}

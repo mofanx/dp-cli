@@ -1,0 +1,1699 @@
+{
+  "n_cases": 42,
+  "julia_alone": 0.2857,
+  "reranker_alone": 0.7619,
+  "cascade_top3_prefilter": 0.619,
+  "advisory_by_theta": {
+    "0.5": 0.619,
+    "0.7": 0.5952,
+    "0.8": 0.5952,
+    "0.9": 0.5952,
+    "0.95": 0.5
+  },
+  "latency_ms": {
+    "rk_p50": 195,
+    "julia_p50": 115
+  },
+  "rows": [
+    {
+      "id": "c01",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.975050687789917,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 177,
+        "julia": 118
+      }
+    },
+    {
+      "id": "c02",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "rk": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 0.9853517413139343,
+        "top3": [
+          [
+            "click",
+            5
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "click",
+            4
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 0.6871372006298734
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 0.953840365959009
+      },
+      "lat": {
+        "rk": 206,
+        "julia": 113
+      }
+    },
+    {
+      "id": "c03",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.9063587784767151,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "scroll_up",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9113952022549848
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 204,
+        "julia": 115
+      }
+    },
+    {
+      "id": "c04",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "rk": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.05296899750828743,
+        "top3": [
+          [
+            "click",
+            1
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.7115868644820627
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 170,
+        "julia": 117
+      }
+    },
+    {
+      "id": "c05",
+      "expect": {
+        "action": "click",
+        "ref": 6
+      },
+      "rk": {
+        "action": "click",
+        "ref": 6,
+        "confidence": 0.43460044264793396,
+        "top3": [
+          [
+            "click",
+            6
+          ],
+          [
+            "scroll_up",
+            null
+          ],
+          [
+            "click",
+            4
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 6,
+        "confidence": 0.6534621476460059
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 6,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 212,
+        "julia": 116
+      }
+    },
+    {
+      "id": "t01",
+      "expect": {
+        "action": "type",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.572395920753479,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "type",
+            3
+          ],
+          [
+            "click",
+            4
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.6381338428760092
+      },
+      "julia_casc": {
+        "action": "type",
+        "ref": 3,
+        "confidence": 0.5158078651286369
+      },
+      "lat": {
+        "rk": 173,
+        "julia": 117
+      }
+    },
+    {
+      "id": "t02",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "rk": {
+        "action": "type",
+        "ref": 2,
+        "confidence": 0.1865060031414032,
+        "top3": [
+          [
+            "type",
+            2
+          ],
+          [
+            "click",
+            4
+          ],
+          [
+            "type",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.677582638271998
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 0.9295224171250888
+      },
+      "lat": {
+        "rk": 197,
+        "julia": 116
+      }
+    },
+    {
+      "id": "t03",
+      "expect": {
+        "action": "type",
+        "ref": 4
+      },
+      "rk": {
+        "action": "type",
+        "ref": 4,
+        "confidence": 0.11967957764863968,
+        "top3": [
+          [
+            "type",
+            4
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 188,
+        "julia": 113
+      }
+    },
+    {
+      "id": "t04",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "rk": {
+        "action": "type",
+        "ref": 1,
+        "confidence": 0.05010311305522919,
+        "top3": [
+          [
+            "type",
+            1
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "scroll_down",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.608153020806259
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 169,
+        "julia": 119
+      }
+    },
+    {
+      "id": "s01",
+      "expect": {
+        "action": "select",
+        "ref": 2
+      },
+      "rk": {
+        "action": "select",
+        "ref": 2,
+        "confidence": 0.8700897097587585,
+        "top3": [
+          [
+            "select",
+            2
+          ],
+          [
+            "back",
+            null
+          ],
+          [
+            "type",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "select",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "select",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 188,
+        "julia": 114
+      }
+    },
+    {
+      "id": "s02",
+      "expect": {
+        "action": "select",
+        "ref": 3
+      },
+      "rk": {
+        "action": "select",
+        "ref": 3,
+        "confidence": 0.44046756625175476,
+        "top3": [
+          [
+            "select",
+            3
+          ],
+          [
+            "scroll_up",
+            null
+          ],
+          [
+            "scroll_down",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "type",
+        "ref": 2,
+        "confidence": 0.39739502378499775
+      },
+      "julia_casc": {
+        "action": "select",
+        "ref": 3,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 197,
+        "julia": 123
+      }
+    },
+    {
+      "id": "sc01",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.12755051255226135,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.45756269995877596
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 274,
+        "julia": 112
+      }
+    },
+    {
+      "id": "sc02",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "rk": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9595757126808167,
+        "top3": [
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "back",
+            null
+          ],
+          [
+            "scroll_up",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.5753948180215865
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9266580125501366
+      },
+      "lat": {
+        "rk": 171,
+        "julia": 117
+      }
+    },
+    {
+      "id": "sc03",
+      "expect": {
+        "action": "scroll_up",
+        "ref": null
+      },
+      "rk": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.9109073877334595,
+        "top3": [
+          [
+            "scroll_up",
+            null
+          ],
+          [
+            "back",
+            null
+          ],
+          [
+            "scroll_down",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.862635178017605
+      },
+      "julia_casc": {
+        "action": "back",
+        "ref": null,
+        "confidence": 0.5323998679108831
+      },
+      "lat": {
+        "rk": 214,
+        "julia": 116
+      }
+    },
+    {
+      "id": "b01",
+      "expect": {
+        "action": "back",
+        "ref": null
+      },
+      "rk": {
+        "action": "back",
+        "ref": null,
+        "confidence": 0.9991810917854309,
+        "top3": [
+          [
+            "back",
+            null
+          ],
+          [
+            "scroll_up",
+            null
+          ],
+          [
+            "click",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.6853199269281363
+      },
+      "lat": {
+        "rk": 154,
+        "julia": 108
+      }
+    },
+    {
+      "id": "w01",
+      "expect": {
+        "action": "wait",
+        "ref": null
+      },
+      "rk": {
+        "action": "wait",
+        "ref": null,
+        "confidence": 0.9997825026512146,
+        "top3": [
+          [
+            "wait",
+            null
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "back",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "wait",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "wait",
+        "ref": null,
+        "confidence": 0.715929569147396
+      },
+      "lat": {
+        "rk": 143,
+        "julia": 109
+      }
+    },
+    {
+      "id": "d01",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.2018832266330719,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "back",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.9324831137476671
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.8406978028805848
+      },
+      "lat": {
+        "rk": 207,
+        "julia": 126
+      }
+    },
+    {
+      "id": "d02",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "rk": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.0843227207660675,
+        "top3": [
+          [
+            "click",
+            1
+          ],
+          [
+            "type",
+            3
+          ],
+          [
+            "click",
+            2
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.8788613183047058
+      },
+      "julia_casc": {
+        "action": "type",
+        "ref": 3,
+        "confidence": 0.831244534486864
+      },
+      "lat": {
+        "rk": 192,
+        "julia": 113
+      }
+    },
+    {
+      "id": "d03",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "rk": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.2966436445713043,
+        "top3": [
+          [
+            "click",
+            1
+          ],
+          [
+            "done",
+            null
+          ],
+          [
+            "wait",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "done",
+        "ref": null,
+        "confidence": 0.49480313801403797
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 171,
+        "julia": 124
+      }
+    },
+    {
+      "id": "x01",
+      "expect": {
+        "action": "blocked",
+        "ref": null
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.1862027943134308,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "blocked",
+            null
+          ],
+          [
+            "scroll_down",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.7917223404056734
+      },
+      "lat": {
+        "rk": 193,
+        "julia": 111
+      }
+    },
+    {
+      "id": "a01",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.991650402545929,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "click",
+            2
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.7031301755040834
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.8428147529882363
+      },
+      "lat": {
+        "rk": 201,
+        "julia": 119
+      }
+    },
+    {
+      "id": "a02",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "rk": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 0.3763899803161621,
+        "top3": [
+          [
+            "click",
+            4
+          ],
+          [
+            "back",
+            null
+          ],
+          [
+            "scroll_down",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 243,
+        "julia": 115
+      }
+    },
+    {
+      "id": "a03",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "rk": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 0.9713521599769592,
+        "top3": [
+          [
+            "click",
+            4
+          ],
+          [
+            "type",
+            1
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.5421224393835985
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 229,
+        "julia": 124
+      }
+    },
+    {
+      "id": "a04",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.964859127998352,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            3
+          ],
+          [
+            "scroll_up",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.6430073774317585
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 221,
+        "julia": 113
+      }
+    },
+    {
+      "id": "l01",
+      "expect": {
+        "action": "click",
+        "ref": 12
+      },
+      "rk": {
+        "action": "click",
+        "ref": 12,
+        "confidence": 0.9938693046569824,
+        "top3": [
+          [
+            "click",
+            12
+          ],
+          [
+            "click",
+            6
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 12,
+        "confidence": 0.9019879180838833
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 12,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 390,
+        "julia": 145
+      }
+    },
+    {
+      "id": "l02",
+      "expect": {
+        "action": "select",
+        "ref": 8
+      },
+      "rk": {
+        "action": "select",
+        "ref": 8,
+        "confidence": 0.01501478347927332,
+        "top3": [
+          [
+            "select",
+            8
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "click",
+            6
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "select",
+        "ref": 8,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "select",
+        "ref": 8,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 368,
+        "julia": 122
+      }
+    },
+    {
+      "id": "l03",
+      "expect": {
+        "action": "click",
+        "ref": 18
+      },
+      "rk": {
+        "action": "click",
+        "ref": 8,
+        "confidence": 0.09949415922164917,
+        "top3": [
+          [
+            "click",
+            8
+          ],
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            11
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.5638662314833089
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 11,
+        "confidence": 0.5023833213816093
+      },
+      "lat": {
+        "rk": 468,
+        "julia": 206
+      }
+    },
+    {
+      "id": "m01",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.9856383204460144,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "type",
+            2
+          ],
+          [
+            "type",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9191450093496776
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 195,
+        "julia": 118
+      }
+    },
+    {
+      "id": "m02",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.0521770678460598,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "done",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.8334217930849729
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.755883413975098
+      },
+      "lat": {
+        "rk": 181,
+        "julia": 110
+      }
+    },
+    {
+      "id": "m03",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "rk": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.6545440554618835,
+        "top3": [
+          [
+            "click",
+            1
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.6646854646096116
+      },
+      "lat": {
+        "rk": 158,
+        "julia": 110
+      }
+    },
+    {
+      "id": "m04",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "rk": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 0.816529393196106,
+        "top3": [
+          [
+            "click",
+            5
+          ],
+          [
+            "click",
+            4
+          ],
+          [
+            "type",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 0.7638980833709268
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 5,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 258,
+        "julia": 111
+      }
+    },
+    {
+      "id": "e01",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "rk": {
+        "action": "back",
+        "ref": null,
+        "confidence": 0.04618712142109871,
+        "top3": [
+          [
+            "back",
+            null
+          ],
+          [
+            "scroll_down",
+            null
+          ],
+          [
+            "scroll_up",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.928961469184406
+      },
+      "julia_casc": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9184651201014772
+      },
+      "lat": {
+        "rk": 219,
+        "julia": 118
+      }
+    },
+    {
+      "id": "e02",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.9922349452972412,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "back",
+            null
+          ],
+          [
+            "blocked",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "back",
+        "ref": null,
+        "confidence": 0.9177543178539294
+      },
+      "julia_casc": {
+        "action": "back",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 168,
+        "julia": 115
+      }
+    },
+    {
+      "id": "e03",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.9591064453125,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "blocked",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.7324546038045748
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 191,
+        "julia": 114
+      }
+    },
+    {
+      "id": "c06",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.9958325028419495,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 181,
+        "julia": 117
+      }
+    },
+    {
+      "id": "c07",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "rk": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 0.9061287045478821,
+        "top3": [
+          [
+            "click",
+            4
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "wait",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.7885676046323373
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 4,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 198,
+        "julia": 106
+      }
+    },
+    {
+      "id": "t05",
+      "expect": {
+        "action": "type",
+        "ref": 5
+      },
+      "rk": {
+        "action": "type",
+        "ref": 5,
+        "confidence": 0.9846200346946716,
+        "top3": [
+          [
+            "type",
+            5
+          ],
+          [
+            "click",
+            4
+          ],
+          [
+            "click",
+            2
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "julia_casc": {
+        "action": "type",
+        "ref": 5,
+        "confidence": 0.5531950757859669
+      },
+      "lat": {
+        "rk": 228,
+        "julia": 115
+      }
+    },
+    {
+      "id": "c08",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.9959368705749512,
+        "top3": [
+          [
+            "click",
+            2
+          ],
+          [
+            "click",
+            1
+          ],
+          [
+            "click",
+            3
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.699319504746779
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 201,
+        "julia": 109
+      }
+    },
+    {
+      "id": "c09",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "rk": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.7065529823303223,
+        "top3": [
+          [
+            "click",
+            1
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "blocked",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 0.9391803404921745
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 1,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 183,
+        "julia": 117
+      }
+    },
+    {
+      "id": "t06",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.11614549905061722,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "type",
+            2
+          ],
+          [
+            "type",
+            1
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.8489146809554101
+      },
+      "julia_casc": {
+        "action": "type",
+        "ref": 2,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 173,
+        "julia": 111
+      }
+    },
+    {
+      "id": "d04",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "rk": {
+        "action": "wait",
+        "ref": null,
+        "confidence": 0.6453940868377686,
+        "top3": [
+          [
+            "wait",
+            null
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "done",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.9124915186117019
+      },
+      "julia_casc": {
+        "action": "done",
+        "ref": null,
+        "confidence": 1.0
+      },
+      "lat": {
+        "rk": 183,
+        "julia": 111
+      }
+    },
+    {
+      "id": "c10",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "rk": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.9468516111373901,
+        "top3": [
+          [
+            "click",
+            3
+          ],
+          [
+            "click",
+            2
+          ],
+          [
+            "back",
+            null
+          ]
+        ]
+      },
+      "julia_base": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.625196997267417
+      },
+      "julia_casc": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.8653970375426403
+      },
+      "lat": {
+        "rk": 194,
+        "julia": 114
+      }
+    }
+  ]
+}

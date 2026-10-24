@@ -1,0 +1,1463 @@
+{
+  "n_cases": 42,
+  "engines": {
+    "lfm25": {
+      "model": "LiquidAI/LFM2.5-350M",
+      "accuracy_full": 0.0,
+      "accuracy_action": 0.0952,
+      "accuracy_ref": 0.2381,
+      "top3_recall": 0.0,
+      "latency_ms": {
+        "p50": 1174,
+        "p95": 1770
+      },
+      "conf_hit_mean": null,
+      "conf_miss_mean": null,
+      "rows": [
+        {
+          "id": "c01",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1098
+        },
+        {
+          "id": "c02",
+          "expect": {
+            "action": "click",
+            "ref": 5
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1136
+        },
+        {
+          "id": "c03",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1103
+        },
+        {
+          "id": "c04",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1019
+        },
+        {
+          "id": "c05",
+          "expect": {
+            "action": "click",
+            "ref": 6
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1197
+        },
+        {
+          "id": "t01",
+          "expect": {
+            "action": "type",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1133
+        },
+        {
+          "id": "t02",
+          "expect": {
+            "action": "type",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1091
+        },
+        {
+          "id": "t03",
+          "expect": {
+            "action": "type",
+            "ref": 4
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1174
+        },
+        {
+          "id": "t04",
+          "expect": {
+            "action": "type",
+            "ref": 1
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1024
+        },
+        {
+          "id": "s01",
+          "expect": {
+            "action": "select",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1174
+        },
+        {
+          "id": "s02",
+          "expect": {
+            "action": "select",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1111
+        },
+        {
+          "id": "sc01",
+          "expect": {
+            "action": "scroll_down",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1246
+        },
+        {
+          "id": "sc02",
+          "expect": {
+            "action": "scroll_down",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1067
+        },
+        {
+          "id": "sc03",
+          "expect": {
+            "action": "scroll_up",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1181
+        },
+        {
+          "id": "b01",
+          "expect": {
+            "action": "back",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1028
+        },
+        {
+          "id": "w01",
+          "expect": {
+            "action": "wait",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 967
+        },
+        {
+          "id": "d01",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1188
+        },
+        {
+          "id": "d02",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1133
+        },
+        {
+          "id": "d03",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1160
+        },
+        {
+          "id": "x01",
+          "expect": {
+            "action": "blocked",
+            "ref": null
+          },
+          "pred": {
+            "action": "scroll_up",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1246
+        },
+        {
+          "id": "a01",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1232
+        },
+        {
+          "id": "a02",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1266
+        },
+        {
+          "id": "a03",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1317
+        },
+        {
+          "id": "a04",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1164
+        },
+        {
+          "id": "l01",
+          "expect": {
+            "action": "click",
+            "ref": 12
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2053
+        },
+        {
+          "id": "l02",
+          "expect": {
+            "action": "select",
+            "ref": 8
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1770
+        },
+        {
+          "id": "l03",
+          "expect": {
+            "action": "click",
+            "ref": 18
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2656
+        },
+        {
+          "id": "m01",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1230
+        },
+        {
+          "id": "m02",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1206
+        },
+        {
+          "id": "m03",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1109
+        },
+        {
+          "id": "m04",
+          "expect": {
+            "action": "click",
+            "ref": 5
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1393
+        },
+        {
+          "id": "e01",
+          "expect": {
+            "action": "type",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1252
+        },
+        {
+          "id": "e02",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1160
+        },
+        {
+          "id": "e03",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1212
+        },
+        {
+          "id": "c06",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1189
+        },
+        {
+          "id": "c07",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1251
+        },
+        {
+          "id": "t05",
+          "expect": {
+            "action": "type",
+            "ref": 5
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1329
+        },
+        {
+          "id": "c08",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1168
+        },
+        {
+          "id": "c09",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1129
+        },
+        {
+          "id": "t06",
+          "expect": {
+            "action": "type",
+            "ref": 2
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1109
+        },
+        {
+          "id": "d04",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1174
+        },
+        {
+          "id": "c10",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "select",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1303
+        }
+      ]
+    },
+    "qwen25_05b": {
+      "model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "accuracy_full": 0.0238,
+      "accuracy_action": 0.3333,
+      "accuracy_ref": 0.2857,
+      "top3_recall": 0.0,
+      "latency_ms": {
+        "p50": 2239,
+        "p95": 4494
+      },
+      "conf_hit_mean": null,
+      "conf_miss_mean": null,
+      "rows": [
+        {
+          "id": "c01",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 6189
+        },
+        {
+          "id": "c02",
+          "expect": {
+            "action": "click",
+            "ref": 5
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2072
+        },
+        {
+          "id": "c03",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1704
+        },
+        {
+          "id": "c04",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 3383
+        },
+        {
+          "id": "c05",
+          "expect": {
+            "action": "click",
+            "ref": 6
+          },
+          "pred": {
+            "action": "click",
+            "ref": 1
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2464
+        },
+        {
+          "id": "t01",
+          "expect": {
+            "action": "type",
+            "ref": 3
+          },
+          "pred": {
+            "action": "click",
+            "ref": 3
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 2273
+        },
+        {
+          "id": "t02",
+          "expect": {
+            "action": "type",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 3709
+        },
+        {
+          "id": "t03",
+          "expect": {
+            "action": "type",
+            "ref": 4
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2087
+        },
+        {
+          "id": "t04",
+          "expect": {
+            "action": "type",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": 0
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2378
+        },
+        {
+          "id": "s01",
+          "expect": {
+            "action": "select",
+            "ref": 2
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1765
+        },
+        {
+          "id": "s02",
+          "expect": {
+            "action": "select",
+            "ref": 3
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 4063
+        },
+        {
+          "id": "sc01",
+          "expect": {
+            "action": "scroll_down",
+            "ref": null
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 3919
+        },
+        {
+          "id": "sc02",
+          "expect": {
+            "action": "scroll_down",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1698
+        },
+        {
+          "id": "sc03",
+          "expect": {
+            "action": "scroll_up",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1737
+        },
+        {
+          "id": "b01",
+          "expect": {
+            "action": "back",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1661
+        },
+        {
+          "id": "w01",
+          "expect": {
+            "action": "wait",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1642
+        },
+        {
+          "id": "d01",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 2073
+        },
+        {
+          "id": "d02",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1841
+        },
+        {
+          "id": "d03",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1783
+        },
+        {
+          "id": "x01",
+          "expect": {
+            "action": "blocked",
+            "ref": null
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 2272
+        },
+        {
+          "id": "a01",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2277
+        },
+        {
+          "id": "a02",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1973
+        },
+        {
+          "id": "a03",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2239
+        },
+        {
+          "id": "a04",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1853
+        },
+        {
+          "id": "l01",
+          "expect": {
+            "action": "click",
+            "ref": 12
+          },
+          "pred": {
+            "action": "click",
+            "ref": 11
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 5191
+        },
+        {
+          "id": "l02",
+          "expect": {
+            "action": "select",
+            "ref": 8
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2614
+        },
+        {
+          "id": "l03",
+          "expect": {
+            "action": "click",
+            "ref": 18
+          },
+          "pred": {
+            "action": "click",
+            "ref": 18
+          },
+          "conf": null,
+          "hit_full": true,
+          "hit_action": true,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 4494
+        },
+        {
+          "id": "m01",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2202
+        },
+        {
+          "id": "m02",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2326
+        },
+        {
+          "id": "m03",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2289
+        },
+        {
+          "id": "m04",
+          "expect": {
+            "action": "click",
+            "ref": 5
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 4053
+        },
+        {
+          "id": "e01",
+          "expect": {
+            "action": "type",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": 0
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 3845
+        },
+        {
+          "id": "e02",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1725
+        },
+        {
+          "id": "e03",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1851
+        },
+        {
+          "id": "c06",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2259
+        },
+        {
+          "id": "c07",
+          "expect": {
+            "action": "click",
+            "ref": 4
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1917
+        },
+        {
+          "id": "t05",
+          "expect": {
+            "action": "type",
+            "ref": 5
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1965
+        },
+        {
+          "id": "c08",
+          "expect": {
+            "action": "click",
+            "ref": 2
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 2322
+        },
+        {
+          "id": "c09",
+          "expect": {
+            "action": "click",
+            "ref": 1
+          },
+          "pred": {
+            "action": "click",
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": true,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 3779
+        },
+        {
+          "id": "t06",
+          "expect": {
+            "action": "type",
+            "ref": 2
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1775
+        },
+        {
+          "id": "d04",
+          "expect": {
+            "action": "done",
+            "ref": null
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": true,
+          "topk": false,
+          "latency_ms": 1808
+        },
+        {
+          "id": "c10",
+          "expect": {
+            "action": "click",
+            "ref": 3
+          },
+          "pred": {
+            "action": null,
+            "ref": null
+          },
+          "conf": null,
+          "hit_full": false,
+          "hit_action": false,
+          "hit_ref": false,
+          "topk": false,
+          "latency_ms": 1928
+        }
+      ]
+    }
+  }
+}

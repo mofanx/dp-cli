@@ -172,6 +172,18 @@ def _exec_line(line: str, session: str) -> None:
     try:
         code, result = _invoke(argv)
         _write_out(json.dumps(result, ensure_ascii=False))
+        if code == 0:
+            from dp_cli.decide_train import record
+            if cmd == 'decide' and len(argv) > 1:
+                # decide 刚重拍快照——用 session 落盘的 refs 而非
+                # _REF_CACHE（可能滞后）；goal+引擎 pick 落盘为
+                # 弱标注样本（export 侧 src='decide'）
+                from dp_cli.session import load_refs
+                record(session or 'default', argv,
+                       load_refs(session or 'default') or _REF_CACHE,
+                       goal=argv[1], chosen_ref=result.get('ref'))
+            else:
+                record(session or 'default', argv, _REF_CACHE)
         _refresh_refs(cmd, session)
     except KeyboardInterrupt:
         _write_err('（已中断）\n')
@@ -360,6 +372,15 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         _sig.setitimer(_sig.ITIMER_REAL, 0)
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
+        if code == 0:
+            from dp_cli.decide_train import record
+            if argv[0] == 'decide' and len(argv) > 1:
+                from dp_cli.session import load_refs
+                record(session or 'default', argv,
+                       load_refs(session or 'default') or _REF_CACHE,
+                       goal=argv[1], chosen_ref=result.get('ref'))
+            else:
+                record(session or 'default', argv, _REF_CACHE)
         _maybe_arm_netlog()
 
 

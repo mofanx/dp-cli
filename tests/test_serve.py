@@ -378,3 +378,48 @@ def test_write_err_tty_vs_pipe(monkeypatch):
     monkeypatch.setattr(_s, 'stderr', pipe)
     _write_err('警告中文\n')   # GBK locale 下 text 层会炸，字节写不炸
     assert '警告中文'.encode('utf-8') in pipe.buffer.getvalue()
+
+
+@pytest.mark.unit
+def test_decide_train_record_and_export(tmp_path, monkeypatch):
+    """录制管线：env 门控+落盘格式+export pos/neg 对。"""
+    import dp_cli.decide_train as dt
+    f = tmp_path / 'decide_train.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+
+    monkeypatch.delenv('DPX_RECORD_DECIDE', raising=False)
+    dt.record('s', ['click', '@e2'], {'1': {'role': 'button', 'name': 'x'}})
+    assert not f.exists()                       # 默认不录（隐私面）
+
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    refs = {'1': {'role': 'button', 'name': '取消'},
+            '2': {'role': 'button', 'name': '确定'}}
+    dt.record('s', ['click', '@e2'], refs)
+    dt.record('s', ['ping'], refs)              # skip 集不落盘
+    import json
+    lines = f.read_text().strip().split('\n')
+    assert len(lines) == 1
+    d = json.loads(lines[0])
+    assert d['chosen'] == 'click @e2' and len(d['state']['refs']) == 2
+
+    pairs = dt.export_pairs(f)
+    assert len(pairs) == 1
+    assert pairs[0]['positive'] == 'button 确定'
+    assert pairs[0]['negatives'] == ['button 取消']
+    # query 对齐推理分布——元素 name 代理 goal，非命令串、无 @eN 噪声
+    assert pairs[0]['query'] == '确定'
+    assert '@e' not in pairs[0]['query']
+    assert pairs[0]['src'] == 'command'
+
+    # decide 路径——goal 落盘为 query，chosen_ref 作弱标注正例
+    dt.record('s', ['decide', '点确定'], refs,
+              goal='点确定', chosen_ref=2)
+    pairs = dt.export_pairs(f)
+    assert len(pairs) == 2
+    assert pairs[1]['query'] == '点确定'
+    assert pairs[1]['positive'] == 'button 确定'
+    assert pairs[1]['src'] == 'decide'
+
+    # 无 @eN 的命令不成对
+    dt.record('s', ['open', 'https://x'], refs)
+    assert len(dt.export_pairs(f)) == 2

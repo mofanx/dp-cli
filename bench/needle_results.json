@@ -1,0 +1,950 @@
+{
+  "engine": "needle3 (cactus-needle, local)",
+  "n_cases": 42,
+  "accuracy_full": 0.0952,
+  "accuracy_action": 0.0952,
+  "accuracy_ref": 0.3095,
+  "topk_recall": 0.381,
+  "latency_ms": {
+    "p50": 273,
+    "p95": 424
+  },
+  "confidence_calibration": [
+    {
+      "th": 0.3,
+      "n": 5,
+      "acc": 0.2
+    },
+    {
+      "th": 0.5,
+      "n": 2,
+      "acc": 0.5
+    }
+  ],
+  "correct_conf": 0.2611,
+  "wrong_conf": 0.1318,
+  "baseline_julia1": {
+    "accuracy_full": 0.6,
+    "topk_recall": 1.0
+  },
+  "rows": [
+    {
+      "id": "c01",
+      "goal": "点登录",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.1436
+      },
+      "candidates": [
+        "('click', 2)",
+        "('done', None)"
+      ],
+      "hit_full": true,
+      "hit_action": true,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 242
+    },
+    {
+      "id": "c02",
+      "goal": "click the submit button",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0697
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 241
+    },
+    {
+      "id": "c03",
+      "goal": "打开“更多”菜单",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0756
+      },
+      "candidates": [
+        "('done', None)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 310
+    },
+    {
+      "id": "c04",
+      "goal": "close the cookie banner",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0717
+      },
+      "candidates": [
+        "('done', None)",
+        "('type', 2)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 207
+    },
+    {
+      "id": "c05",
+      "goal": "进入设置页",
+      "expect": {
+        "action": "click",
+        "ref": 6
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.1584
+      },
+      "candidates": [
+        "('click', 6)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 282
+    },
+    {
+      "id": "t01",
+      "goal": "搜索 Python",
+      "expect": {
+        "action": "type",
+        "ref": 3
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.1292
+      },
+      "candidates": [
+        "('scroll_up', None)",
+        "('type', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 242
+    },
+    {
+      "id": "t02",
+      "goal": "fill in the email field",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0354
+      },
+      "candidates": [
+        "('click', 4)",
+        "('scroll_up', None)",
+        "('type', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 281
+    },
+    {
+      "id": "t03",
+      "goal": "在数量框输入 2",
+      "expect": {
+        "action": "type",
+        "ref": 4
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0994
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 253
+    },
+    {
+      "id": "t04",
+      "goal": "enter city name Shanghai",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "pred": {
+        "action": "click",
+        "ref": 3,
+        "confidence": 0.104
+      },
+      "candidates": [
+        "('click', 3)",
+        "('done', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 346
+    },
+    {
+      "id": "s01",
+      "goal": "选择排序方式为最新",
+      "expect": {
+        "action": "select",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0335
+      },
+      "candidates": [
+        "('click', 3)",
+        "('select', 2)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 369
+    },
+    {
+      "id": "s02",
+      "goal": "pick country from dropdown",
+      "expect": {
+        "action": "select",
+        "ref": 3
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0473
+      },
+      "candidates": [
+        "('scroll_up', None)",
+        "('select', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 231
+    },
+    {
+      "id": "sc01",
+      "goal": "找到并点击“加入我们”链接（页底）",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0443
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": false,
+      "latency_ms": 614
+    },
+    {
+      "id": "sc02",
+      "goal": "see more reviews below",
+      "expect": {
+        "action": "scroll_down",
+        "ref": null
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0688
+      },
+      "candidates": [
+        "('done', None)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": false,
+      "latency_ms": 226
+    },
+    {
+      "id": "sc03",
+      "goal": "回到页面顶部的导航栏",
+      "expect": {
+        "action": "scroll_up",
+        "ref": null
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0555
+      },
+      "candidates": [
+        "('click', 3)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 424
+    },
+    {
+      "id": "b01",
+      "goal": "返回上一页",
+      "expect": {
+        "action": "back",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.1838
+      },
+      "candidates": [
+        "('done', None)",
+        "('scroll_down', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": false,
+      "latency_ms": 261
+    },
+    {
+      "id": "w01",
+      "goal": "等待页面加载完成",
+      "expect": {
+        "action": "wait",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.1349
+      },
+      "candidates": [
+        "('scroll_down', None)",
+        "('wait', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 304
+    },
+    {
+      "id": "d01",
+      "goal": "登录到账户（已显示“欢迎回来”）",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "done",
+        "ref": null,
+        "confidence": 0.6086
+      },
+      "candidates": [
+        "('done', None)"
+      ],
+      "hit_full": true,
+      "hit_action": true,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 353
+    },
+    {
+      "id": "d02",
+      "goal": "verify search results for Python are shown",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0296
+      },
+      "candidates": [
+        "('click', 2)",
+        "('done', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 270
+    },
+    {
+      "id": "d03",
+      "goal": "确认订单已提交成功",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.1811
+      },
+      "candidates": [
+        "('click', 2)",
+        "('scroll_down', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": false,
+      "latency_ms": 335
+    },
+    {
+      "id": "x01",
+      "goal": "继续浏览商品（出现验证码弹窗）",
+      "expect": {
+        "action": "blocked",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.517
+      },
+      "candidates": [
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": false,
+      "latency_ms": 273
+    },
+    {
+      "id": "a01",
+      "goal": "点击“保存”按钮",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.092
+      },
+      "candidates": [
+        "('done', None)",
+        "('scroll_down', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 336
+    },
+    {
+      "id": "a02",
+      "goal": "open the second article \"Market Update\"",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0563
+      },
+      "candidates": [
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 215
+    },
+    {
+      "id": "a03",
+      "goal": "勾选“记住我”复选框",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.1631
+      },
+      "candidates": [
+        "('blocked', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 302
+    },
+    {
+      "id": "a04",
+      "goal": "switch to the \"Images\" tab",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0603
+      },
+      "candidates": [
+        "('click', 2)",
+        "('click', 3)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 272
+    },
+    {
+      "id": "l01",
+      "goal": "click \"导出数据\"",
+      "expect": {
+        "action": "click",
+        "ref": 12
+      },
+      "pred": {
+        "action": "done",
+        "ref": null,
+        "confidence": 0.2553
+      },
+      "candidates": [
+        "('done', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 212
+    },
+    {
+      "id": "l02",
+      "goal": "select the \"December\" option",
+      "expect": {
+        "action": "select",
+        "ref": 8
+      },
+      "pred": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.1861
+      },
+      "candidates": [
+        "('blocked', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 201
+    },
+    {
+      "id": "l03",
+      "goal": "点第 18 项“下载全部”",
+      "expect": {
+        "action": "click",
+        "ref": 18
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.3124
+      },
+      "candidates": [
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 228
+    },
+    {
+      "id": "m01",
+      "goal": "click 提交 to send the form",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.1204
+      },
+      "candidates": [
+        "('done', None)",
+        "('scroll_up', None)",
+        "('type', 2)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 273
+    },
+    {
+      "id": "m02",
+      "goal": "拒绝个性化推荐弹窗",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0478
+      },
+      "candidates": [
+        "('scroll_down', None)",
+        "('wait', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 392
+    },
+    {
+      "id": "m03",
+      "goal": "play the video",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0983
+      },
+      "candidates": [
+        "('blocked', None)",
+        "('click', 2)",
+        "('done', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 259
+    },
+    {
+      "id": "m04",
+      "goal": "展开“高级选项”折叠面板",
+      "expect": {
+        "action": "click",
+        "ref": 5
+      },
+      "pred": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.348
+      },
+      "candidates": [
+        "('blocked', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 293
+    },
+    {
+      "id": "e01",
+      "goal": "登录账户（页面仍显示登录表单）",
+      "expect": {
+        "action": "type",
+        "ref": 1
+      },
+      "pred": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.3774
+      },
+      "candidates": [
+        "('blocked', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 396
+    },
+    {
+      "id": "e02",
+      "goal": "退出登录",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": "click",
+        "ref": 2,
+        "confidence": 0.1556
+      },
+      "candidates": [
+        "('click', 2)",
+        "('done', None)"
+      ],
+      "hit_full": true,
+      "hit_action": true,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 236
+    },
+    {
+      "id": "e03",
+      "goal": "click the disabled \"下一步\" button",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0423
+      },
+      "candidates": [
+        "('blocked', None)",
+        "('click', 2)",
+        "('done', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 433
+    },
+    {
+      "id": "c06",
+      "goal": "add the item to wishlist",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0907
+      },
+      "candidates": [
+        "('click', 2)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 223
+    },
+    {
+      "id": "c07",
+      "goal": "下载 PDF 报告",
+      "expect": {
+        "action": "click",
+        "ref": 4
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.1464
+      },
+      "candidates": [
+        "('click', 3)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 253
+    },
+    {
+      "id": "t05",
+      "goal": "type a comment in the reply box",
+      "expect": {
+        "action": "type",
+        "ref": 5
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0472
+      },
+      "candidates": [
+        "('click', 3)",
+        "('done', None)",
+        "('type', 5)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 242
+    },
+    {
+      "id": "c08",
+      "goal": "click radio option \"Express shipping\"",
+      "expect": {
+        "action": "click",
+        "ref": 2
+      },
+      "pred": {
+        "action": null,
+        "ref": null,
+        "confidence": 0.0539
+      },
+      "candidates": [
+        "('click', 2)",
+        "('done', None)",
+        "('scroll_up', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": true,
+      "latency_ms": 289
+    },
+    {
+      "id": "c09",
+      "goal": "点“确定”关闭对话框",
+      "expect": {
+        "action": "click",
+        "ref": 1
+      },
+      "pred": {
+        "action": "blocked",
+        "ref": null,
+        "confidence": 0.2609
+      },
+      "candidates": [
+        "('blocked', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 213
+    },
+    {
+      "id": "t06",
+      "goal": "search flights to Tokyo",
+      "expect": {
+        "action": "type",
+        "ref": 2
+      },
+      "pred": {
+        "action": "type",
+        "ref": 2,
+        "confidence": 0.1367
+      },
+      "candidates": [
+        "('done', None)",
+        "('type', 2)"
+      ],
+      "hit_full": true,
+      "hit_action": true,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 226
+    },
+    {
+      "id": "d04",
+      "goal": "确认文件已上传完成",
+      "expect": {
+        "action": "done",
+        "ref": null
+      },
+      "pred": {
+        "action": "scroll_down",
+        "ref": null,
+        "confidence": 0.1007
+      },
+      "candidates": [
+        "('click', 2)",
+        "('done', None)",
+        "('scroll_down', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": true,
+      "topk": true,
+      "latency_ms": 409
+    },
+    {
+      "id": "c10",
+      "goal": "展开回复线程查看全部回复",
+      "expect": {
+        "action": "click",
+        "ref": 3
+      },
+      "pred": {
+        "action": "scroll_up",
+        "ref": null,
+        "confidence": 0.11
+      },
+      "candidates": [
+        "('scroll_up', None)",
+        "('wait', None)"
+      ],
+      "hit_full": false,
+      "hit_action": false,
+      "hit_ref": false,
+      "topk": false,
+      "latency_ms": 385
+    }
+  ]
+}

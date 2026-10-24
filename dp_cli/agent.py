@@ -426,3 +426,26 @@ def register(cli):
             sess['agent_julia_cmd'] = cmd
         save_session(session, sess)
         ok({'engine': eng, 'cmd': cmd}, msg='引擎已注册')
+
+    @cli.command('decide-train-export')
+    @click.option('-o', '--output', 'out', default=None,
+                  help='导出路径（默认 stdout）')
+    def decide_train_export(out):
+        """导出录制数据为 CrossEncoder 训练集（query/positive/negatives）。
+
+        数据源：~/.dp_cli/decide_train.jsonl（DPX_RECORD_DECIDE=1 录制）。
+        """
+        from dp_cli.decide_train import export_pairs, _file
+        rows = export_pairs()
+        if not rows:
+            error('无可用训练对——先 DPX_RECORD_DECIDE=1 录制交互',
+                  code='NO_DATA',
+                  detail=str(_file()))
+            return
+        payload = json.dumps(rows, ensure_ascii=False, indent=2)
+        if out:
+            Path(out).write_text(payload, encoding='utf-8')
+            ok({'pairs': len(rows), 'output': out},
+               msg=f'{len(rows)} 条训练对已导出')
+        else:
+            click.echo(payload)

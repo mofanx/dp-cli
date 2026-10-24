@@ -19,3 +19,11 @@
 ## 门禁
 
 `eval_decide.py` 输出 ADVISORY/AUTONOMOUS（85% 线）。当前全部模型 ADVISORY。
+
+## 口径勘误（t3）
+
+- 上轮「采集增益 meta +28.6pp」口径修正：meta 桶 n=7，±14.3pp/case，
+  +28.6pp 仅为 2 个 case 翻转——方向可信幅度不可信，需 meta 扩桶复核。
+- 净化复核：v1/v2/v3 过 `check_leakage` 均 0 命中（query 级）；v4 由
+  `merge_train.py` 守卫化 merge 重建（剔除 1 条 goal 撞车行）——
+  数据从源头到 merge 全链路有守卫。

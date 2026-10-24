@@ -1,0 +1,21 @@
+# bench/ — decide 引擎评测与训练管线（实验产物）
+
+## 文件
+
+- `eval_cases.py` — **隔离 eval 集**（n=38，原 holdout 8+新造 30；永不入 train）
+- `eval_decide.py` — 评测入口，`python bench/eval_decide.py [model]`，分桶 elem/meta
+- `train_reranker.py` — CrossEncoder 微调入口；**含泄漏守卫**（train query 命中 eval goal 即拒训）
+- `collect_sites.py` — 静态采集器（fixture HTML→样本 jsonl）
+- `bench_*.py`/`results.json` — 各引擎实测数据
+
+## 数据纪律
+
+- eval 与 train 来源级隔离；`check_leakage()` 在训练入口强制
+- `collected_train.jsonl` 首采 4 行=fixture 小集跑通验证，**非产量**；
+  放量需真实 URL 集或多 fixture
+- 历史口径修正：旧 n=8 holdout ±12.5pp/case 噪声不可信；
+  bge zero-shot 新口径基线 **73.7%**（elem 77.4%/meta 57.1%）
+
+## 门禁
+
+`eval_decide.py` 输出 ADVISORY/AUTONOMOUS（85% 线）。当前全部模型 ADVISORY。

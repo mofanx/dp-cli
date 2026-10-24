@@ -147,7 +147,54 @@ def _engine_julia(request, session):
         return {'_error': f'julia1 调用失败: {e}'}
 
 
-def _engine_jev(request):
+_RERANKER = None           # 惰性单例——首次调用才加载模型
+
+
+def _reranker_model():
+    """加载 reranker（可选依赖；微调模型优先于 zero-shot 基座）。"""
+    global _RERANKER
+    if _RERANKER is not None:
+        return _RERANKER
+    tuned = Path.home() / '.dp_cli' / 'decide_model'
+    name = str(tuned) if (tuned / 'config.json').exists() \
+        else 'BAAI/bge-reranker-base'
+    try:
+        from sentence_transformers import CrossEncoder
+    except ImportError:
+        return {'_error': '缺 sentence-transformers——'
+                '`pip install dp-cli[agent]`'}
+    _RERANKER = CrossEncoder(name, max_length=512)
+    return _RERANKER
+
+
+def _engine_reranker(state, goal):
+    """bge-reranker advisory——goal↔候选打分取 argmax。
+
+    advisory-only：只产出建议+conf，绝不执行（执行权在上层/用户）。
+    无 probs 的 done/stuck 问题不外包给模型——由确定性信号兜底。
+    """
+    m = _reranker_model()
+    if isinstance(m, dict):
+        return m
+    opts = state['options']
+    if not opts:
+        return {'_error': '无可选候选'}
+    import math
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    scores = m.predict([[goal, t] for t in texts])
+    mx = max(float(s) for s in scores)
+    probs = [math.exp(float(s) - mx) for s in scores]
+    tot = sum(probs)
+    ranked = sorted(zip([o['ref'] for o in opts], probs), key=lambda x: -x[1])
+    top_ref, top_p = ranked[0][0], ranked[0][1] / tot
+    return {'target': top_ref,
+            'probs': {'target': {str(k): round(v / tot, 4)
+                                 for k, v in ranked}},
+            'confidence': round(top_p, 4),
+            'done': False, 'stuck': False}
+
+
+
     """TypeSafe Jev API——TYPESAFE_API_KEY。"""
     key = os.environ.get('TYPESAFE_API_KEY')
     if not key:
@@ -233,6 +280,17 @@ def _ask_questions(state, goal, engine, session, answer, answer_file):
         return _engine_external(request, answer, answer_file), request
     if engine == 'jev':
         return _engine_jev(request), request
+    if engine == 'reranker':
+        resp = _engine_reranker(state, goal)
+        if 'action' not in resp and 'target' in resp:
+            try:
+                t = int(resp['target'])
+            except (TypeError, ValueError):
+                t = -1
+            role = next((o['role'] for o in state['options']
+                         if o['ref'] == t), '')
+            resp['action'] = _ROLE_ACTION.get(role, 'click')
+        return resp, request
     return {'_error': f'未知引擎: {engine}'}, request
 
 
@@ -272,7 +330,7 @@ def register(cli):
     @click.argument('goal')
     @session_option
     @click.option('--engine',
-                  type=click.Choice(['external', 'julia', 'jev']),
+                  type=click.Choice(['external', 'julia', 'jev', 'reranker']),
                   default=None, help='决策引擎（默认=已 setup 的）')
     @click.option('--answer', default=None,
                   help='external 引擎内联答复 JSON')
@@ -361,6 +419,8 @@ def register(cli):
             'options_count': len(state['options']),
             'truncated': state['truncated'], 'engine': eng,
         }
+        if eng == 'reranker':
+            result['advisory'] = True   # 只建议不执行——契约写入响应
         # TYPE 动作只回 ref——value 由上层补
         if action in ('type', 'type_text', 'fill'):
             result['needs_value'] = True
@@ -393,7 +453,7 @@ def register(cli):
     @cli.command('agent-setup')
     @session_option
     @click.option('--engine', 'eng',
-                  type=click.Choice(['julia', 'jev', 'external']),
+                  type=click.Choice(['julia', 'jev', 'external', 'reranker']),
                   required=True, help='注册的默认引擎')
     @click.option('--cmd', default=None,
                   help='julia1 二进制路径（engine=julia 时必填）')

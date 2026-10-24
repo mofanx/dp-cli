@@ -39,6 +39,25 @@ def smoke_pairs():
     return pairs
 
 
+def check_leakage(pairs):
+    """训练 query 与 eval 集 goal 做精确+子串重叠检测——命中即拒绝。
+
+    纪律：eval_cases.EVAL_CASES 是隔离集，train 数据不得含其 query
+    （同字面或互为子串）。返回 (clean, hits)。
+    """
+    sys.path.insert(0, str(Path(__file__).parent))
+    from eval_cases import EVAL_CASES
+    eval_goals = {c['goal'].strip() for c in EVAL_CASES}
+    hits = []
+    for q, _, _ in pairs:
+        qs = q.strip()
+        for g in eval_goals:
+            if qs == g or (len(qs) > 4 and (qs in g or g in qs)):
+                hits.append((qs, g))
+                break
+    return hits
+
+
 def main():
     smoke = '--smoke' in sys.argv
     src = next((a for a in sys.argv[1:] if not a.startswith('--')), None)
@@ -57,6 +76,11 @@ def main():
         else:
             print('无训练数据——先 DPX_RECORD_DECIDE=1 录制或 --smoke')
             return
+    hits = check_leakage(pairs)
+    if hits:
+        print(f'泄漏拒绝：{len(hits)} 条训练 query 命中 eval 集——'
+              f'{hits[:3]}。eval 集数据永不入训练。')
+        sys.exit(2)
     if len(pairs) < 10:
         print(f'数据不足（{len(pairs)}<10 对）——继续录制后再训')
         return

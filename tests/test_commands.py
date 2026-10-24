@@ -4477,3 +4477,34 @@ def test_daemon_ready_ttl_cache(tmp_path, monkeypatch):
     dm._READY_CACHE['c'] = (dm.time.monotonic() - 3, True)
     assert dm._daemon_ready('c') is True
     assert len(calls) == 2
+
+
+def test_engine_reranker_advisory(monkeypatch):
+    """reranker 引擎——mock CrossEncoder 验证打分→target+probs+conf。"""
+    import dp_cli.agent as agent
+
+    class FakeCE:
+        def predict(self, pairs):
+            # goal 含「登录」→ ref2(登录按钮) 分数最高
+            return [0.1 if '首页' in p[1] else 9.0 if '登录' in p[1]
+                    else 0.2 for p in pairs]
+    monkeypatch.setattr(agent, '_RERANKER', FakeCE())
+    state = {'options': [{'ref': 1, 'role': 'link', 'name': '首页'},
+                         {'ref': 2, 'role': 'button', 'name': '登录'}]}
+    resp = agent._engine_reranker(state, '点登录')
+    assert resp['target'] == 2
+    assert resp['confidence'] > 0.9
+    assert resp['probs']['target']['2'] > resp['probs']['target']['1']
+    agent._RERANKER = None
+
+
+def test_engine_reranker_missing_dep(monkeypatch):
+    """缺 sentence-transformers 时优雅降级（结构化错误非崩溃）。"""
+    import sys
+    import dp_cli.agent as agent
+    monkeypatch.setattr(agent, '_RERANKER', None)
+    monkeypatch.setitem(sys.modules, 'sentence_transformers', None)
+    resp = agent._engine_reranker({'options': [{'ref': 1, 'role': 'button',
+                                              'name': 'x'}]}, 'goal')
+    assert '_error' in resp and 'agent]' in resp['_error']
+    agent._RERANKER = None

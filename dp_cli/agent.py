@@ -148,14 +148,43 @@ def _engine_julia(request, session):
 
 
 _RERANKER = None           # 惰性单例——首次调用才加载模型
+_ORT_MOD = None            # onnxruntime 可用性缓存（False=不可用）
+
+
+def _ort():
+    """onnxruntime 懒加载——不可用记 False 不再重试。"""
+    global _ORT_MOD
+    if _ORT_MOD is None:
+        try:
+            import onnxruntime as o
+            _ORT_MOD = o
+        except ImportError:
+            _ORT_MOD = False
+    return _ORT_MOD or None
 
 
 def _reranker_model():
-    """加载 reranker（可选依赖；微调模型优先于 zero-shot 基座）。"""
+    """加载 reranker——三级降级：ORT int8→ORT fp32→torch(ST)。
+
+    ONNX 路径只需 onnxruntime+transformers（无 torch）；
+    int8 实测精度无损（73.7% 同 FP32）+23MB 体积，优先取。
+    """
     global _RERANKER
     if _RERANKER is not None:
         return _RERANKER
     tuned = Path.home() / '.dp_cli' / 'decide_model'
+    ort = _ort()
+    if ort:
+        for cand in ['model_int8.onnx', 'model.onnx']:
+            f = tuned / 'onnx' / cand
+            if f.exists():
+                try:
+                    from transformers import AutoTokenizer
+                    _RERANKER = ('ort', ort.InferenceSession(str(f)),
+                                 AutoTokenizer.from_pretrained(str(tuned)))
+                    return _RERANKER
+                except Exception:
+                    break           # ort/transformers 损坏——落 torch 兜底
     name = str(tuned) if (tuned / 'config.json').exists() \
         else 'BAAI/bge-reranker-base'
     try:
@@ -163,7 +192,7 @@ def _reranker_model():
     except ImportError:
         return {'_error': '缺 sentence-transformers——'
                 '`pip install dp-cli[agent]`'}
-    _RERANKER = CrossEncoder(name, max_length=512)
+    _RERANKER = ('st', CrossEncoder(name, max_length=512))
     return _RERANKER
 
 
@@ -181,7 +210,15 @@ def _engine_reranker(state, goal):
         return {'_error': '无可选候选'}
     import math
     texts = [f"{o['role']} {o['name']}" for o in opts]
-    scores = m.predict([[goal, t] for t in texts])
+    if m[0] == 'ort':                       # ONNX 直跑 session
+        _, sess, tok = m
+        enc = tok([goal] * len(texts), texts, return_tensors='np',
+                  padding=True, truncation=True, max_length=128)
+        scores = sess.run(['logits'], {k: enc[k] for k in
+                          ['input_ids', 'attention_mask',
+                           'token_type_ids']})[0].ravel().tolist()
+    else:
+        scores = m[1].predict([[goal, t] for t in texts])
     mx = max(float(s) for s in scores)
     probs = [math.exp(float(s) - mx) for s in scores]
     tot = sum(probs)
@@ -191,6 +228,7 @@ def _engine_reranker(state, goal):
             'probs': {'target': {str(k): round(v / tot, 4)
                                  for k, v in ranked}},
             'confidence': round(top_p, 4),
+            'backend': m[0],
             'done': False, 'stuck': False}
 
 

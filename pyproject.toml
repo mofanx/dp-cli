@@ -39,6 +39,7 @@ repl = [
 agent = [
     "sentence-transformers>=3.0",
     "torch>=2.2",
+    "onnxruntime>=1.17",
 ]
 test = [
     "pytest>=7.4.0",

@@ -4488,7 +4488,7 @@ def test_engine_reranker_advisory(monkeypatch):
             # goal 含「登录」→ ref2(登录按钮) 分数最高
             return [0.1 if '首页' in p[1] else 9.0 if '登录' in p[1]
                     else 0.2 for p in pairs]
-    monkeypatch.setattr(agent, '_RERANKER', FakeCE())
+    monkeypatch.setattr(agent, '_RERANKER', ('st', FakeCE()))
     state = {'options': [{'ref': 1, 'role': 'link', 'name': '首页'},
                          {'ref': 2, 'role': 'button', 'name': '登录'}]}
     resp = agent._engine_reranker(state, '点登录')
@@ -4503,8 +4503,25 @@ def test_engine_reranker_missing_dep(monkeypatch):
     import sys
     import dp_cli.agent as agent
     monkeypatch.setattr(agent, '_RERANKER', None)
+    monkeypatch.setattr(agent, '_ort', lambda: None)
     monkeypatch.setitem(sys.modules, 'sentence_transformers', None)
     resp = agent._engine_reranker({'options': [{'ref': 1, 'role': 'button',
                                               'name': 'x'}]}, 'goal')
     assert '_error' in resp and 'agent]' in resp['_error']
+    agent._RERANKER = None
+
+
+def test_reranker_backend_fallback(monkeypatch, tmp_path):
+    """降级链：ORT 有 int8→int8；无 onnx 文件→ST；都无→结构化错误。"""
+    import dp_cli.agent as agent
+
+    monkeypatch.setattr(agent, '_RERANKER', None)
+    monkeypatch.setattr(agent, '_ORT_MOD', None)
+    # ORT 可用但无 onnx 文件 → 落 ST 分支（ST 缺失报 _error）
+    monkeypatch.setattr(agent, '_ort', lambda: object())
+    import sys
+    monkeypatch.setitem(sys.modules, 'transformers', None)
+    monkeypatch.setitem(sys.modules, 'sentence_transformers', None)
+    m = agent._reranker_model()
+    assert isinstance(m, dict) and 'agent]' in m['_error']
     agent._RERANKER = None

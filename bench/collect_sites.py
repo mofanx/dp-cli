@@ -68,9 +68,8 @@ def collect(path: Path) -> list:
                      'goal': tmpl.format(name=e['name']),
                      'state': {'refs': refs},
                      'chosen_ref': refs[p.elems.index(e)]['ref']})
-    # meta 决策类样本——每页追加（元决策是塌陷桶，需显式覆盖）
-    meta_rows = _meta_samples(path.name, refs, p)
-    rows += meta_rows
+    # meta 决策类样本已停用——v6 实证毒化（44% 占比→elem 回退）；
+    # meta 归 _meta_decide 规则层，不喂排序模型（bench/README 登记）
     return rows
 
 
@@ -82,7 +81,7 @@ _META_SCROLL = ['向下滚动查看更多内容', '向上滚动回到顶部',
                 '滚动浏览页面下方的选项']
 
 
-def _meta_samples(page, refs, parser):
+def _meta_samples_disabled(page, refs, parser):
     """meta 决策类样本——goal 描述意图，chosen_ref=None 对应动作伪候选。
 
     eval/train 侧把 scroll/back/wait/done/blocked 作为伪候选参与排序；

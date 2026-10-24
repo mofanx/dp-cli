@@ -27,3 +27,12 @@
 - 净化复核：v1/v2/v3 过 `check_leakage` 均 0 命中（query 级）；v4 由
   `merge_train.py` 守卫化 merge 重建（剔除 1 条 goal 撞车行）——
   数据从源头到 merge 全链路有守卫。
+
+## 阴性结果沉淀（数据纪律）
+
+- **合成改写增广无效**：1420 对变体 vs 355 对——holdout 75% 纹丝不动；
+  同分布重复曝光不扩泛化。
+- **meta 伪样本毒化**：v6 混入 44% meta pair→elem 桶被稀释回退
+  （64.5→61.3）；v7 剔净后 **elem 回升 61.3→71.0%（最高）**。
+- **判定**：训练集只收真实 elem 样本；meta 类决策永远归 `_meta_decide`
+  规则层（85.7%），不喂排序模型。collect_sites `_meta_samples` 已停用。

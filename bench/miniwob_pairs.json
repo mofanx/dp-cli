@@ -1,0 +1,1 @@
+[{"query": "Click button ONE, then click button TWO.", "positive": "button ONE", "negatives": ["button TWO"], "src": "miniwob"}, {"query": "Click button ONE, then click button TWO.", "positive": "button ONE", "negatives": ["button TWO"], "src": "miniwob"}, {"query": "Click button ONE.", "positive": "button ONE", "negatives": ["button TWO"], "src": "miniwob"}]

@@ -644,3 +644,27 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 - **`@eN` 是 locator 映射不是句柄**——DOM 重渲染后同 `@e3` 可能指不同元素；meta 不做正确性担保，执行端以当前 DOM 为准。
 - **隐式 role 推断**——`<button>`→button、`<a href>`→link、`<input type=text>`→textbox 等；自定义组件/无 a11y 属性元素 meta 可能为空，此时用 css/xpath 兜底。
 - **观测面边界**——meta 只反映 DOM 快照，不含样式/网络层变化。
+
+## 新特性速查（0.15.11）
+
+### 本地决策引擎（advisory-only 纪律）
+
+```bash
+pip install "dp-cli[agent]"          # +onnxruntime ~100MB（ONNX 后端）
+dpx decide "点登录" --engine reranker # goal↔候选打分→ref+conf
+```
+
+- **advisory-only**：`advisory:true` 写进响应——只建议，永远不自动执行；
+  执行权在调用方/用户，勿把 `ref` 当指令直接喂 click。
+- meta 决策（done/scroll/back/wait/blocked）走确定性规则层
+  `deterministic:true`——不经模型。
+- 三级降级：INT8 ONNX→FP32 ONNX→torch；无 `[agent]` 时结构化错误提示。
+
+### 录制管线（自助攒训练数据）
+
+```bash
+DPX_RECORD_DECIDE=1 dpx sh   # 会话内操作落盘 ~/.dp_cli/decide_train.jsonl
+dpx decide-train-export      # → reranker 训练 pos/neg 对（opt-in，默认关）
+```
+
+录制 append-only 不落隐私字段；`src` 标强弱标签（command 强/decide 弱）。

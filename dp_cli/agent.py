@@ -259,7 +259,8 @@ _ROLE_ACTION = {'textbox': 'type', 'combobox': 'type', 'searchbox': 'type',
 _DONE_GOAL = ('已完成', '完成', '确认', '验证', '成功', '检查', 'verify',
               'confirm', 'complete', 'done', 'shown')
 _DONE_STATE = ('成功', '完成', 'welcome', '欢迎', 'results', '结果',
-               'thank', 'success', 'complete', 'ok')
+               'thank', 'success', 'complete', 'ok', '登出', '退出',
+               'logged out', 'signed out', 'thank you')
 _BLOCKED_KW = ('验证码', '人机', '机器人', 'captcha', 'verify you are',
                'robot', '安全验证', '盾')
 _BACK_KW = ('返回', '上一页', '后退', 'back', 'previous')

@@ -2,6 +2,37 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.11] - 2026-10-23
+
+### 新增
+
+- **`decide --engine reranker` 本地语义引擎（`[agent]` extra）**：bge-reranker/MiniLM
+  CrossEncoder 对 goal↔候选打分出 ref+conf——首个不接外部 LLM 即可用的决策引擎。
+  三级降级链：ONNX INT8（23MB）→ONNX FP32→torch；无 onnxruntime 时自动落 torch。
+  `advisory:true` 契约写入响应——只建议不执行。
+- **decide meta 规则层**：done/blocked/back/wait/scroll 元决策走 `_meta_decide`
+  确定性判定（关键词+状态信号）短路模型——实测 meta 桶 42.9%→85.7%（6/7），
+  `deterministic:true` 标注。
+- **录制管线（opt-in）**：`DPX_RECORD_DECIDE=1` 时 serve/sh 自动落盘
+  `{goal, state.refs, chosen_ref}` 到 `~/.dp_cli/decide_train.jsonl`——用户
+  真实操作即标注数据；`decide-train-export` 导出 reranker 训练 pos/neg 对。
+  append-only、不落隐私字段、OSError 静默不阻塞。
+- **`decide-train-export` 命令**：录制日志→CrossEncoder 训练对
+  （query=goal/元素名、src=command|decide|meta 标注强弱标签）。
+
+### 改进
+
+- `[agent]` extra 仅 +onnxruntime（~100MB）即可跑 ONNX 后端——不装时
+  结构化降级提示，瘦入口不变。
+- 训练/评测基建（bench/）：守卫化 merge（泄漏双检）、disjoint eval 集、
+  分桶报告、静态采集器——实验性，不进默认运行时。
+
+### 已知边界
+
+- reranker elem 桶准确率（微调模型 64.5%/zero-shot bge 73.7%）未达 85%
+  autonomous 门禁——定位 advisory，不自动执行。
+- meta 规则层靠关键词匹配，非穷尽语义（n21 已补登出词表，仍属启发式）。
+
 ## [0.15.10] - 2026-10-22
 
 ### 改进

@@ -68,6 +68,46 @@ def collect(path: Path) -> list:
                      'goal': tmpl.format(name=e['name']),
                      'state': {'refs': refs},
                      'chosen_ref': refs[p.elems.index(e)]['ref']})
+    # meta 决策类样本——每页追加（元决策是塌陷桶，需显式覆盖）
+    meta_rows = _meta_samples(path.name, refs, p)
+    rows += meta_rows
+    return rows
+
+
+_META_DONE = ['确认「{first}」已完成操作', '检查页面已加载完毕无待办',
+              '验证目标已达成，无需再操作']
+_META_BLOCKED = ['继续操作但被验证码拦截', '遇到人机验证无法继续',
+                 '被安全墙阻断，停止操作']
+_META_SCROLL = ['向下滚动查看更多内容', '向上滚动回到顶部',
+                '滚动浏览页面下方的选项']
+
+
+def _meta_samples(page, refs, parser):
+    """meta 决策类样本——goal 描述意图，chosen_ref=None 对应动作伪候选。
+
+    eval/train 侧把 scroll/back/wait/done/blocked 作为伪候选参与排序；
+    样本的 state 用同页 refs 让负例来自真实上下文。
+    """
+    rows = []
+    if not refs:
+        return rows
+    i = int(time.time())
+    for goal in _META_DONE:
+        rows.append({'ts': i, 'session': 'collect', 'src': 'collector-meta',
+                     'page': page, 'goal': goal.format(first=refs[0]['name']),
+                     'state': {'refs': refs},
+                     'chosen_ref': None, 'meta_action': 'done'})
+    for goal in _META_BLOCKED:
+        rows.append({'ts': i, 'session': 'collect', 'src': 'collector-meta',
+                     'page': page, 'goal': goal,
+                     'state': {'refs': refs},
+                     'chosen_ref': None, 'meta_action': 'blocked'})
+    for goal, act in zip(_META_SCROLL, ['scroll_down', 'scroll_up',
+                                        'scroll_down']):
+        rows.append({'ts': i, 'session': 'collect', 'src': 'collector-meta',
+                     'page': page, 'goal': goal,
+                     'state': {'refs': refs},
+                     'chosen_ref': None, 'meta_action': act})
     return rows
 
 

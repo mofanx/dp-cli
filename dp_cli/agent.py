@@ -216,6 +216,60 @@ def _engine_reranker(state, goal):
 _ROLE_ACTION = {'textbox': 'type', 'combobox': 'type', 'searchbox': 'type',
                 'spinbutton': 'type', 'listbox': 'select'}
 
+# meta 决策=状态判断非语义排序——规则判定，不外包给概率模型
+# （实测：语义学习对 done/blocked/scroll 零增益，meta 桶 42.9% 纹丝不动）
+_DONE_GOAL = ('已完成', '完成', '确认', '验证', '成功', '检查', 'verify',
+              'confirm', 'complete', 'done', 'shown')
+_DONE_STATE = ('成功', '完成', 'welcome', '欢迎', 'results', '结果',
+               'thank', 'success', 'complete', 'ok')
+_BLOCKED_KW = ('验证码', '人机', '机器人', 'captcha', 'verify you are',
+               'robot', '安全验证', '盾')
+_BACK_KW = ('返回', '上一页', '后退', 'back', 'previous')
+_WAIT_KW = ('等待', '加载', 'wait', 'load', 'settle')
+_SCROLL_UP_KW = ('顶部', '向上', 'top', 'scroll up')
+_SCROLL_KW = ('下方', '页底', '更多', '滚动', '向下', 'scroll', 'more',
+              'below', 'find', '找到', '查看全部')
+
+
+def _meta_decide(state, goal):
+    """meta 类决策确定性判定——命中返回 {action, deterministic}，否则 None。
+
+    规则（与状态信号对应）：
+      blocked  选项/title 含验证码特征词
+      done     无候选 OR（goal 含完成意图 AND title/url 含完成态词）
+      scroll   goal 含滚动/查找意图且目标名不在候选内
+    """
+    opts = state['options']
+    title = (state['state'].get('title') or '').lower()
+    g = goal.lower()
+    names = ' '.join(o['name'].lower() for o in opts)
+    if any(k in names or k in title for k in _BLOCKED_KW):
+        return {'action': 'blocked', 'deterministic': True,
+                'reason': '验证码/人机特征命中'}
+    if not opts:
+        return {'action': 'done', 'deterministic': True,
+                'reason': '无可交互候选'}
+    if any(k in g or k in goal for k in _DONE_GOAL) and \
+            any(k in title for k in _DONE_STATE):
+        return {'action': 'done', 'deterministic': True,
+                'reason': 'goal 完成意图+页面完成态'}
+    if any(k in g or k in goal for k in _BACK_KW):
+        return {'action': 'back', 'deterministic': True,
+                'reason': 'goal 含返回意图'}
+    if any(k in g or k in goal for k in _WAIT_KW):
+        return {'action': 'wait', 'deterministic': True,
+                'reason': 'goal 含等待意图'}
+    if any(k in g or k in goal for k in _SCROLL_UP_KW):
+        return {'action': 'scroll_up', 'deterministic': True,
+                'reason': 'goal 含向上滚动意图'}
+    if any(k in g or k in goal for k in _SCROLL_KW):
+        return {'action': 'scroll_down', 'deterministic': True,
+                'reason': 'goal 含向下滚动/查找意图'}
+    return None
+
+
+
+
 
 def _ask_questions(state, goal, engine, session, answer, answer_file):
     """扇出三问（action/goal done/stuck）→ 规范答复。
@@ -368,6 +422,19 @@ def register(cli):
         eng = engine or sess.get('agent_engine') or 'external'
         state = _page_state(page, session, max_opts=top_k)
         prev_sig = _state_sig(session)
+        # meta 决策确定性短路——done/blocked/scroll 走规则非模型
+        # （语义学习对状态决策零增益已实测；规则命中即出判定）
+        meta = _meta_decide(state, goal)
+        if meta:
+            cur_sig = state['epoch']
+            _record_hash(session, cur_sig)
+            ok({'action': meta['action'], 'ref': None, 'confidence': 1.0,
+                'deterministic': True, 'advisory': eng == 'reranker',
+                'reason': meta['reason'], 'epoch': cur_sig,
+                'options_count': len(state['options']),
+                'truncated': state['truncated'], 'engine': 'meta-rules',
+                'done': meta['action'] == 'done', 'stuck': False})
+            return
         # --cascade：Julia 粗筛 top-3 候选集回传上层终裁，
         # 不自动执行（top-3 召回实测 100%，top-1 仅 60%）
         if cascade:

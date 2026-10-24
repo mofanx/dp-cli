@@ -66,6 +66,18 @@ def _render(o: dict) -> str:
     return f"{o['role']} {o['name']}".strip()
 
 
+# 元决策伪候选文本——与 bench_engines._ACT_CANDS/eval 侧同文，
+# 模型学的是「goal 意图 → 动作伪候选」的排序而非元素
+_ACT_TEXT = {
+    'scroll_down': 'scroll down to reveal more content below',
+    'scroll_up': 'scroll up back to the top of the page',
+    'back': 'go back to the previous page',
+    'wait': 'wait for the page to finish loading',
+    'done': 'the goal is already complete, no action needed',
+    'blocked': 'progress is blocked by a captcha or verification wall',
+}
+
+
 def export_pairs(path: Path = None) -> list:
     """jsonl → [{query, positive, negatives[]}]
 
@@ -94,6 +106,16 @@ def export_pairs(path: Path = None) -> list:
             continue
         pos_ref = query = None
         src = 'command'
+        if d.get('meta_action'):    # 采集器 meta 样本：goal→动作伪候选
+            act = d['meta_action']
+            if act not in _ACT_TEXT:
+                continue
+            query = d.get('goal') or chosen
+            neg = [_render(o) for o in opts]
+            neg += [v for k, v in _ACT_TEXT.items() if k != act]
+            rows.append({'query': query, 'positive': _ACT_TEXT[act],
+                         'negatives': neg, 'src': 'meta'})
+            continue
         if d.get('goal'):           # decide 路径：goal=推理分布 query
             query = d['goal']
             pos_ref = d.get('chosen_ref')

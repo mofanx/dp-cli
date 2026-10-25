@@ -7,20 +7,28 @@
 import json, sys, random
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from verified_data import eligible
+
 OUT = Path.home() / '.dp_cli' / 'decide_model'
 BASE = 'cross-encoder/ms-marco-MiniLM-L6-v2'
 
 
-def load_pairs(path):
+def load_pairs(path, allow_unverified=False):
     rows = json.loads(Path(path).read_text(encoding='utf-8'))
+    invalid = [i for i, row in enumerate(rows, 1) if not eligible(row)]
+    if invalid and not allow_unverified:
+        raise ValueError(f'{len(invalid)} 行缺执行后证据，行号 {invalid[:5]}；'
+                         '旧实验须显式 --allow-unverified')
     pairs = []
     for r in rows:
         q, pos = r['query'], r['positive']
-        if pos:
-            pairs.append((q, pos, 1.0))
-        # positive=''（unsure 无正例行）只产负例——不把空串当正例训
+        if r.get('src') == 'unsure' or not q.strip() or not pos:
+            continue
+        pairs.append((q, pos, 1.0))
         for neg in r.get('negatives', []):
-            pairs.append((q, neg, 0.0))
+            if neg and neg != pos:
+                pairs.append((q, neg, 0.0))
     return pairs
 
 
@@ -70,7 +78,14 @@ def main():
     if out: OUT = Path(out)
     src = next((a for a in sys.argv[1:]
                 if not a.startswith('--')), None)
+    allow_unverified = '--allow-unverified' in sys.argv
+    if allow_unverified:
+        print('WARNING: --allow-unverified admits legacy/unverified data; '
+              'results are not clean training data')
     if distill:
+        if not allow_unverified:
+            print('蒸馏历史数据缺执行后证据；仅旧实验可显式 --allow-unverified')
+            sys.exit(2)
         # 蒸馏路径——query/positive/negative[]/label[软分] 格式，
         # MarginMSELoss 学教师 margin 非 0/1 硬标签
         rows = json.loads(Path(src).read_text(encoding='utf-8'))
@@ -98,15 +113,23 @@ def main():
     if smoke:
         pairs = smoke_pairs()
     elif src and Path(src).exists():
-        pairs = load_pairs(src)
+        try:
+            pairs = load_pairs(src, allow_unverified=allow_unverified)
+        except ValueError as e:
+            print(f'训练数据拒收: {e}')
+            sys.exit(2)
     else:
         f = Path.home() / '.dp_cli/sessions/decide_train.jsonl'
         if f.exists():
+            if not allow_unverified:
+                print('原始录制缺执行后证据；仅使用经核验的训练文件。旧实验须显式 --allow-unverified')
+                return
             sys.path.insert(0, str(Path(__file__).parent.parent))
             from dp_cli.decide_train import export_pairs
-            pairs = load_pairs('/dev/stdin') if False else [
-                (r['query'], r['positive'], 1.0)
-                for r in export_pairs(f)]
+            pairs = [(r['query'], r['positive'], 1.0)
+                     for r in export_pairs(f)
+                     if r.get('src') not in ('meta', 'synthetic', 'unsure')
+                     and r.get('positive')]
         else:
             print('无训练数据——先 DPX_RECORD_DECIDE=1 录制或 --smoke')
             return

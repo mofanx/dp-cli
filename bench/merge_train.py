@@ -5,21 +5,22 @@ import json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from eval_cases import EVAL_CASES
+from verified_data import eligible
 
 def _hit(q, goals):
     qs = q.strip()
     return any(qs == g or (len(qs) > 4 and (qs in g or g in qs))
                for g in goals)
 
-_BAD_SRC = {'meta', 'synthetic'}      # v9 毒化根因——伪 meta 样本禁入训
-
-
 def merge(paths: list[str], out: str, allow_bad_src: bool = False):
+    if allow_bad_src:
+        print('WARNING: legacy override permits all unverified sources; '
+              'results are not clean training data')
     goals = {c['goal'].strip() for c in EVAL_CASES}
     rows, dropped, skipped = [], [], []
     for p in paths:
         for r in json.load(open(p)):
-            if not allow_bad_src and r.get('src') in _BAD_SRC:
+            if not allow_bad_src and not eligible(r):
                 skipped.append(r)
             elif _hit(r['query'], goals):
                 dropped.append(r)
@@ -31,9 +32,12 @@ def merge(paths: list[str], out: str, allow_bad_src: bool = False):
     for r in dropped:
         print('  drop:', r['query'])
     if skipped:
-        print(f'  src 拒收: {len(skipped)} 行（meta/synthetic——v9 毒化纪律）')
+        print(f'  src 拒收: {len(skipped)} 行（默认仅接收有执行后证据的 '
+              f'verified_real，旧实验须显式 --allow-unverified'
+              f'（旧名 --allow-bad-src））')
 
 if __name__ == '__main__':
-    allow = '--allow-bad-src' in sys.argv
+    allow = ('--allow-unverified' in sys.argv
+             or '--allow-bad-src' in sys.argv)
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     merge(args[1:], args[0], allow_bad_src=allow)

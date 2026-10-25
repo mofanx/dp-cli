@@ -426,17 +426,179 @@ def test_decide_train_record_and_export(tmp_path, monkeypatch):
 
 
 def test_unsure_no_empty_positive(tmp_path):
-    """unsure 行 positive='' 只产负例——不产 (q,'',1.0) 污染对。"""
+    """默认门禁拒收无证据行；显式 --allow-unverified 下 src='unsure'
+    行仍整行拒训——其负例（引擎建议）也不入训。"""
     import json, sys
     sys.path.insert(0, 'bench')
     from train_reranker import load_pairs
     rows = [{'query': '点登录', 'positive': '',
-             'negatives': ['link 首页'], 'src': 'unsure'},
+             'negatives': ['link 未核验'], 'src': 'unsure'},
             {'query': '点登录', 'positive': 'button 登录',
              'negatives': ['link 首页'], 'src': 'command'}]
     f = tmp_path / 'p.json'
     f.write_text(json.dumps(rows, ensure_ascii=False))
-    pairs = load_pairs(f)
-    assert ('点登录', '', 1.0) not in pairs        # 空正例不入训
-    assert ('点登录', 'link 首页', 0.0) in pairs    # 引擎错选仍产负例
-    assert ('点登录', 'button 登录', 1.0) in pairs  # 正常正例不受影响
+    with pytest.raises(ValueError, match='--allow-unverified'):
+        load_pairs(f)
+    pairs = load_pairs(f, allow_unverified=True)
+    assert ('点登录', '', 1.0) not in pairs         # 空正例不入训
+    assert ('点登录', 'link 未核验', 0.0) not in pairs  # unsure 负例拒训
+    assert ('点登录', 'link 首页', 0.0) in pairs     # 普通负例不受影响
+    assert ('点登录', 'button 登录', 1.0) in pairs   # 正常正例不受影响
+
+
+def test_export_pairs_unsure_record_kept_no_pair(tmp_path, monkeypatch):
+    """unsure+engine_ref：原始 record 留存供人工核验，export 不产训练对。"""
+    import json
+    import dp_cli.decide_train as dt
+    f = tmp_path / 'decide_train.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    refs = {'1': {'role': 'link', 'name': '首页'},
+            '2': {'role': 'button', 'name': '登录'}}
+    dt.record('s', ['decide', '点登录'], refs,
+              goal='点登录', engine_ref=2, unsure=True)
+    raw = f.read_text().strip().split('\n')
+    assert len(raw) == 1                          # 原始记录留存
+    d = json.loads(raw[0])
+    assert d['unsure'] is True and d['engine_ref'] == 2
+    assert 'chosen_ref' not in d
+    assert dt.export_pairs(f) == []               # 不产训练对
+
+
+def test_merge_train_rejects_unsure_src(tmp_path):
+    """merge 默认只收有执行后证据的 verified_real——src='unsure'
+    与旧 src='command' 无证据行默认均不入合并，合并结果为空。"""
+    import json, sys
+    sys.path.insert(0, 'bench')
+    from merge_train import merge
+    goal = '安全冒烟目标xyzq'      # 非 eval goal 的对照行
+    rows = [{'query': goal, 'positive': 'button 登录',
+             'negatives': ['link 首页'], 'src': 'unsure'},
+            {'query': goal, 'positive': 'button 登录',
+             'negatives': ['link 首页'], 'src': 'command'}]
+    src = tmp_path / 'in.json'
+    out = tmp_path / 'out.json'
+    src.write_text(json.dumps(rows, ensure_ascii=False))
+    merge([str(src)], str(out))
+    merged = json.loads(out.read_text())
+    assert merged == []
+
+
+def _stub_record_and_refs(monkeypatch):
+    """mock record 收集调用 + mock load_refs 记录被查询的 session。"""
+    rec, refs = [], []
+    monkeypatch.setattr('dp_cli.decide_train.record',
+                        lambda *a, **k: rec.append((a, k)))
+    monkeypatch.setattr('dp_cli.session.load_refs',
+                        lambda s: refs.append(s)
+                        or {'1': {'role': 'link', 'name': '首页'}})
+    return rec, refs
+
+
+@pytest.mark.unit
+def test_exec_line_decide_records_engine_ref(monkeypatch):
+    """_exec_line：decide 成功/AGENT_UNSURE 录 engine_ref（不录 chosen_ref）。"""
+    import dp_cli.commands.serve as sv
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    results = iter([
+        (0, {'status': 'ok', 'data': {'ref': 2}}),
+        (1, {'status': 'error', 'code': 'AGENT_UNSURE',
+             'detail': '{"ref": 2}'}),
+        (1, {'status': 'error', 'code': 'AGENT_UNSURE',
+             'detail': 'not-json'}),
+        (1, {'status': 'error', 'code': 'ERROR', 'message': 'x'}),
+    ])
+    monkeypatch.setattr(sv, '_invoke', lambda argv: next(results))
+    for _ in range(4):
+        sv._exec_line('decide 点登录', 'x')
+    assert len(rec) == 3                          # 普通 ERROR 不录
+    kw = [k for _, k in rec]
+    assert kw[0]['engine_ref'] == 2 and kw[0]['unsure'] is False
+    assert kw[0]['goal'] == '点登录'
+    assert 'chosen_ref' not in kw[0]
+    assert kw[1]['engine_ref'] == 2 and kw[1]['unsure'] is True
+    assert 'chosen_ref' not in kw[1]
+    assert kw[2]['engine_ref'] is None and kw[2]['unsure'] is True
+
+
+@pytest.mark.unit
+def test_serve_decide_records_engine_ref(monkeypatch):
+    """_serve：decide 成功/AGENT_UNSURE 录 engine_ref；其他错误不录。"""
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    results = [
+        (0, {'status': 'ok', 'data': {'ref': 2}}),
+        (1, {'status': 'error', 'code': 'AGENT_UNSURE',
+             'detail': '{"ref": 2}'}),
+        (1, {'status': 'error', 'code': 'AGENT_UNSURE',
+             'detail': 'not-json'}),
+        (1, {'status': 'error', 'code': 'TIMEOUT', 'message': 'x'}),
+    ]
+    _invoke_serve(['{"cmd": "decide 点登录"}'] * 4, monkeypatch,
+                  fake_results=results)
+    assert len(rec) == 3                          # TIMEOUT 不录
+    kw = [k for _, k in rec]
+    assert kw[0]['engine_ref'] == 2 and kw[0]['unsure'] is False
+    assert kw[0]['goal'] == '点登录'
+    assert 'chosen_ref' not in kw[0]
+    assert kw[1]['engine_ref'] == 2 and kw[1]['unsure'] is True
+    assert kw[2]['engine_ref'] is None and kw[2]['unsure'] is True
+
+
+@pytest.mark.unit
+def test_serve_success_other_cmds_still_record(monkeypatch):
+    """非 decide 成功命令保持原样录制（无 goal/engine_ref）。"""
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    _invoke_serve(['{"cmd": "click @e1"}',
+                   '{"cmd": "open https://x"}'], monkeypatch)
+    assert len(rec) == 2
+    assert [k for _, k in rec] == [{}, {}]
+
+
+@pytest.mark.unit
+def test_record_session_helper():
+    """_record_session：--session/-S 三种形态解析，缺省回落。"""
+    from dp_cli.commands.serve import _record_session
+    assert _record_session(['click', '@e1', '--session', 'a'], 'b') == 'a'
+    assert _record_session(['click', '@e1', '--session=a'], 'b') == 'a'
+    assert _record_session(['click', '@e1', '-S', 'a'], 'b') == 'a'
+    assert _record_session(['click', '@e1', '-Sa'], 'b') == 'a'
+    assert _record_session(['click', '@e1'], 'b') == 'b'
+    assert _record_session(['click', '@e1'], None) == 'default'
+    assert _record_session(None) == 'default'
+    assert _record_session(['click', '--session'], 'b') == 'b'   # 缺值安全
+
+
+@pytest.mark.unit
+def test_exec_line_record_session_override(monkeypatch):
+    """REPL 请求内 --session/-S 覆盖启动 session——refs 与 record
+    只对请求会话读/写，默认 session 不被查询。"""
+    import dp_cli.commands.serve as sv
+    rec, refs = _stub_record_and_refs(monkeypatch)
+    results = iter([
+        (0, {'status': 'ok'}),
+        (0, {'status': 'ok'}),
+        (0, {'status': 'ok', 'data': {'ref': 2}}),
+    ])
+    monkeypatch.setattr(sv, '_invoke', lambda argv: next(results))
+    sv._exec_line('click @e1 --session other', 'boot')
+    sv._exec_line('click @e1 -S other2', 'boot')
+    sv._exec_line('decide 点登录 --session other3', 'boot')
+    assert refs == ['other', 'other2', 'other3']   # 默认 boot 不被查
+    assert [a[0] for a, _ in rec] == ['other', 'other2', 'other3']
+    assert rec[2][1]['engine_ref'] == 2
+
+
+@pytest.mark.unit
+def test_serve_record_session_override(monkeypatch):
+    """_serve 请求内 --session/-S 覆盖绑定 session——click/decide
+    两路径的 load_refs 与 record 都用请求会话。"""
+    rec, refs = _stub_record_and_refs(monkeypatch)
+    _invoke_serve(['{"cmd": "click @e1 --session other"}',
+                   '{"cmd": "decide 点登录 -S other2"}'],
+                  monkeypatch,
+                  fake_results=[(0, {'status': 'ok'}),
+                                (0, {'status': 'ok', 'data': {'ref': 2}})],
+                  session='boot')
+    assert refs == ['other', 'other2']             # 绑定 boot 不被查
+    assert [a[0] for a, _ in rec] == ['other', 'other2']
+    assert rec[1][1]['engine_ref'] == 2 and rec[1][1]['unsure'] is False

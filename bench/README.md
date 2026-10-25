@@ -11,6 +11,16 @@
 ## 数据纪律
 
 - eval 与 train 来源级隔离；`check_leakage()` 在训练入口强制
+- 默认只接收 `src='verified_real'` 且满足 `bench/verified_data.py`
+  所定义证据的行：前快照 ref 合法、动作执行成功、前后断言证明
+  目标状态发生期望变化；仅文件声明不替代人工审核目标/断言语义。
+  `src='pilot_local'` 只演示不训练；历史 `seed_train_v13.json`/
+  drive_d3 等保留不修改，实验性绕过须显式 `merge_train --allow-unverified`
+  （`--allow-bad-src` 为旧版兼容别名）和
+  `train_reranker --allow-unverified`——两个 override 都放行
+  **全部无证据来源**（含 pilot_local/decide/meta/synthetic），
+  只能作历史实验，eval goal 撞车仍被拒，
+  标注不会作为 clean 数据声明
 - `collected_train.jsonl` 首采 4 行=fixture 小集跑通验证，**非产量**；
   放量需真实 URL 集或多 fixture
 - 历史口径修正：旧 n=8 holdout ±12.5pp/case 噪声不可信；

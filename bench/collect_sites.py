@@ -3,7 +3,8 @@
 
 无外网依赖：优先 tests/fixtures/*.html 静态解析交互元素（可交互标签
 +a/role 属性近似 a11y）；有 Chrome 时可扩展走 dpx snapshot 真 a11y。
-产出 → ~/.dp_cli/decide_train.jsonl 兼容格式，train_reranker 直接吃。
+产出 → ~/.dp_cli/decide_train.jsonl 兼容格式；无执行后证据的
+历史实验样本，默认训练入口拒收，须显式 --allow-unverified 仅用于历史实验。
 """
 import json, re, sys, time
 from html.parser import HTMLParser

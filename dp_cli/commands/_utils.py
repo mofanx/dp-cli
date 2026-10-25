@@ -432,6 +432,8 @@ def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
 
     :param page: 可选，传入避免内部再调用 _get_page；为 None 时按需懒加载。
     """
+    if re.fullmatch(r'@e\d+', locator):
+        locator = f'ref:{locator[2:]}'
     if locator.startswith('pw:'):
         return _resolve_pw(locator[3:], session, page)
     if not locator.startswith('ref:'):

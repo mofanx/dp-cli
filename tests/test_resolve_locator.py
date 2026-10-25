@@ -139,3 +139,46 @@ def test_resolve_locator_no_refs_file_exits():
         with pytest.raises(SystemExit):
             _utils.resolve_locator('ref:1', session='x', page=None)
         assert 'NO_REFS' in str(mock_err.call_args)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# @eN 别名：完整 @e数字 → ref:N，走同一解析路径，绝不降级为文本匹配
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_resolve_locator_at_e_alias_same_as_ref():
+    """@e7 与 ref:7 走同一路径、同输出。"""
+    refs = {'7': {'locator': 'css:#submit', 'backendNodeId': None,
+                  'name': 'x'}}
+    with patch.object(_utils, 'load_refs', return_value=refs):
+        assert _utils.resolve_locator('@e7', session='x', page=None) \
+            == _utils.resolve_locator('ref:7', session='x', page=None) \
+            == 'css:#submit'
+
+
+def test_resolve_locator_at_e_no_refs_exits():
+    """@eN 无 refs → NO_REFS，不降级为文本定位。"""
+    with patch.object(_utils, 'load_refs', return_value={}), \
+         patch.object(_utils, 'error') as mock_err:
+        mock_err.side_effect = SystemExit(1)
+        with pytest.raises(SystemExit):
+            _utils.resolve_locator('@e7', session='x', page=None)
+        assert 'NO_REFS' in str(mock_err.call_args)
+
+
+def test_resolve_locator_at_e_not_found_exits():
+    """refs 存在但无对应编号 → REF_NOT_FOUND。"""
+    refs = {'1': {'locator': '#a', 'backendNodeId': None}}
+    with patch.object(_utils, 'load_refs', return_value=refs), \
+         patch.object(_utils, 'error') as mock_err:
+        mock_err.side_effect = SystemExit(1)
+        with pytest.raises(SystemExit):
+            _utils.resolve_locator('@e999', session='x', page=None)
+        assert 'REF_NOT_FOUND' in str(mock_err.call_args)
+
+
+def test_resolve_locator_at_example_not_alias():
+    """@example 等属性定位不受 @eN 别名影响（非完整 @e数字）。"""
+    with patch.object(_utils, 'load_refs') as mock_load:
+        assert _utils.resolve_locator('@example', session='x',
+                                      page=None) == '@example'
+        mock_load.assert_not_called()

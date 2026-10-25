@@ -29,7 +29,8 @@ def _file() -> Path:
 
 
 def record(session: str, argv: list, refs: dict,
-           goal: str = None, chosen_ref: int = None) -> None:
+           goal: str = None, chosen_ref: int = None,
+           unsure: bool = False, engine_ref: int = None) -> None:
     """执行成功后异步采集一条。refs={rid:{role,name,locator}}。
 
     goal：推理分布的语义 query（decide 调用时的用户目标文本）；
@@ -53,6 +54,10 @@ def record(session: str, argv: list, refs: dict,
         entry['goal'] = goal
     if chosen_ref is not None:
         entry['chosen_ref'] = chosen_ref
+    if unsure:
+        entry['unsure'] = True
+    if engine_ref is not None:
+        entry['engine_ref'] = engine_ref
     try:
         f = _file()
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +129,9 @@ def export_pairs(path: Path = None) -> list:
             m = re.search(r'@e(\d+)', chosen)
             if m:
                 pos_ref = int(m.group(1))
+        if d.get('unsure'):
+            # 置信度不足不证明引擎候选错误；只保留原始记录供人工核验。
+            continue
         if not pos_ref:
             continue               # 无定位的命令无法定位正例——跳过
         pos = next((o for o in opts if o['ref'] == pos_ref), None)

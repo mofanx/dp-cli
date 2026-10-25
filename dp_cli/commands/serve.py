@@ -87,6 +87,17 @@ def _accepts_session(cmd_name: str) -> bool:
         return False
 
 
+def _record_session(argv: list, default: str = None) -> str:
+    for i, arg in enumerate(argv or []):
+        if arg in ('--session', '-S') and i + 1 < len(argv):
+            return argv[i + 1]
+        if arg.startswith('--session='):
+            return arg.partition('=')[2]
+        if arg.startswith('-S') and len(arg) > 2:
+            return arg[2:]
+    return default or 'default'
+
+
 def _emit(seq: int, req_id, code: int, result: dict,
           elapsed_ms: int = None) -> None:
     out = {'seq': seq, 'exit': code, 'result': result}
@@ -172,19 +183,31 @@ def _exec_line(line: str, session: str) -> None:
     try:
         code, result = _invoke(argv)
         _write_out(json.dumps(result, ensure_ascii=False))
-        if code == 0:
+        record_session = _record_session(argv, session)
+        is_unsure = (cmd == 'decide' and len(argv) > 1
+                     and result.get('code') == 'AGENT_UNSURE')
+        if code == 0 or is_unsure:
             from dp_cli.decide_train import record
+            from dp_cli.session import load_refs
             if cmd == 'decide' and len(argv) > 1:
-                # decide 刚重拍快照——用 session 落盘的 refs 而非
-                # _REF_CACHE（可能滞后）；goal+引擎 pick 落盘为
-                # 弱标注样本（export 侧 src='decide'）
-                from dp_cli.session import load_refs
-                record(session or 'default', argv,
-                       load_refs(session or 'default') or _REF_CACHE,
-                       goal=argv[1], chosen_ref=result.get('ref'))
+                # 引擎建议只存 engine_ref，无执行证据不当 chosen_ref；
+                # AGENT_UNSURE 标 unsure 供人工核验，detail JSON 解析
+                # 失败保留 ref=None；refs 只读本 session 落盘数据
+                ref = None
+                if code == 0:
+                    ref = (result.get('data') or {}).get('ref')
+                else:
+                    try:
+                        ref = json.loads(result.get('detail') or '').get('ref')
+                    except Exception:
+                        pass
+                record(record_session, argv,
+                       load_refs(record_session) or {},
+                       goal=argv[1], engine_ref=ref, unsure=is_unsure)
             else:
-                record(session or 'default', argv, _REF_CACHE)
-        _refresh_refs(cmd, session)
+                record(record_session, argv,
+                       load_refs(record_session) or {})
+        _refresh_refs(cmd, record_session)
     except KeyboardInterrupt:
         _write_err('（已中断）\n')
     except Exception as e:
@@ -372,15 +395,31 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         _sig.setitimer(_sig.ITIMER_REAL, 0)
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
-        if code == 0:
+        record_session = _record_session(argv, session)
+        is_unsure = (bool(argv) and argv[0] == 'decide'
+                     and len(argv) > 1
+                     and result.get('code') == 'AGENT_UNSURE')
+        if code == 0 or is_unsure:
             from dp_cli.decide_train import record
+            from dp_cli.session import load_refs
             if argv[0] == 'decide' and len(argv) > 1:
-                from dp_cli.session import load_refs
-                record(session or 'default', argv,
-                       load_refs(session or 'default') or _REF_CACHE,
-                       goal=argv[1], chosen_ref=result.get('ref'))
+                # 引擎建议只存 engine_ref（无执行证据不作 chosen_ref）；
+                # AGENT_UNSURE 标 unsure 供人工核验，detail JSON 解析
+                # 失败保留 ref=None，不污染输出
+                ref = None
+                if code == 0:
+                    ref = (result.get('data') or {}).get('ref')
+                else:
+                    try:
+                        ref = json.loads(result.get('detail') or '').get('ref')
+                    except Exception:
+                        pass
+                record(record_session, argv,
+                       load_refs(record_session) or {},
+                       goal=argv[1], engine_ref=ref, unsure=is_unsure)
             else:
-                record(session or 'default', argv, _REF_CACHE)
+                record(record_session, argv,
+                       load_refs(record_session) or {})
         _maybe_arm_netlog()
 
 

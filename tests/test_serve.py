@@ -423,3 +423,20 @@ def test_decide_train_record_and_export(tmp_path, monkeypatch):
     # 无 @eN 的命令不成对
     dt.record('s', ['open', 'https://x'], refs)
     assert len(dt.export_pairs(f)) == 2
+
+
+def test_unsure_no_empty_positive(tmp_path):
+    """unsure 行 positive='' 只产负例——不产 (q,'',1.0) 污染对。"""
+    import json, sys
+    sys.path.insert(0, 'bench')
+    from train_reranker import load_pairs
+    rows = [{'query': '点登录', 'positive': '',
+             'negatives': ['link 首页'], 'src': 'unsure'},
+            {'query': '点登录', 'positive': 'button 登录',
+             'negatives': ['link 首页'], 'src': 'command'}]
+    f = tmp_path / 'p.json'
+    f.write_text(json.dumps(rows, ensure_ascii=False))
+    pairs = load_pairs(f)
+    assert ('点登录', '', 1.0) not in pairs        # 空正例不入训
+    assert ('点登录', 'link 首页', 0.0) in pairs    # 引擎错选仍产负例
+    assert ('点登录', 'button 登录', 1.0) in pairs  # 正常正例不受影响

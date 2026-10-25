@@ -16,7 +16,9 @@ def load_pairs(path):
     pairs = []
     for r in rows:
         q, pos = r['query'], r['positive']
-        pairs.append((q, pos, 1.0))
+        if pos:
+            pairs.append((q, pos, 1.0))
+        # positive=''（unsure 无正例行）只产负例——不把空串当正例训
         for neg in r.get('negatives', []):
             pairs.append((q, neg, 0.0))
     return pairs

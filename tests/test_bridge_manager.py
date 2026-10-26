@@ -226,3 +226,23 @@ def test_bridge_kill_posix_getattr_guard(monkeypatch):
     # 惰性取值只发生在 IS_WINDOWS 分支——POSIX 侧确认不触达常量
     assert getattr(signal, 'CTRL_BREAK_EVENT',
                    getattr(signal, 'SIGTERM', 15)) == signal.SIGTERM
+
+
+def test_ctrl_break_getattr_fallback(monkeypatch):
+    """CTRL_BREAK_EVENT getattr 兜底——POSIX 上 mock win 分支真实调用,
+    常量缺失时落 SIGTERM 而非 AttributeError(不断言常量存在性)。"""
+    import signal
+    from dp_cli import bridge_manager
+
+    monkeypatch.setattr(bridge_manager, 'IS_WINDOWS', True)
+    monkeypatch.setattr(bridge_manager.os, 'name', 'posix')
+    # POSIX signal 本就无 CTRL_BREAK_EVENT——真实走 getattr 兜底
+    assert not hasattr(signal, 'CTRL_BREAK_EVENT')
+    kills = []
+    monkeypatch.setattr(bridge_manager.os, 'kill',
+                        lambda pid, sig: kills.append(sig))
+    alive = iter([True, False])
+    monkeypatch.setattr(bridge_manager, 'is_bridge_alive',
+                        lambda pid: next(alive, False))
+    assert bridge_manager.stop_bridge(999, timeout=0.2) is True
+    assert kills == [signal.SIGTERM], kills

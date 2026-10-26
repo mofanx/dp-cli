@@ -1231,3 +1231,31 @@ def test_saved_port_user_connected_still_probes(session_dir, monkeypatch):
                         fake_opts)
     session.get_browser('test')
     assert probes == [9222] and applied == [True]   # 探测的真实值生效
+
+
+def test_spawn_page_tmpdir_fallback(monkeypatch, tmp_path):
+    """TMPDIR 不可写→回落候选目录重试一次；候选皆不可写→结构化报错。"""
+    from dp_cli.session import _spawn_page
+
+    calls = []
+    class FakePage:
+        def __init__(self, co):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('spawn fail')
+
+    # /tmp 不可写，alt 可写 → 重试成功
+    monkeypatch.setattr('dp_cli.session._dir_writable',
+                        lambda d: d == str(tmp_path))
+    monkeypatch.setenv('DPX_TMPDIR', str(tmp_path))
+    p = _spawn_page(FakePage, object())
+    assert isinstance(p, FakePage) and len(calls) == 2
+
+    # 全部不可写 → ConnectionError 带原始 detail
+    class AlwaysFail:
+        def __init__(self, co):
+            raise RuntimeError('spawn fail')
+    monkeypatch.setattr('dp_cli.session._dir_writable', lambda d: False)
+    import pytest
+    with pytest.raises(ConnectionError, match='临时目录.*不可写'):
+        _spawn_page(AlwaysFail, object())

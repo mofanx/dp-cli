@@ -487,6 +487,55 @@ def get_browser(session_name: str = 'default', headless: bool = False,
     return page
 
 
+def _dir_writable(d) -> bool:
+    """目录可写探测——建删一个临时文件，任何失败即 False。"""
+    try:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        p = Path(d) / f'.wprobe_{os.getpid()}'
+        p.write_bytes(b'x')
+        p.unlink()
+        return True
+    except Exception:
+        return False
+
+
+def _spawn_page(page_cls, co):
+    """ChromiumPage 实例化兜底——/tmp 配额/不可写导致 spawn 失败时，
+    切到可写候选临时目录重试一次（不静默写系统盘、不改系统配置）。
+    候选序：DPX_TMPDIR 环境变量 → ~/.dp_cli/tmp → tempfile 其他候选。
+    重试仍败则抛带根因说明的 ConnectionError（保留原始 detail）。
+    """
+    import tempfile
+    try:
+        return page_cls(co)
+    except Exception as e1:
+        tmp = tempfile.gettempdir()
+        if _dir_writable(tmp):
+            raise                                  # /tmp 可写——非配额问题，原样抛
+        candidates = [
+            os.environ.get('DPX_TMPDIR'),
+            str(Path.home() / '.dp_cli' / 'tmp'),
+        ]
+        alt = next((c for c in candidates
+                    if c and _dir_writable(c)), None)
+        if not alt:
+            raise ConnectionError(
+                f'浏览器启动失败：临时目录 {tmp} 不可写（疑似配额/只读），'
+                f'且候选目录（DPX_TMPDIR、~/.dp_cli/tmp）均不可用。\n'
+                f'处理建议：export DPX_TMPDIR=<可写目录> 后重试\n'
+                f'原始错误: {e1}') from e1
+        debug(f'TMPDIR {tmp} 不可写，回落到 {alt} 重试 spawn')
+        os.environ['TMPDIR'] = alt                 # 只影响本进程及子进程
+        tempfile.tempdir = alt                     # python tempfile 用新路径
+        try:
+            return page_cls(co)
+        except Exception as e2:
+            raise ConnectionError(
+                f'浏览器启动失败：{tmp} 不可写，回落 {alt} 重试仍失败。\n'
+                f'处理建议：export DPX_TMPDIR=<可写目录> 或检查浏览器可执行文件\n'
+                f'原始错误: {e1}\n回落错误: {e2}') from e2
+
+
 def _connect_browser(session_name: str = 'default', headless: bool = False,
                      browser_path: str = None, user_data_dir: str = None,
                      proxy: str = None, port: int = None):
@@ -667,7 +716,7 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
 
     co.auto_port(True)
 
-    page = ChromiumPage(co)
+    page = _spawn_page(ChromiumPage, co)
 
     # 保存会话端口
     port = int(page.browser.address.split(':')[-1])

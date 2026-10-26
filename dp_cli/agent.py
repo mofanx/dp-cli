@@ -163,17 +163,54 @@ def _ort():
     return _ORT_MOD or None
 
 
-def _reranker_model():
-    """加载 reranker——三级降级：ORT int8→ORT fp32→torch(ST)。
+_BGE_DIRS = [
+    Path.home() / '.dp_cli' / 'bge_model',          # 用户部署的 bge（ONNX/ST）
+    Path('/media/yan/Data/bge_tuned'),              # 本项目实测 bge 权重
+]
 
-    ONNX 路径只需 onnxruntime+transformers（无 torch）；
-    int8 实测精度无损（73.7% 同 FP32）+23MB 体积，优先取。
+
+def _reranker_model():
+    """加载 reranker——bge 为默认引擎，自训 MiniLM 为轻量备选。
+
+    顺序：bge ONNX int8→bge ST（本地目录/hub）→MiniLM ONNX int8→MiniLM ST。
+    bge zero-shot 73.7% 是实测上限；MiniLM 自训（22.7M/23MB INT8）
+    保留为无 bge 环境的轻量降级路径。
     """
     global _RERANKER
     if _RERANKER is not None:
         return _RERANKER
     tuned = Path.home() / '.dp_cli' / 'decide_model'
     ort = _ort()
+    if ort:
+        for d in _BGE_DIRS:
+            for cand in ['model_int8.onnx', 'model.onnx']:
+                f = d / 'onnx' / cand
+                if f.exists():
+                    try:
+                        from transformers import AutoTokenizer
+                        _RERANKER = ('ort', ort.InferenceSession(str(f)),
+                                     AutoTokenizer.from_pretrained(str(d)))
+                        return _RERANKER
+                    except Exception:
+                        break       # ort/transformers 损坏——继续降级
+    try:
+        from sentence_transformers import CrossEncoder
+    except ImportError:
+        CrossEncoder = None
+    for d in _BGE_DIRS:
+        if CrossEncoder and (d / 'config.json').exists():
+            try:
+                _RERANKER = ('st', CrossEncoder(str(d), max_length=512))
+                return _RERANKER
+            except Exception:
+                continue
+    if CrossEncoder:
+        try:
+            _RERANKER = ('st', CrossEncoder('BAAI/bge-reranker-base',
+                                          max_length=512))
+            return _RERANKER
+        except Exception:
+            pass                    # hub 不可达——落自训 MiniLM 兜底
     if ort:
         for cand in ['model_int8.onnx', 'model.onnx']:
             f = tuned / 'onnx' / cand
@@ -184,15 +221,11 @@ def _reranker_model():
                                  AutoTokenizer.from_pretrained(str(tuned)))
                     return _RERANKER
                 except Exception:
-                    break           # ort/transformers 损坏——落 torch 兜底
-    name = str(tuned) if (tuned / 'config.json').exists() \
-        else 'BAAI/bge-reranker-base'
-    try:
-        from sentence_transformers import CrossEncoder
-    except ImportError:
+                    break
+    if not CrossEncoder:
         return {'_error': '缺 sentence-transformers——'
                 '`pip install dp-cli[agent]`'}
-    _RERANKER = ('st', CrossEncoder(name, max_length=512))
+    _RERANKER = ('st', CrossEncoder(str(tuned), max_length=512))
     return _RERANKER
 
 
@@ -262,9 +295,12 @@ _DONE_STATE = ('成功', '完成', 'welcome', '欢迎', 'results', '结果',
                'thank', 'success', 'complete', 'ok', '登出', '退出',
                'logged out', 'signed out', 'thank you')
 _BLOCKED_KW = ('验证码', '人机', '机器人', 'captcha', 'verify you are',
-               'robot', '安全验证', '盾')
-_BACK_KW = ('返回', '上一页', '后退', 'back', 'previous')
-_WAIT_KW = ('等待', '加载', 'wait', 'load', 'settle')
+               'robot', '安全验证', '盾', 'please verify', 'suspended',
+               '被封', '封号', '拦截', 'security check')
+_BACK_KW = ('返回', '上一页', '后退', 'back', 'previous',
+            '回到上一', '上个页面', '回列表', '回到搜索')
+_WAIT_KW = ('等待', '加载', 'wait', 'load', 'settle', '稍等',
+            '处理中', 'processing', '正在')
 _SCROLL_UP_KW = ('顶部', '向上', 'top', 'scroll up')
 _SCROLL_KW = ('下方', '页底', '更多', '滚动', '向下', 'scroll', 'more',
               'below', 'find', '找到', '查看全部')

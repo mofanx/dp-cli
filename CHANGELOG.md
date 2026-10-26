@@ -2,6 +2,34 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.12] - 2026-10-23
+
+### 新增
+- **`@eN` 定位别名**：`click @e5`/`fill @e5` 直接按 ref 定位
+  （此前仅 `ref:5` 语法）——录制/复放一致。
+- **decide unsure 留证**：`AGENT_UNSURE` 也落盘录制
+  （`unsure:true`+`engine_ref` 弱负例），采集不再被门控卡死。
+
+### 变更
+- **decide 默认引擎切 bge-reranker**：zero-shot 73.7% 是六路捷径
+  （蒸馏/直训/增广/伪样本）证伪后的精度上限；自训 MiniLM 降级
+  为轻量备选，`--engine` 显式切。
+- **bge 引擎 tier 降级**：conf/margin 分布实测完全重叠无可分阈值——
+  `act` 封顶为 `confirm`、unsure 门跳过 conf 只判 margin
+  （MiniLM 路径不变）。
+- **meta 决策词表扩充**（done/blocked/wait/back）——`_meta_decide`
+  规则层覆盖率 61.1→88.9%，eval 对齐生产短路。
+- **serve 会话路由**：decide 录制按 session 路由落盘+ref 快照
+  用 `load_refs` 非 `_REF_CACHE` 滞后值。
+
+### 修复
+- **`@eN` 被当文本搜索**：此前 `@e5` 无 locator 别名匹配导致
+  点击错目标或找不到元素。
+- **录制污染**：`decide` 建议不再自动记作已选择标签；训练入口
+  `verified_data.eligible()` 门禁——仅 `src=verified_real`+执行后
+  断言证据的记录可入默认训练，`--allow-unverified` 显式放行旧实验。
+- **`load_pairs` 空正例守卫**：unsure 行只产负例不产 `(q,'',1.0)` 污染对。
+
 ## [0.15.11] - 2026-10-23
 
 ### 新增

@@ -645,6 +645,25 @@ import + CDP attach）——**单发命令这个延迟属正常预期，不是 b
 - **隐式 role 推断**——`<button>`→button、`<a href>`→link、`<input type=text>`→textbox 等；自定义组件/无 a11y 属性元素 meta 可能为空，此时用 css/xpath 兜底。
 - **观测面边界**——meta 只反映 DOM 快照，不含样式/网络层变化。
 
+## 新特性速查（0.15.12）
+
+### 默认决策引擎切 bge-reranker
+
+```bash
+pip install "dp-cli[agent]"           # +onnxruntime ~100MB（ONNX 后端）
+dpx decide "点登录"                    # 默认 bge-reranker（73.7% 精度上限）
+dpx decide "点登录" --engine reranker  # 显式自训 MiniLM 轻量备选
+```
+
+- **bge tier 降级**：conf/margin 分布实测重叠——`act` 封顶为
+  `confirm`，unsure 门跳过 conf 只判 margin。
+- **`@eN` locator 别名**：`click @e5`/`fill @e5` 与 `ref:5` 等价；
+  `@eN` 是 locator 映射不是句柄。
+- **decide unsure 留证**：`AGENT_UNSURE` 也录制
+  （`unsure:true`+`engine_ref` 弱负例）。
+- **verified_data 门禁**：默认训练仅收 `verified_real`+执行后
+  断言证据；`--allow-unverified` 显式放行旧实验集。
+
 ## 新特性速查（0.15.11）
 
 ### 本地决策引擎（advisory-only 纪律）

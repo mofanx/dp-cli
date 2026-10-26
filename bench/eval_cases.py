@@ -85,7 +85,84 @@ NEW = [
         [('button', '登录'), ('link', '忘记密码'), ('link', '注册账号')]),
 ]
 
-EVAL_CASES = CASES[34:] + NEW   # 原 holdout 8 + 新增 30 = 38
+NEW2 = [
+    # ── meta 决策桶（done/blocked/wait/back——miss n17-n21 同型）──
+    _mk('m01', '等页面加载完再说', 'wait', None, 'Loading…', 'https://x/w1',
+        [('progressbar', '0%'), ('link', 'Skip')]),
+    _mk('m02', '确认表单提交成功了', 'done', None, '提交成功', 'https://x/d1',
+        [('button', '提交'), ('link', '返回')]),
+    _mk('m03', '触发了人机验证被拦', 'blocked', None, 'Please verify', 'https://x/b1',
+        [('checkbox', 'Verify me'), ('button', 'Continue')]),
+    _mk('m04', '回到上一个页面', 'back', None, 'Article detail', 'https://x/bk1',
+        [('link', 'More articles'), ('button', 'Share')]),
+    _mk('m05', '已经买到票了确认下', 'done', None, '购票成功', 'https://x/d2',
+        [('button', '查看订单'), ('link', '再抢一张')]),
+    _mk('m06', '处理中请稍等', 'wait', None, 'Processing', 'https://x/w2',
+        [('progressbar', 'uploading'), ('button', 'Cancel')]),
+    _mk('m07', '先回到搜索列表页', 'back', None, 'Item #432', 'https://x/bk2',
+        [('button', 'Buy'), ('link', 'Related')]),
+    _mk('m08', '号被封了没法操作', 'blocked', None, 'Account suspended', 'https://x/b2',
+        [('button', 'Appeal'), ('link', 'Terms')]),
+    # ── deep_semantic 桶（goal 与 name 无字面重叠——n05/n24/n27 同型）──
+    _mk('m09', '结算购物车', 'click', 4, 'Cart page', 'https://x/ds1',
+        [('link', 'Continue shopping'), ('button', 'Clear'), ('link', 'Wishlist'), ('button', '去结算')]),
+    _mk('m10', '给这条动态点个赞', 'click', 3, 'Feed item', 'https://x/ds2',
+        [('button', '💬'), ('button', '↗'), ('button', '👍'), ('link', '…')]),
+    _mk('m11', '把地址二设成收货地址', 'click', 2, 'Address picker', 'https://x/ds3',
+        [('radio', '公司'), ('radio', '家'), ('radio', '学校'), ('button', '确认')]),
+    _mk('m12', 'reply to this thread', 'click', 3, 'Thread', 'https://x/ds4',
+        [('link', 'Report'), ('link', 'Quote'), ('textbox', 'Write a reply'), ('button', 'Subscribe')]),
+    _mk('m13', '搜飞东京的航班', 'type', 2, 'Flights', 'https://x/ds5',
+        [('textbox', 'From'), ('textbox', 'To'), ('textbox', 'Depart'), ('button', 'Search')]),
+    _mk('m14', '把字体调大一号', 'click', 3, 'Reader', 'https://x/ds6',
+        [('button', 'A-'), ('button', 'Theme'), ('button', 'A+'), ('button', 'Print')]),
+    _mk('m15', 'mute the notification', 'click', 4, 'Alerts', 'https://x/ds7',
+        [('button', 'Snooze'), ('button', 'Settings'), ('button', 'Clear all'), ('button', 'Bell off')]),
+    _mk('m16', '开通会员', 'click', 2, 'Pricing', 'https://x/ds8',
+        [('button', 'Compare plans'), ('button', 'Subscribe'), ('link', 'FAQ')]),
+    _mk('m17', '把这篇存起来以后看', 'click', 2, 'Article', 'https://x/ds9',
+        [('button', 'Share'), ('button', '🔖'), ('button', 'Font')]),
+    # ── long_list / ordinal 桶（n15 同型）──
+    _mk('m18', '点第 12 个分类', 'click', 12, 'Catalog', 'https://x/ll1',
+        [('link', x) for x in ['Books','Travel','Mystery','Historical','Sequential','Classics',
+                                'Philosophy','Romance','Womens','Fiction','Crime','Humor','Sports','Music','Cook']]),
+    _mk('m19', '选第 5 行的编辑按钮', 'click', 5, 'Table', 'https://x/ll2',
+        [('button', 'Edit#1'), ('button', 'Edit#2'), ('button', 'Edit#3'), ('button', 'Edit#4'),
+         ('button', 'Edit#5'), ('button', 'Edit#6'), ('button', 'Edit#7')]),
+    _mk('m20', 'scroll to see more products', 'scroll_down', None, 'Shop grid', 'https://x/ll3',
+        [('link', 'P1'), ('link', 'P2'), ('link', 'P3'), ('link', 'P4'), ('link', 'P5'),
+         ('link', 'P6'), ('link', 'P7'), ('link', 'P8'), ('link', 'P9'), ('link', 'P10')]),
+    _mk('m21', '点最后一页', 'click', 8, 'Pager', 'https://x/ll4',
+        [('link', '1'), ('link', '2'), ('link', '3'), ('link', '4'), ('link', '5'),
+         ('link', '6'), ('link', '7'), ('link', '8')]),
+    # ── near_distractor 桶（n01/n30 同型——近义候选干扰）──
+    _mk('m22', '导出报表', 'click', 4, 'Report menu', 'https://x/nd1',
+        [('button', '编辑'), ('button', '查看'), ('button', '删除'), ('button', '导出')]),
+    _mk('m23', '找回我的密码', 'click', 3, 'Sign in', 'https://x/nd2',
+        [('button', '登录'), ('link', '注册账号'), ('link', '忘记密码')]),
+    _mk('m24', '把商品移出清单', 'click', 4, 'List item', 'https://x/nd3',
+        [('button', '移入收藏'), ('button', '置顶'), ('button', '分享'), ('button', '移除')]),
+    _mk('m25', '去注册一个账号', 'click', 3, 'Landing', 'https://x/nd4',
+        [('button', 'Log in'), ('link', 'Forgot password'), ('link', 'Sign up')]),
+    # ── select/combobox 桶（n13/n14/n28 同型）──
+    _mk('m26', '选下拉的第二个选项', 'select', 1, 'Chooser', 'https://x/sl1',
+        [('combobox', 'Options'), ('button', 'Go')]),
+    _mk('m27', '把排序改成最新', 'select', 2, 'Sort', 'https://x/sl2',
+        [('button', 'Filters'), ('combobox', 'Sort by'), ('link', 'Reset')]),
+    _mk('m28', '挑一个发货方式', 'select', 3, 'Shipping', 'https://x/sl3',
+        [('radio', 'Pickup'), ('radio', 'Mail'), ('combobox', 'Delivery method')]),
+    # ── 否定/混合语义 ──
+    _mk('m29', '别点删除点归档', 'click', 3, 'Inbox', 'https://x/mx1',
+        [('button', 'Delete'), ('button', 'Spam'), ('button', 'Archive'), ('button', 'Read')]),
+    _mk('m30', '选不是"取消"的那个', 'click', 1, 'Confirm', 'https://x/mx2',
+        [('button', '确定'), ('button', '取消'), ('button', '关闭')]),
+]
+
+EVAL_CASES = CASES[34:] + NEW + NEW2   # 8 holdout + 30 + 30 = 68
+
+META_IDS = {c['id'] for c in EVAL_CASES if c['expect']['action'] in
+            ('done', 'blocked', 'wait', 'back', 'scroll_down', 'scroll_up')}
+# meta 决策：action 非元素 ref 语义——供评估分桶（elem/meta 分开报）
 
 if __name__ == '__main__':
     import json

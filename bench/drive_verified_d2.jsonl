@@ -1,0 +1,729 @@
+[
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/inputs",
+  "goal": "在数字输入框填入42",
+  "argv": [
+   "fill",
+   "@e2",
+   "42"
+  ],
+  "query": "在数字输入框填入42",
+  "positive": "spinbutton spinbutton",
+  "negatives": [
+   "link Fork me on GitHub",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/inputs",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "spinbutton",
+     "name": "spinbutton"
+    },
+    {
+     "ref": 3,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 5,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "fill",
+     "@e2",
+     "42"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dp856d1fcf615c",
+      "value": "42"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('input[type=number]').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('input[type=number]').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "42"
+     }
+    },
+    "expected": "42"
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/checkboxes",
+  "goal": "勾选第1个复选框",
+  "argv": [
+   "check",
+   "@e2"
+  ],
+  "query": "勾选第1个复选框",
+  "positive": "checkbox checkbox",
+  "negatives": [
+   "link Fork me on GitHub",
+   "checkbox checkbox",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/checkboxes",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "checkbox",
+     "name": "checkbox"
+    },
+    {
+     "ref": 3,
+     "role": "checkbox",
+     "name": "checkbox"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 6,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "check",
+     "@e2"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "操作成功",
+     "data": {
+      "locator": "@data-dp-ref=dpb8b4b7179cdb",
+      "checked": true
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelectorAll('input[type=checkbox]')[0].checked",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": false
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelectorAll('input[type=checkbox]')[0].checked",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": true
+     }
+    },
+    "expected": true
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/login",
+  "goal": "在用户名框填入tomsmith",
+  "argv": [
+   "fill",
+   "@e2",
+   "tomsmith"
+  ],
+  "query": "在用户名框填入tomsmith",
+  "positive": "textbox Username",
+  "negatives": [
+   "link Fork me on GitHub",
+   "textbox Password",
+   "button  Login",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/login",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "Username"
+    },
+    {
+     "ref": 3,
+     "role": "textbox",
+     "name": "Password"
+    },
+    {
+     "ref": 4,
+     "role": "button",
+     "name": " Login"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 6,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 7,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "fill",
+     "@e2",
+     "tomsmith"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dp6103a05d0ff9",
+      "value": "tomsmith"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('#username').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('#username').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "tomsmith"
+     }
+    },
+    "expected": "tomsmith"
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/login",
+  "goal": "在密码框填入Secret",
+  "argv": [
+   "fill",
+   "@e3",
+   "Secret!"
+  ],
+  "query": "在密码框填入Secret",
+  "positive": "textbox Password",
+  "negatives": [
+   "link Fork me on GitHub",
+   "textbox Username",
+   "button  Login",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/login",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "Username"
+    },
+    {
+     "ref": 3,
+     "role": "textbox",
+     "name": "Password"
+    },
+    {
+     "ref": 4,
+     "role": "button",
+     "name": " Login"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 6,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 7,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 3,
+   "action": {
+    "argv": [
+     "fill",
+     "@e3",
+     "Secret!"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dpbda69f0e696f",
+      "value": "Secret!"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('#password').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('#password').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "Secret!"
+     }
+    },
+    "expected": "Secret!"
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/add_remove_elements/",
+  "goal": "点击Add Element按钮",
+  "argv": [
+   "click",
+   "@e2"
+  ],
+  "query": "点击Add Element按钮",
+  "positive": "button Add Element",
+  "negatives": [
+   "link Fork me on GitHub",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/add_remove_elements/",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "Add Element"
+    },
+    {
+     "ref": 3,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 5,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "click",
+     "@e2"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "点击成功",
+     "data": {
+      "locator": "@data-dp-ref=dp99d7d56fab7b"
+     }
+    }
+   },
+   "before": {
+    "expr": "!!document.querySelector('.added-manually')",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": false
+     }
+    }
+   },
+   "after": {
+    "expr": "!!document.querySelector('.added-manually')",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": true
+     }
+    },
+    "expected": true
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/login",
+  "goal": "填登录名",
+  "argv": [
+   "fill",
+   "@e2",
+   "user_42"
+  ],
+  "query": "填登录名",
+  "positive": "textbox Username",
+  "negatives": [
+   "link Fork me on GitHub",
+   "textbox Password",
+   "button  Login",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/login",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "Username"
+    },
+    {
+     "ref": 3,
+     "role": "textbox",
+     "name": "Password"
+    },
+    {
+     "ref": 4,
+     "role": "button",
+     "name": " Login"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 6,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 7,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "fill",
+     "@e2",
+     "user_42"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dp526213cc97ca",
+      "value": "user_42"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('#username').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('#username').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "user_42"
+     }
+    },
+    "expected": "user_42"
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/login",
+  "goal": "输入口令",
+  "argv": [
+   "fill",
+   "@e3",
+   "hunter2"
+  ],
+  "query": "输入口令",
+  "positive": "textbox Password",
+  "negatives": [
+   "link Fork me on GitHub",
+   "textbox Username",
+   "button  Login",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/login",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "Username"
+    },
+    {
+     "ref": 3,
+     "role": "textbox",
+     "name": "Password"
+    },
+    {
+     "ref": 4,
+     "role": "button",
+     "name": " Login"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 6,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 7,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 3,
+   "action": {
+    "argv": [
+     "fill",
+     "@e3",
+     "hunter2"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dp1de4d4c14c09",
+      "value": "hunter2"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('#password').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('#password').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "hunter2"
+     }
+    },
+    "expected": "hunter2"
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "page": "https://the-internet.herokuapp.com/forgot_password",
+  "goal": "留电邮要重置",
+  "argv": [
+   "fill",
+   "@e2",
+   "a@b.co"
+  ],
+  "query": "留电邮要重置",
+  "positive": "textbox E-mail",
+  "negatives": [
+   "link Fork me on GitHub",
+   "button Retrieve password",
+   "link Elemental Selenium",
+   "link Sauce Labs",
+   "button 翻译"
+  ],
+  "evidence": {
+   "url": "https://the-internet.herokuapp.com/forgot_password",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "Fork me on GitHub"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "E-mail"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "Retrieve password"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "Elemental Selenium"
+    },
+    {
+     "ref": 5,
+     "role": "link",
+     "name": "Sauce Labs"
+    },
+    {
+     "ref": 6,
+     "role": "button",
+     "name": "翻译"
+    }
+   ],
+   "chosen_ref": 2,
+   "action": {
+    "argv": [
+     "fill",
+     "@e2",
+     "a@b.co"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok",
+     "message": "填入成功",
+     "data": {
+      "locator": "@data-dp-ref=dp96c445276747",
+      "value": "a@b.co"
+     }
+    }
+   },
+   "before": {
+    "expr": "document.querySelector('#email').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "after": {
+    "expr": "document.querySelector('#email').value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "a@b.co"
+     }
+    },
+    "expected": "a@b.co"
+   }
+  }
+ }
+]

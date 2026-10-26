@@ -22,7 +22,19 @@ def main():
     from sentence_transformers import CrossEncoder
     m = CrossEncoder(MODEL, max_length=512)
     rows = []
+    from dp_cli.agent import _meta_decide
     for c in EVAL_CASES:
+        # 系统级 eval——生产 decide 先走 _meta_decide 短路，eval 同步对齐
+        meta = _meta_decide({'options': c['options'],
+                             'state': {'title': c['title'], 'url': c['url']},
+                             'epoch': 'x', 'truncated': False}, c['goal'])
+        if meta:
+            pred = {'action': meta['action'], 'ref': None,
+                    'confidence': 1.0, 'top3': [(meta['action'], None)]}
+            full, _, _, topk = score_row(c, pred)
+            rows.append({'id': c['id'], 'bucket': 'meta', 'hit': full,
+                         'topk': topk, 'conf': 1.0, 'lat': 0})
+            continue
         cands = candidates(c)
         pairs = [[c['goal'], t] for _, _, t in cands]
         t0 = time.time()

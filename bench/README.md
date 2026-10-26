@@ -46,3 +46,35 @@
   （64.5→61.3）；v7 剔净后 **elem 回升 61.3→71.0%（最高）**。
 - **判定**：训练集只收真实 elem 样本；meta 类决策永远归 `_meta_decide`
   规则层（85.7%），不喂排序模型。collect_sites `_meta_samples` 已停用。
+
+## 收口归档（2026-10，decide 线休眠）
+
+### 范式上限（实证）
+
+- **demo 站银标封顶**：56 条 verified_real（d2-8+d3-33+d4-15）+
+  24 条 deep_semantic fixture（d3）——同分布扩量收益已零，
+  error-driven 定向采集也未救 miss（v16 elem 64.5% 持平）。
+- **准确率上限 ≈bge zero-shot 73.7%**——自训 MiniLM（22.7M）六路捷径
+  （蒸馏/直训 bge/合成增广/公开轨迹/meta 伪样本/模板 goal）全部实证无效；
+  `267eee5` 已切 bge-reranker 为默认 advisory 引擎，自训模型降级轻量备选。
+- **meta 桶不可采集**：6/17 miss 是元决策（done/blocked/wait/back），
+  属 `_meta_decide` 规则层而非元素排序——词表扩充 61.1→88.9%（t1 实证），
+  是确定性收益而非数据问题。
+
+### 管线基建（可复用资产）
+
+- `verified_data.eligible()`：verified_real 契约=执行前 refs+实际动作+执行后断言闭合；
+  v12/v13 未核验数据被默认拒收，`--allow-unverified` 显式放行仅作历史实验。
+- `drive_verified_{d2,d3,d4}.py`：三套采集器可增量补跑；
+  `gen_fixture_deep.py` localhost 批量 fixture 通路已证。
+- `eval_cases.py` 扩至 68 条六桶覆盖（meta/deep_semantic/long_list/
+  distractor/select/否定），统计力 ±1.9pp/case。
+- `miss_targets.json`：17 miss 五桶分类+采集靶标映射——下次重启的数据地图。
+
+### 遗留（休眠期等触发）
+
+- 真实流量录制 `DPX_RECORD_DECIDE=1`（`~/.dp_cli/sessions/decide_train.jsonl`
+  当前 ~18 条）——攒到 300+ 条真实自然 goal 再回来重训。
+- bge conf/margin 分布完全重叠（`cc1a275` 实测），tier act 封顶 confirm——
+  若有校准数据回归可解锁 act 档。
+- deep_semantic 桶 5/17 miss 需 30+ 条真实语料才见信号（fixture 24 条已起步）。

@@ -1,0 +1,55 @@
+{
+  "eval_model": "model_v15_verified (48 verified_real)",
+  "miss_total": 17,
+  "buckets": {
+    "meta_decision": {
+      "count": 6, "ids": ["n17","n18","n19","n20","n21","d04"],
+      "pattern": "goal 是 done/blocked/wait/back 语义非元素选择",
+      "collectable": false,
+      "note": "verified_real 契约要求元素 ref+结果证据，meta 动作无 ref 可选——走 _meta_decide 规则层词表扩充，不走采集"
+    },
+    "deep_semantic": {
+      "count": 5, "ids": ["n05","n24","n27","t05","t06"],
+      "pattern": "goal 与元素 name 无字面重叠（地址二→家/结账→去结算/点赞→👍 赞/reply box→Write a reply/flights to Tokyo→To）",
+      "targets": [
+        "fixture：电商结算页——button 去结算/继续购物/清空 + goal 我要结账",
+        "fixture：帖子卡片——button 👍 赞/💬 评论/↗ 转发 + goal 给文章点赞",
+        "fixture：论坛回复区——textbox Write a reply + link Reply#1/#2 + goal 回复一下",
+        "fixture：机票表单——textbox From/To/Depart + goal search flights to Tokyo",
+        "fixture：收货地址 radios 公司/家/学校 + goal 选择收货地址二",
+        "真实站：the-internet /login——goal 用同义改写（填登录名→Username）"
+      ]
+    },
+    "select_combobox": {
+      "count": 3, "ids": ["n13","n14","n28"],
+      "pattern": "goal 指向下拉框操作（选择排序方式/pick dropdown/adjust volume）",
+      "targets": [
+        "真实站：the-internet /dropdown——goal 变形：选择 Option 2/从下拉框选第一项",
+        "真实站：jqueryui.com/selectmenu——真实 select 变体（速度/文件/数字）",
+        "fixture：排序 combobox——goal 价格从低到高（选项：默认/价格升序/价格降序）",
+        "fixture：音量 slider+combobox 混合页——goal adjust volume to maximum"
+      ]
+    },
+    "near_distractor": {
+      "count": 2, "ids": ["n01","n30"],
+      "pattern": "同/近 role 多候选字面干扰（编辑/查看/删除/导出；登录/忘记密码/注册）",
+      "targets": [
+        "真实站：demoqa /webtables——行内 edit/delete 图标按钮组（相近干扰实锤）",
+        "真实站：saucedemo 产品页——Add to cart/Remove/Back to products 按钮组",
+        "fixture：管理后台行操作——编辑/查看/删除/导出 4 按钮同行",
+        "fixture：登录页——登录 button + 忘记密码/注册账号 links"
+      ]
+    },
+    "long_list_ordinal": {
+      "count": 1, "ids": ["n15"],
+      "pattern": "10+ 元素列表中按序数定位（第 9 个导航项）",
+      "targets": [
+        "真实站：books.toscrape 分类列表（20 分类）——goal 点第 12 个分类",
+        "真实站：demoqa /webtables 10+ 行表格——goal 选第 5 行的编辑",
+        "fixture：运维导航 10 项（总览/主机/容器/网络/存储/日志/告警/审计/监控/设置）——goal 点第 9 个导航项"
+      ]
+    }
+  },
+  "enabler": "eligible() 只查 scheme∈http/https 不查 host——python -m http.server 本地起 fixture 页同样过门禁，可精确复刻 miss 模式",
+  "priority_order": ["deep_semantic","select_combobox","near_distractor","long_list_ordinal","meta_decision(规则层非采集)"]
+}

@@ -148,6 +148,7 @@ def _engine_julia(request, session):
 
 
 _RERANKER = None           # 惰性单例——首次调用才加载模型
+_RERANKER_FAM = None        # 'bge'|'minilm'——tier 封顶判据
 _ORT_MOD = None            # onnxruntime 可用性缓存（False=不可用）
 
 
@@ -176,7 +177,7 @@ def _reranker_model():
     bge zero-shot 73.7% 是实测上限；MiniLM 自训（22.7M/23MB INT8）
     保留为无 bge 环境的轻量降级路径。
     """
-    global _RERANKER
+    global _RERANKER, _RERANKER_FAM
     if _RERANKER is not None:
         return _RERANKER
     tuned = Path.home() / '.dp_cli' / 'decide_model'
@@ -201,6 +202,7 @@ def _reranker_model():
         if CrossEncoder and (d / 'config.json').exists():
             try:
                 _RERANKER = ('st', CrossEncoder(str(d), max_length=512))
+                _RERANKER_FAM = 'bge'
                 return _RERANKER
             except Exception:
                 continue
@@ -208,6 +210,7 @@ def _reranker_model():
         try:
             _RERANKER = ('st', CrossEncoder('BAAI/bge-reranker-base',
                                           max_length=512))
+            _RERANKER_FAM = 'bge'
             return _RERANKER
         except Exception:
             pass                    # hub 不可达——落自训 MiniLM 兜底
@@ -219,6 +222,7 @@ def _reranker_model():
                     from transformers import AutoTokenizer
                     _RERANKER = ('ort', ort.InferenceSession(str(f)),
                                  AutoTokenizer.from_pretrained(str(tuned)))
+                    _RERANKER_FAM = 'minilm'
                     return _RERANKER
                 except Exception:
                     break
@@ -226,6 +230,7 @@ def _reranker_model():
         return {'_error': '缺 sentence-transformers——'
                 '`pip install dp-cli[agent]`'}
     _RERANKER = ('st', CrossEncoder(str(tuned), max_length=512))
+    _RERANKER_FAM = 'minilm'
     return _RERANKER
 
 
@@ -608,9 +613,19 @@ def register(cli):
         result['margin'] = round(margin, 4)
         result['margin_source'] = msrc
         if eng == 'reranker':
-            result['tier'] = _conf_tier(
-                conf, msrc)              # act/confirm/refuse 三档
-        if not done and (conf and conf < min_conf
+            # bge 实测 conf/margin 分布 hit/miss 完全重叠（eval-68），
+            # 无校准证据可达 act——封顶 confirm；MiniLM 保留 act 档
+            tier_src = msrc if resp.get('backend') != 'bge-st' \
+                and msrc != 'conf_fallback' else msrc
+            result['tier'] = _conf_tier(conf, tier_src)
+            if _RERANKER_FAM == 'bge':
+                # bge 引擎路径——conf/margin 分布重叠实测不可 act
+                if result['tier'] == 'act':
+                    result['tier'] = 'confirm'
+        # bge softmax 分布集中 0.16-0.28（conf 无分离信号）——
+        # bge 下 min_conf 门槛失效，unsure 只判 margin
+        _conf_gate = min_conf if _RERANKER_FAM != 'bge' else 0.0
+        if not done and (conf and conf < _conf_gate
                          or margin < min_margin):
             error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'
                   '候选不足或页面不适合当前决策模型',

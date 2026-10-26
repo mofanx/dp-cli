@@ -297,7 +297,8 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
     if IS_WINDOWS:
         # 1) 优雅: 给整个进程组发 CTRL_BREAK_EVENT
         try:
-            os.kill(pid, signal.CTRL_BREAK_EVENT)
+            os.kill(pid, getattr(signal, 'CTRL_BREAK_EVENT',
+                                 getattr(signal, 'SIGTERM', 15)))
         except Exception as e:
             debug(f'CTRL_BREAK_EVENT pid={pid} 失败', e)
 

@@ -637,7 +637,14 @@ def register(cli):
             return
         try:
             pid = json.loads(meta_p.read_text()).get('pid')
-            os.kill(int(pid), 15)
+            import sys as _sys
+            if _sys.platform.startswith('win'):
+                # Windows 无 POSIX SIGTERM 语义——taskkill /F 强制终止
+                import subprocess as _sp
+                _sp.run(['taskkill', '/F', '/T', '/PID', str(pid)],
+                        capture_output=True)
+            else:
+                os.kill(int(pid), 15)
             _clean_stale(session)
             ok({'stopped': True, 'pid': pid}, msg='daemon 已 SIGTERM')
         except Exception:

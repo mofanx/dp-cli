@@ -214,3 +214,15 @@ def test_start_bridge_timeout_enforced_pending_upstream(tmp_path):
     finally:
         stop_flag.append(1)
         srv.close()
+
+
+def test_bridge_kill_posix_getattr_guard(monkeypatch):
+    """CTRL_BREAK_EVENT getattr 守卫——POSIX 缺常量时不 NameError。"""
+    import signal
+    # POSIX signal 模块本无 CTRL_BREAK_EVENT——monkeypatch 删掉模拟
+    if hasattr(signal, 'CTRL_BREAK_EVENT'):
+        monkeypatch.delattr(signal, 'CTRL_BREAK_EVENT', raising=False)
+    import dp_cli.bridge_manager as bm
+    # 惰性取值只发生在 IS_WINDOWS 分支——POSIX 侧确认不触达常量
+    assert getattr(signal, 'CTRL_BREAK_EVENT',
+                   getattr(signal, 'SIGTERM', 15)) == signal.SIGTERM

@@ -12,7 +12,8 @@ def _hit(q, goals):
     return any(qs == g or (len(qs) > 4 and (qs in g or g in qs))
                for g in goals)
 
-def merge(paths: list[str], out: str, allow_bad_src: bool = False):
+def merge(paths: list[str], out: str, allow_bad_src: bool = False,
+          allow_derived: bool = False):
     if allow_bad_src:
         print('WARNING: legacy override permits all unverified sources; '
               'results are not clean training data')
@@ -20,7 +21,9 @@ def merge(paths: list[str], out: str, allow_bad_src: bool = False):
     rows, dropped, skipped = [], [], []
     for p in paths:
         for r in json.load(open(p)):
-            if not allow_bad_src and not eligible(r):
+            if (not allow_bad_src and not eligible(r)) \
+                    or (not allow_derived
+                        and r.get('prov') == 'record_derived'):
                 skipped.append(r)
             elif _hit(r['query'], goals):
                 dropped.append(r)
@@ -33,11 +36,14 @@ def merge(paths: list[str], out: str, allow_bad_src: bool = False):
         print('  drop:', r['query'])
     if skipped:
         print(f'  src 拒收: {len(skipped)} 行（默认仅接收有执行后证据的 '
-              f'verified_real，旧实验须显式 --allow-unverified'
+              f'verified_real；快照推导行须显式 --allow-derived；'
+              f'旧实验须显式 --allow-unverified'
               f'（旧名 --allow-bad-src））')
 
 if __name__ == '__main__':
     allow = ('--allow-unverified' in sys.argv
              or '--allow-bad-src' in sys.argv)
+    allow_d = '--allow-derived' in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    merge(args[1:], args[0], allow_bad_src=allow)
+    merge(args[1:], args[0], allow_bad_src=allow,
+          allow_derived=allow_d)

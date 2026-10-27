@@ -91,12 +91,9 @@ def promote_recorded(row):
     if url_pre and url_post and url_pre != url_post:
         expr = 'location.href'
         old, new = url_pre, url_post
-    elif pre.get('sig') and post.get('sig') \
-            and pre['sig'] != post['sig']:
-        expr = 'document.body.innerText.length'
-        old, new = pre['sig'], post['sig']
     else:
-        return None                       # 无确定变化不提升
+        return None        # 只有 url diff 是硬状态证据——
+                           # sig 等包装字段不提升（保持原料）
     if not isinstance(argv[1], str) or not argv[1].startswith('@e'):
         return None
     chosen = next((o for o in refs if o.get('ref') == ref), None)

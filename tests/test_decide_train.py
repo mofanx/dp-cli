@@ -40,3 +40,37 @@ def test_promote_recorded_url_diff():
     # 缺 pre_state→不提升
     bad3 = dict(base); bad3.pop('pre_state')
     assert promote_recorded(bad3) is None
+
+
+def test_promote_derived_default_rejected(tmp_path, monkeypatch):
+    """prov=record_derived 默认拒收（--allow-derived 才放行）+sig 路径已删。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from merge_train import merge
+    from verified_data import promote_recorded
+    row = {'query': '登录网站', 'page': 'https://x/login', 'src': 'verified_real',
+           'prov': 'record_derived', 'positive': 'link Sign in',
+           'negatives': [], 'evidence': {
+               'before_refs': [{'ref': 1, 'role': 'link', 'name': 'Sign in'}],
+               'chosen_ref': 1, 'url': 'https://x/login',
+               'action': {'argv': ['click', 'ref:1'], 'exit': 0,
+                          'result': {'status': 'ok'}},
+               'before': {'expr': 'location.href',
+                          'result': {'status': 'ok',
+                                     'data': {'result': 'https://x/login'}}},
+               'after': {'expr': 'location.href',
+                         'expected': 'https://x/home',
+                         'result': {'status': 'ok',
+                                    'data': {'result': 'https://x/home'}}}}}
+    f = tmp_path / 'in.json'; f.write_text(json.dumps([row]))
+    merge([str(f)], str(tmp_path / 'out.json'))
+    assert json.loads((tmp_path / 'out.json').read_text()) == []
+    merge([str(f)], str(tmp_path / 'out2.json'), allow_derived=True)
+    assert len(json.loads((tmp_path / 'out2.json').read_text())) == 1
+    # sig diff 行不提升（硬证据只剩 url）
+    r = promote_recorded({'goal': 'g', 'chosen': 'click @e1', 'engine_ref': 1,
+                          'state': {'refs': [{'ref': 1, 'role': 'b',
+                                              'name': 'x'}]},
+                          'pre_state': {'sig': 'a', 'url': 'https://x/'},
+                          'post_state': {'sig': 'b', 'url': 'https://x/'}})
+    assert r is None

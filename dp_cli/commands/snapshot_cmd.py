@@ -176,6 +176,36 @@ def register(cli):
 
         # 保存 refs 映射到 session（供 ref:N 解析使用）
         if refs:
+            # combobox ref 注入 option 候选并入 name——reranker 能把 goal
+            # 匹配到具体选项（select 桶 miss 修复，消费端零改动）
+            combo_refs = {k for k, v in refs.items()
+                          if v.get('role') == 'combobox'}
+            if combo_refs:
+                try:
+                    sel_map = page.run_js(
+                        "return [...document.querySelectorAll('select')].map(s=>{"
+                        "const ot=[...s.options].map(o=>o.textContent.trim());"
+                        "let nm=s.getAttribute('aria-label');"
+                        "if(!nm&&s.labels?.[0]){nm=s.labels[0].textContent||'';"
+                        "for(const t of ot)nm=nm.replace(t,'');}"
+                        "nm=nm||s.name||s.id||'';"
+                        "return[nm.trim(),ot]})"
+                    ) or []
+                    pool = [opts for nm, opts in sel_map if opts]
+                    by_name = {nm: opts for nm, opts in sel_map
+                               if nm and opts}
+                    for rid in combo_refs:
+                        cur = refs[rid].get('name', '')
+                        opts = by_name.get(cur)
+                        if opts is None and len(pool) == 1:
+                            opts = pool[0]  # 单 select 页唯一直接注入
+                        if opts:
+                            refs[rid]['options'] = opts
+                            refs[rid]['name'] = (
+                                f"{cur} [{'|'.join(opts)}]" if cur
+                                else '|'.join(opts))
+                except Exception:
+                    pass  # 注入失败不阻断快照
             url = data.get('page', {}).get('url', '')
             save_refs(session, url, refs)
 

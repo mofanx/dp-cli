@@ -2,6 +2,17 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.14] - 2026-10-27
+
+### 新增
+- **decide 序数确定性规则**：`_meta_decide` 序数定位短路——「第N个/页/行/位/条」`Nth`/`first..tenth`/`最后/last` 直接映射 ref，fill 类动词分派 `type`，`第N次/遍/回` 负向前瞻防误触（eval-120 x-系序数桶 6/6 修）
+- **snapshot combobox options 注入**：`refs[combobox].options` 落盘+name 并入 `|` 分隔选项值（`Language [English|中文|日本語]`）——reranker 获得 goal↔选项值词桥，单 select 页无 aria-label 兜底注入
+- **ext5 定向采集集**：54 条语义跳跃 verified_real 净新增（15 纯跳跃+39 负例），v21 合并集 231 行
+
+### 修复
+- **combobox→select action 映射双侧 bug**：`_ROLE_ACTION` 生产+eval 镜像同源把 combobox 映 `type`——select 桶 miss 8→1，eval-120 ALL 73.3→83.3/elem 67.5→81.9
+- **eval-120 扩样**：`NEW3` 52 条真实业务形态 case（select/序数/多步/语义跳跃四桶），与训练集三向撞车 0；combobox `opt_values` 三元组对齐生产注入形态
+
 ## [0.15.13] - 2026-10-26
 
 ### 新增

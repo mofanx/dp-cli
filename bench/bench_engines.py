@@ -34,8 +34,11 @@ def candidates(case):
     """统一候选表：元素 + 动作伪选项 → [(action, ref, text)]"""
     rows = []
     for o in case['options']:
+        name = o['name']
+        if o.get('opt_values'):            # 模拟生产 combobox options 注入形态
+            name = f"{name} [{'|'.join(o['opt_values'])}]"
         rows.append((_ROLE_ACTION.get(o['role'], 'click'), o['ref'],
-                     f"{o['role']} {o['name']}"))
+                     f"{o['role']} {name}"))
     for a, t in _ACT_CANDS:
         rows.append((a, None, t))
     return rows

@@ -268,7 +268,7 @@ CASES = [
 #     模型选工具名即完成元素选择；action 由选中元素 role 经
 #     _ROLE_ACTION 代码映射（与 julia 引擎路径同构，公平对位）
 
-_ROLE_ACTION = {'textbox': 'type', 'combobox': 'type', 'searchbox': 'type',
+_ROLE_ACTION = {'textbox': 'type', 'combobox': 'select', 'searchbox': 'type',
                 'spinbutton': 'type', 'listbox': 'select'}
 
 _ACT_TOOLS = {

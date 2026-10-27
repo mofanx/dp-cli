@@ -9,11 +9,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 from bench_needle import CASES  # 复用后 8 条 holdout
 
 def _mk(cid, goal, action, ref, title, url, opts):
+    out = []
+    for i, o in enumerate(opts):
+        r, n = o[0], o[1]
+        e = {'ref': i + 1, 'role': r, 'name': n}
+        if len(o) > 2:                     # (role, name, opt_values)
+            e['opt_values'] = o[2]
+        out.append(e)
     return {'id': cid, 'goal': goal,
             'expect': {'action': action, 'ref': ref},
-            'url': url, 'title': title,
-            'options': [{'ref': i+1, 'role': r, 'name': n}
-                        for i, (r, n) in enumerate(opts)]}
+            'url': url, 'title': title, 'options': out}
 
 NEW = [
     # ── 相近干扰项（同 role 多候选消歧）──
@@ -191,22 +196,24 @@ NEW3 = [
     _mk('x15', '把这个候选人约面', 'click', 3, 'ATS', 'https://x/ats',
         [('button', '查看简历'), ('button', '淘汰'), ('button', '安排面试'), ('button', '发 offer')]),
     # ── select/combobox ──
+    # combobox 第三元=opt_values——模拟生产 snapshot_cmd 注入后的形态
+    # （refs.name 并入 `|` 分隔选项值，ranker 拿到 goal↔选项值 lexical hook）
     _mk('x16', '切换语言到日语', 'select', 2, 'Prefs', 'https://x/p1',
-        [('button', '保存'), ('combobox', 'Language'), ('link', '取消')]),
+        [('button', '保存'), ('combobox', 'Language', ['English', '中文', '日本語']), ('link', '取消')]),
     _mk('x17', '按销量排商品', 'select', 1, 'Catalog', 'https://x/p2',
-        [('combobox', '排序：默认'), ('button', '筛选')]),
+        [('combobox', '排序：默认', ['默认', '销量', '价格', '上新']), ('button', '筛选')]),
     _mk('x18', '选美元结算', 'select', 3, 'Billing', 'https://x/p3',
-        [('radio', '人民币'), ('radio', '港币'), ('combobox', 'Currency')]),
+        [('radio', '人民币'), ('radio', '港币'), ('combobox', 'Currency', ['USD', 'EUR', 'JPY'])]),
     _mk('x19', '把时区调成东京', 'select', 1, 'Settings', 'https://x/p4',
-        [('combobox', 'Timezone'), ('button', '重置默认')]),
+        [('combobox', 'Timezone', ['UTC', 'Asia/Tokyo', 'Asia/Shanghai']), ('button', '重置默认')]),
     _mk('x20', '换成深色主题', 'select', 2, 'Appearance', 'https://x/p5',
-        [('button', '预览'), ('combobox', 'Theme'), ('link', '恢复默认')]),
+        [('button', '预览'), ('combobox', 'Theme', ['Light', 'Dark', 'Auto']), ('link', '恢复默认')]),
     _mk('x21', '导出格式选 PDF', 'select', 1, 'Export', 'https://x/p6',
-        [('combobox', 'Export as'), ('button', '下载')]),
+        [('combobox', 'Export as', ['CSV', 'PDF', 'JSON']), ('button', '下载')]),
     _mk('x22', 'pick a US region', 'select', 2, 'Deploy', 'https://x/p7',
-        [('radio', 'EU'), ('combobox', 'Region'), ('button', 'Deploy')]),
+        [('radio', 'EU'), ('combobox', 'Region', ['US-East', 'US-West', 'EU-Central']), ('button', 'Deploy')]),
     _mk('x23', '把字号调成大号', 'select', 1, 'Reader', 'https://x/p8',
-        [('combobox', 'Font size'), ('button', 'A-'), ('button', 'A+')]),
+        [('combobox', 'Font size', ['Small', 'Medium', 'Large']), ('button', 'A-'), ('button', 'A+')]),
     # ── 长列表序数 ──
     _mk('x24', '点第 7 个菜单项', 'click', 7, 'Admin', 'https://x/l1',
         [('link', x) for x in ['仪表盘','订单','商品','客户','库存','营销','报表','设置','日志','权限']]),

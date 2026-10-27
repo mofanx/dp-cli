@@ -1,0 +1,65 @@
+{
+  "version": "v2",
+  "source": "eval-120 x-系 miss 归因 (21 条)",
+  "buckets": {
+    "select_interaction": {
+      "ids": [
+        "x16",
+        "x17",
+        "x18",
+        "x19",
+        "x20",
+        "x21",
+        "x22",
+        "x23"
+      ],
+      "n": 8,
+      "pattern": "goal 指向 select 控件本体（Language/Theme/Currency/Region/排序/字号）——模型对 select 类 action 欠采样",
+      "remedy": "定向采集：演示站/真实站 select 下拉（结算币种、语言、排序、时区）——断言 select.value 变化；断言模板已覆盖",
+      "effort": "data",
+      "feasible": true
+    },
+    "ordinal_positional": {
+      "ids": [
+        "x24",
+        "x25",
+        "x29",
+        "x30",
+        "x31",
+        "x46"
+      ],
+      "n": 6,
+      "pattern": "序数/位置消歧（第N个/最后一页/第二行）——CrossEncoder 只比 goal↔候选文本，不看位置索引",
+      "remedy": "两路并行：(a) 采集序数 goal 数据补分布 (b) 结构性修复——候选文本序列化时注入位置标记 '#7'，属代码改候选构造非数据",
+      "effort": "code+data",
+      "feasible": true
+    },
+    "semantic_leap": {
+      "ids": [
+        "x01",
+        "x03",
+        "x04",
+        "x12",
+        "x43"
+      ],
+      "n": 5,
+      "pattern": "业务术语映射：开工单↔Create Ticket、作废↔冲红、驳回↔不予通过、压掉↔Mute、删除↔Del",
+      "remedy": "定向采集业务管理台词汇（CRM/财务/告警台）+训练侧 goal 同义增强；演示站词表无法覆盖此类，需真实业务站或 LLM 生成同义 query 对",
+      "effort": "data",
+      "feasible": true
+    },
+    "multi_step": {
+      "ids": [
+        "x34",
+        "x41"
+      ],
+      "n": 2,
+      "pattern": "goal 含 '先A再B' 时序——expect 只认第一步（type），模型被 B 步动词（点/登录）带偏",
+      "remedy": "确定性规则层（仿 _meta_decide）：'先X再Y'→截首步 X 入 query；属规则补丁非数据，半天",
+      "effort": "rule",
+      "feasible": true
+    }
+  },
+  "structural_note": "无完全不可解桶；ordinal 的 (b) 路是代码修复优先级最高（改一处候选序列化覆盖全部 6 条）",
+  "expected_gain": "select 8 + ordinal 6 两桶=14/21 可达（67% miss），其余靠业务分布数据"
+}

@@ -18,6 +18,7 @@ TYPE 动作只回 ref——value 由上层补，decide 不猜。
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -297,7 +298,7 @@ def _engine_reranker(state, goal):
         return {'_error': f'Jev API 失败: {e}'}
 
 
-_ROLE_ACTION = {'textbox': 'type', 'combobox': 'type', 'searchbox': 'type',
+_ROLE_ACTION = {'textbox': 'type', 'combobox': 'select', 'searchbox': 'type',
                 'spinbutton': 'type', 'listbox': 'select'}
 
 # meta 决策=状态判断非语义排序——规则判定，不外包给概率模型
@@ -343,6 +344,37 @@ def _conf_tier(conf: float, margin_source: str | None = None) -> str:
     return c if conf >= _T_LO else r
 
 
+_CN_NUM = {'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5,
+           '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
+_ORD_WORDS = {'first': 1, 'second': 2, 'third': 3, 'fourth': 4,
+              'fifth': 5, 'sixth': 6, 'seventh': 7, 'eighth': 8,
+              'ninth': 9, 'tenth': 10}
+
+
+def _ordinal_n(g, goal):
+    """goal 序数抽取——第N个/页/行/位/条、Nth、first..tenth、最后/last。
+    返回 n（1-based）、-1（最后）、None（无序数信号）。"""
+    m = re.search(r'第\s*(\d+|[一二两三四五六七八九十]+)\s*'
+                  r'(?:个|页|行|位|条|项|列|名|节|章|张|步)?(?!次|遍|回)',
+                  goal)
+    if m:
+        tok = m.group(1)
+        if tok.isdigit():
+            return int(tok)
+        if len(tok) == 2 and tok[0] == '十':      # 十一..十九
+            return 10 + _CN_NUM.get(tok[1], 0)
+        return _CN_NUM.get(tok[-1]) or _CN_NUM.get(tok)
+    if '最后' in goal or re.search(r'\blast\b', g):
+        return -1
+    mw = re.search(r'\b(\d+)(?:st|nd|rd|th)\b', g)
+    if mw:
+        return int(mw.group(1))
+    for w, n in _ORD_WORDS.items():
+        if re.search(rf'\b{w}\b', g):
+            return n
+    return None
+
+
 def _meta_decide(state, goal):
     """meta 类决策确定性判定——命中返回 {action, deterministic}，否则 None。
 
@@ -365,6 +397,17 @@ def _meta_decide(state, goal):
             any(k in title for k in _DONE_STATE):
         return {'action': 'done', 'deterministic': True,
                 'reason': 'goal 完成意图+页面完成态'}
+    # 序数定位确定性短路——'第N个/第N页/第N行/last' 直接映射 ref，
+    # 模型只看 goal↔文本语义拿不到位置信号（eval-120 x-系 6 miss 归因）
+    n = _ordinal_n(g, goal)
+    if n is not None:
+        ref = opts[-1]['ref'] if n == -1 else (n if n <= len(opts) else None)
+        if ref is not None:
+            is_type = any(k in g or k in goal for k in
+                          ('输入', '填写', '填', '键入', 'type', 'fill', 'enter'))
+            act = 'type' if is_type else 'click'
+            return {'action': act, 'ref': ref, 'deterministic': True,
+                    'reason': f'goal 含序数定位（第{n if n > 0 else len(opts)}）'}
     if any(k in g or k in goal for k in _BACK_KW):
         return {'action': 'back', 'deterministic': True,
                 'reason': 'goal 含返回意图'}
@@ -540,7 +583,8 @@ def register(cli):
         if meta:
             cur_sig = state['epoch']
             _record_hash(session, cur_sig)
-            ok({'action': meta['action'], 'ref': None, 'confidence': 1.0,
+            ok({'action': meta['action'], 'ref': meta.get('ref'),
+                'confidence': 1.0,
                 'deterministic': True, 'advisory': eng == 'reranker',
                 'reason': meta['reason'], 'epoch': cur_sig,
                 'options_count': len(state['options']),

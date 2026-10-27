@@ -29,8 +29,8 @@ def main():
                              'state': {'title': c['title'], 'url': c['url']},
                              'epoch': 'x', 'truncated': False}, c['goal'])
         if meta:
-            pred = {'action': meta['action'], 'ref': None,
-                    'confidence': 1.0, 'top3': [(meta['action'], None)]}
+            pred = {'action': meta['action'], 'ref': meta.get('ref'),
+                    'confidence': 1.0, 'top3': [(meta['action'], meta.get('ref'))]}
             full, _, _, topk = score_row(c, pred)
             rows.append({'id': c['id'], 'bucket': 'meta', 'hit': full,
                          'topk': topk, 'conf': 1.0, 'lat': 0})

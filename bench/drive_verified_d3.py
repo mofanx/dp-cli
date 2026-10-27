@@ -310,9 +310,17 @@ def auto_tasks(session, page_url):
         if not goal:
             continue
         try:
-            if role == 'link' and link_href.get(name, '').startswith('/'):
-                tasks.append((page_url, goal, role, name, ('click',),
-                              'location.pathname', link_href[name], 0, 0))
+            if role == 'link':
+                href = link_href.get(name, '')
+                if href and not href.startswith(('#', 'javascript')):
+                    from urllib.parse import urljoin, urlparse
+                    p = urlparse(urljoin(page_url, href))
+                    if p.path in ('', '/', urlparse(page_url).path):
+                        tasks.append((page_url, goal, role, name, ('click',),
+                                      'location.href', p.geturl(), 0, 0))
+                    else:
+                        tasks.append((page_url, goal, role, name, ('click',),
+                                      'location.pathname', p.path, 0, 0))
             elif role == 'button':
                 oc = btn_oc.get(name, '')
                 import re

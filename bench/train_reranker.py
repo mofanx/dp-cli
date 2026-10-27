@@ -101,7 +101,7 @@ def main():
         from sentence_transformers.cross_encoder.losses import MarginMSELoss
         m = CrossEncoder(BASE, num_labels=1)
         args = CrossEncoderTrainingArguments(
-            output_dir=str(OUT), num_train_epochs=2,
+            output_dir=str(OUT), num_train_epochs=int(__import__('os').environ.get('TRAIN_EPOCHS','2')),
             per_device_train_batch_size=8, learning_rate=2e-5,
             logging_steps=20, save_strategy='no')
         tr = CrossEncoderTrainer(model=m, args=args, train_dataset=ds,
@@ -149,7 +149,7 @@ def main():
                             for q, c, l in pairs])
     m = CrossEncoder(BASE, num_labels=1)
     args = CrossEncoderTrainingArguments(
-        output_dir=str(OUT), num_train_epochs=2,
+        output_dir=str(OUT), num_train_epochs=int(__import__('os').environ.get('TRAIN_EPOCHS','2')),
         per_device_train_batch_size=8, learning_rate=2e-5,
         logging_steps=20, save_strategy='no')
     tr = CrossEncoderTrainer(model=m, args=args, train_dataset=ds)

@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.13] - 2026-10-26
+
+### 新增
+- **bge 微调引擎落默认**：`_bge_dirs()` 候选链——`DPX_BGE_MODEL` env 覆盖 → `bge_v19_tuned`（eval-68 72.1%，vs zero-shot +4.5pp）→ 用户部署 bge → hub zero-shot；缺失自动回退不断链
+- **decide 录制契约**：`pre_state`/`post_state` 执行前后快照（`DPX_RECORD_DECIDE=1`）——真实流量可带"执行后"证据，`promote_recorded` url-diff 推导 eligible 行（`prov='record_derived'` 标记，merge 默认拒收须 `--allow-derived`）
+- **auto 采集链**：`drive_verified_d3.py TASK_IDX=auto`——现场看 refs 生成任务+断言，`AUTO_PAGES`/`AUTO_OUT` env 化可采任意站；生成侧 eval-goal 规范化+双向子串前置去重
+
+### 修复
+- **平台杀进程双修**：daemon `stop` Windows 走 `taskkill /F /T` 替代裸 `os.kill(pid,15)`；`bridge_manager` `CTRL_BREAK_EVENT` 改 getattr 惰性取值（POSIX 无此常量 NameError 隐患消除）
+- **TMPDIR 兜底**：`_spawn_page` 写探针+候选目录重试——`/tmp` 配额耗尽导致 headless spawn 失败的结构化降级
+- **merge_train derived 守卫**：`record_derived` 行默认拒收防快照推导证据污染训练
+
 ## [0.15.12] - 2026-10-23
 
 ### 新增

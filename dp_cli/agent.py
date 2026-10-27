@@ -164,10 +164,18 @@ def _ort():
     return _ORT_MOD or None
 
 
-_BGE_DIRS = [
-    Path.home() / '.dp_cli' / 'bge_model',          # 用户部署的 bge（ONNX/ST）
-    Path('/media/yan/Data/bge_tuned'),              # 本项目实测 bge 权重
-]
+def _bge_dirs():
+    """bge 候选目录——DPX_BGE_MODEL env 优先，其次微调权重，最后 zero-shot 基座。"""
+    dirs = []
+    env = os.environ.get('DPX_BGE_MODEL')
+    if env:
+        dirs.append(Path(env))
+    dirs += [
+        Path('/media/yan/Data/bge_v19_tuned'),      # v19 微调（eval-68 72.1%）
+        Path.home() / '.dp_cli' / 'bge_model',      # 用户部署的 bge（ONNX/ST）
+        Path('/media/yan/Data/bge_tuned'),          # 本项目实测 bge 权重
+    ]
+    return dirs
 
 
 def _reranker_model():
@@ -183,7 +191,7 @@ def _reranker_model():
     tuned = Path.home() / '.dp_cli' / 'decide_model'
     ort = _ort()
     if ort:
-        for d in _BGE_DIRS:
+        for d in _bge_dirs():
             for cand in ['model_int8.onnx', 'model.onnx']:
                 f = d / 'onnx' / cand
                 if f.exists():
@@ -198,7 +206,7 @@ def _reranker_model():
         from sentence_transformers import CrossEncoder
     except ImportError:
         CrossEncoder = None
-    for d in _BGE_DIRS:
+    for d in _bge_dirs():
         if CrossEncoder and (d / 'config.json').exists():
             try:
                 _RERANKER = ('st', CrossEncoder(str(d), max_length=512))

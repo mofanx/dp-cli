@@ -87,6 +87,34 @@ def _accepts_session(cmd_name: str) -> bool:
         return False
 
 
+_IN_SNAP = False            # _snap_state 内部 _invoke 防递归录制
+
+
+def _snap_state(session: str) -> dict:
+    """执行后状态快照——url/页面签名，供 post_state 证据字段。
+
+    仅在 DPX_RECORD_DECIDE 开启时取快照（in-process _invoke 调 eval
+    location.href）——失败返回空 dict 不阻塞主链路；_IN_SNAP 守卫
+    避免嵌套 _invoke 自身再被录制。
+    """
+    from dp_cli.decide_train import enabled
+    if not enabled():
+        return {}
+    global _IN_SNAP
+    _IN_SNAP = True
+    try:
+        code, r = _invoke(['eval', 'location.href', '--session', session])
+        if code == 0 and isinstance(r, dict):
+            url = (r.get('data') or {}).get('result')
+            if isinstance(url, str):
+                return {'url': url}
+    except Exception:
+        pass
+    finally:
+        _IN_SNAP = False
+    return {}
+
+
 def _record_session(argv: list, default: str = None) -> str:
     for i, arg in enumerate(argv or []):
         if arg in ('--session', '-S') and i + 1 < len(argv):
@@ -186,7 +214,7 @@ def _exec_line(line: str, session: str) -> None:
         record_session = _record_session(argv, session)
         is_unsure = (cmd == 'decide' and len(argv) > 1
                      and result.get('code') == 'AGENT_UNSURE')
-        if code == 0 or is_unsure:
+        if (code == 0 or is_unsure) and not _IN_SNAP:
             from dp_cli.decide_train import record
             from dp_cli.session import load_refs
             if cmd == 'decide' and len(argv) > 1:
@@ -201,12 +229,16 @@ def _exec_line(line: str, session: str) -> None:
                         ref = json.loads(result.get('detail') or '').get('ref')
                     except Exception:
                         pass
+                _ps = _snap_state(record_session)
                 record(record_session, argv,
                        load_refs(record_session) or {},
-                       goal=argv[1], engine_ref=ref, unsure=is_unsure)
+                       goal=argv[1], engine_ref=ref, unsure=is_unsure,
+                       **({'post_state': _ps} if _ps else {}))
             else:
+                _ps = _snap_state(record_session)
                 record(record_session, argv,
-                       load_refs(record_session) or {})
+                       load_refs(record_session) or {},
+                       **({'post_state': _ps} if _ps else {}))
         _refresh_refs(cmd, record_session)
     except KeyboardInterrupt:
         _write_err('（已中断）\n')
@@ -399,7 +431,7 @@ def _serve(session: str = None, tty: bool = False) -> int:
         is_unsure = (bool(argv) and argv[0] == 'decide'
                      and len(argv) > 1
                      and result.get('code') == 'AGENT_UNSURE')
-        if code == 0 or is_unsure:
+        if (code == 0 or is_unsure) and not _IN_SNAP:
             from dp_cli.decide_train import record
             from dp_cli.session import load_refs
             if argv[0] == 'decide' and len(argv) > 1:
@@ -414,12 +446,16 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         ref = json.loads(result.get('detail') or '').get('ref')
                     except Exception:
                         pass
+                _ps = _snap_state(record_session)
                 record(record_session, argv,
                        load_refs(record_session) or {},
-                       goal=argv[1], engine_ref=ref, unsure=is_unsure)
+                       goal=argv[1], engine_ref=ref, unsure=is_unsure,
+                       **({'post_state': _ps} if _ps else {}))
             else:
+                _ps = _snap_state(record_session)
                 record(record_session, argv,
-                       load_refs(record_session) or {})
+                       load_refs(record_session) or {},
+                       **({'post_state': _ps} if _ps else {}))
         _maybe_arm_netlog()
 
 

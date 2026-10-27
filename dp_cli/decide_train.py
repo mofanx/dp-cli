@@ -30,7 +30,8 @@ def _file() -> Path:
 
 def record(session: str, argv: list, refs: dict,
            goal: str = None, chosen_ref: int = None,
-           unsure: bool = False, engine_ref: int = None) -> None:
+           unsure: bool = False, engine_ref: int = None,
+           post_state: dict = None) -> None:
     """执行成功后异步采集一条。refs={rid:{role,name,locator}}。
 
     goal：推理分布的语义 query（decide 调用时的用户目标文本）；
@@ -58,6 +59,11 @@ def record(session: str, argv: list, refs: dict,
         entry['unsure'] = True
     if engine_ref is not None:
         entry['engine_ref'] = engine_ref
+    if post_state:
+        # 执行后状态快照（url/ref 存活/页签名 diff）——让真实流量记录
+        # 能补执行后证据过 verified_data.eligible()；无 diff 的行
+        # 仍只是原料不冒充 verified。
+        entry['post_state'] = post_state
     try:
         f = _file()
         f.parent.mkdir(parents=True, exist_ok=True)

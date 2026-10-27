@@ -246,3 +246,159 @@ def test_ctrl_break_getattr_fallback(monkeypatch):
                         lambda pid: next(alive, False))
     assert bridge_manager.stop_bridge(999, timeout=0.2) is True
     assert kills == [signal.SIGTERM], kills
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P1: killpg pid 复用防护 / _reap_proc / spawn 后 wait 线程
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_pid_cmdline_is_bridge_proc_hit(monkeypatch):
+    """/proc cmdline 含 'dp_cli'+'bridge' → True。"""
+    from pathlib import Path
+    monkeypatch.setattr(Path, 'is_file', lambda self: True)
+    monkeypatch.setattr(
+        Path, 'read_bytes',
+        lambda self: b'/usr/bin/python\x00-m\x00dp_cli.bridge\x00'
+                     b'--user-data-dir\x00/x\x00')
+    assert bridge_manager._pid_cmdline_is_bridge(999) is True
+
+
+def test_pid_cmdline_is_bridge_proc_other(monkeypatch):
+    """/proc cmdline 可读但不是 bridge（pid 被无关进程复用）→ False。"""
+    from pathlib import Path
+    monkeypatch.setattr(Path, 'is_file', lambda self: True)
+    monkeypatch.setattr(Path, 'read_bytes', lambda self: b'bash\x00')
+    assert bridge_manager._pid_cmdline_is_bridge(999) is False
+
+
+def test_pid_cmdline_is_bridge_ps_fallback(monkeypatch):
+    """无 /proc（macOS 场景）→ ps -o command= 回退，命中 bridge → True。"""
+    from pathlib import Path
+    monkeypatch.setattr(Path, 'is_file', lambda self: False)
+
+    def fake_run(cmd, **kw):
+        assert cmd[:2] == ['ps', '-p']
+        class R:
+            returncode = 0
+            stdout = 'python -m dp_cli.bridge --user-data-dir /x'
+        return R()
+    monkeypatch.setattr(bridge_manager.subprocess, 'run', fake_run)
+    assert bridge_manager._pid_cmdline_is_bridge(999) is True
+
+
+def test_pid_cmdline_is_bridge_unreadable_returns_false(monkeypatch):
+    """/proc 不可读且 ps 也失败 → False（保守：调用点退化单进程信号，
+    绝不冒险 killpg）。"""
+    from pathlib import Path
+    monkeypatch.setattr(Path, 'is_file', lambda self: False)
+    monkeypatch.setattr(bridge_manager.subprocess, 'run',
+                        lambda *a, **k: (_ for _ in ()).throw(OSError('no ps')))
+    assert bridge_manager._pid_cmdline_is_bridge(999) is False
+
+
+def test_stop_bridge_non_bridge_cmdline_skips_killpg(monkeypatch):
+    """pid 复用防护核心断言：cmdline 校验非 bridge → 不走 killpg，
+    TERM/KILL 都退化为单进程 os.kill。"""
+    import signal
+    killpg_calls, kill_calls = [], []
+    monkeypatch.setattr(bridge_manager.os, 'killpg',
+                        lambda p, s: killpg_calls.append((p, s)))
+    monkeypatch.setattr(bridge_manager.os, 'kill',
+                        lambda p, s: kill_calls.append((p, s)))
+    monkeypatch.setattr(bridge_manager, 'is_bridge_alive',
+                        lambda pid: True)          # 一直"活"→走完 TERM+KILL
+    monkeypatch.setattr(bridge_manager, '_pid_cmdline_is_bridge',
+                        lambda pid: False)
+    monkeypatch.setattr(bridge_manager, 'IS_WINDOWS', False)
+
+    assert bridge_manager.stop_bridge(12345, timeout=0.2) is False
+    assert killpg_calls == []
+    assert (12345, signal.SIGTERM) in kill_calls
+    assert (12345, signal.SIGKILL) in kill_calls
+
+
+def test_stop_bridge_bridge_cmdline_uses_killpg(monkeypatch):
+    """cmdline 确认是 bridge → 正常走 killpg 杀整个进程组。"""
+    import signal
+    killpg_calls, kill_calls = [], []
+    monkeypatch.setattr(bridge_manager.os, 'killpg',
+                        lambda p, s: killpg_calls.append((p, s)))
+    monkeypatch.setattr(bridge_manager.os, 'kill',
+                        lambda p, s: kill_calls.append((p, s)))
+    alive = iter([True, False])   # TERM 后第一次探活即死
+    monkeypatch.setattr(bridge_manager, 'is_bridge_alive',
+                        lambda pid: next(alive, True))
+    monkeypatch.setattr(bridge_manager, '_pid_cmdline_is_bridge',
+                        lambda pid: True)
+    monkeypatch.setattr(bridge_manager, 'IS_WINDOWS', False)
+
+    assert bridge_manager.stop_bridge(12345, timeout=0.5) is True
+    assert (12345, signal.SIGTERM) in killpg_calls
+    assert kill_calls == []       # killpg 成功无 fallback
+
+
+def test_reap_proc_terminate_then_wait(monkeypatch):
+    """_reap_proc：terminate 后 wait 成功 → 不再 kill。"""
+    from unittest.mock import Mock
+    proc = Mock()
+    bridge_manager._reap_proc(proc)
+    proc.terminate.assert_called_once()
+    proc.wait.assert_called_once()
+    proc.kill.assert_not_called()
+
+
+def test_reap_proc_wait_timeout_falls_back_kill(monkeypatch):
+    """_reap_proc：wait 超时 → kill + 再 wait 兜底。"""
+    from unittest.mock import Mock
+    proc = Mock()
+    proc.wait.side_effect = [subprocess.TimeoutExpired('c', 3), None]
+    bridge_manager._reap_proc(proc)
+    proc.terminate.assert_called_once()
+    proc.kill.assert_called_once()
+    assert proc.wait.call_count == 2
+
+
+def test_start_bridge_failure_reaps_proc(monkeypatch, tmp_path):
+    """spawn 失败路径：terminate 后必须 wait 回收（防 zombie），
+    wait 超时再 kill。"""
+    from unittest.mock import Mock
+    proc = Mock()
+    proc.poll.return_value = None
+    proc.stderr = iter([])
+    proc.stdout = iter([])
+    proc.wait.side_effect = subprocess.TimeoutExpired('cmd', 3)
+    monkeypatch.setattr(bridge_manager.subprocess, 'Popen',
+                        lambda *a, **k: proc)
+    monkeypatch.setattr(bridge_manager, '_detach_spawn_kwargs', lambda: {})
+
+    with pytest.raises(RuntimeError):
+        bridge_manager.start_bridge(tmp_path, ready_timeout=0.5)
+    proc.terminate.assert_called()
+    proc.wait.assert_called()
+    proc.kill.assert_called()
+
+
+def test_start_bridge_success_registers_wait_thread(monkeypatch, tmp_path):
+    """spawn 成功路径：注册 daemon 线程执行 proc.wait() 回收退出码。"""
+    from unittest.mock import Mock
+    proc = Mock()
+    proc.poll.return_value = None
+    proc.pid = 4242
+    proc.stderr = iter([])
+    proc.stdout = iter(['BRIDGE_READY host=127.0.0.1 port=4567\n'])
+
+    started_targets = []
+    real_thread = threading.Thread
+    class SpyThread(real_thread):
+        def start(self):
+            started_targets.append(getattr(self, '_target', None))
+            return super().start()
+
+    monkeypatch.setattr(bridge_manager.subprocess, 'Popen',
+                        lambda *a, **k: proc)
+    monkeypatch.setattr(bridge_manager, '_detach_spawn_kwargs', lambda: {})
+    monkeypatch.setattr(threading, 'Thread', SpyThread)
+
+    pid, port = bridge_manager.start_bridge(tmp_path, ready_timeout=5)
+    assert (pid, port) == (4242, 4567)
+    assert proc.wait in started_targets

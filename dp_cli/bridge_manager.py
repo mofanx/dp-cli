@@ -86,6 +86,62 @@ def _win_terminate(pid: int) -> None:
         debug(f'taskkill pid={pid} 失败', e)
 
 
+def _pid_cmdline_is_bridge(pid: int) -> bool:
+    """POSIX pid 复用防护：确认目标进程 cmdline 仍是 dp_cli bridge。
+
+    session 文件 / bridge 注册表持久化的 pid，在 bridge 死后可能被 OS
+    回收分给无关进程——此时 killpg(pid) 会误杀整个无辜进程组。先读
+    /proc/<pid>/cmdline（Linux）；无 /proc（macOS）或读取失败退化到
+    ``ps -o command=``；都读不到也返回 False——调用点退化为单进程
+    信号（有界损伤），绝不冒险 killpg。
+
+    bridge spawn 命令行为 ``python -m dp_cli.bridge --user-data-dir …``，
+    故判据为 cmdline 同时含 'dp_cli' 与 'bridge'。
+    """
+    cmdline = ''
+    try:
+        p = Path(f'/proc/{pid}/cmdline')
+        if p.is_file():
+            cmdline = p.read_bytes().replace(b'\x00', b' ') \
+                .decode('utf-8', 'replace')
+    except Exception:
+        pass
+    if not cmdline:
+        try:
+            r = subprocess.run(['ps', '-p', str(pid), '-o', 'command='],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                cmdline = r.stdout or ''
+        except Exception:
+            pass
+    return 'dp_cli' in cmdline and 'bridge' in cmdline
+
+
+def _reap_proc(proc, timeout: float = 3.0) -> None:
+    """terminate → wait(timeout) → kill+wait 兜底，确保 Popen 被 reap。
+
+    start_bridge 失败路径必须走本函数：只 terminate 不 wait，子进程在
+    父进程生命周期内一直是 zombie（长寿 daemon/批量进程尤其明显）。
+    """
+    try:
+        proc.terminate()
+    except Exception as e:
+        debug('bridge terminate 失败', e)
+    try:
+        proc.wait(timeout=timeout)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    except Exception as e:
+        debug('bridge wait 失败', e)
+        return
+    try:
+        proc.kill()
+        proc.wait(timeout=timeout)
+    except Exception as e:
+        debug('bridge kill/wait 失败', e)
+
+
 _READY_RE = re.compile(r'^BRIDGE_READY host=(?P<host>\S+) port=(?P<port>\d+)\s*$')
 
 
@@ -248,21 +304,22 @@ def start_bridge(user_data_dir: str | os.PathLike,
             if m:
                 actual_port = int(m.group('port'))
                 break
-        if actual_port is None:
-            proc.terminate()
-            raise RuntimeError(
-                f'bridge 启动超时 ({ready_timeout}s)。\n'
-                f'若是首次连接：请把浏览器窗口（Chrome/Edge）切到前台，点击弹出的'
-                f' "Allow remote debugging for this browser instance" 对话框。\n'
-                f'当前 bridge stderr:\n{_collect_stderr()}'
-            )
     except Exception:
-        try:
-            proc.terminate()
-        except Exception as e:
-            debug('bridge 启动失败后 terminate 失败', e)
+        _reap_proc(proc)
         raise
 
+    if actual_port is None:
+        _reap_proc(proc)
+        raise RuntimeError(
+            f'bridge 启动超时 ({ready_timeout}s)。\n'
+            f'若是首次连接：请把浏览器窗口（Chrome/Edge）切到前台，点击弹出的'
+            f' "Allow remote debugging for this browser instance" 对话框。\n'
+            f'当前 bridge stderr:\n{_collect_stderr()}'
+        )
+
+    # spawn 成功后父进程不再持有 proc 引用——注册 daemon 线程 wait
+    # 回收退出码，否则 bridge 退出后在本进程内残留 zombie。
+    threading.Thread(target=proc.wait, daemon=True).start()
     # _read_stdout 线程在 READY 后持续消费 stdout，天然承担 drain 职责；
     # stderr 已有 stderr_thread 在持续消费。
     return proc.pid, actual_port
@@ -313,10 +370,21 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
         time.sleep(0.1)
         return not is_bridge_alive(pid)
 
-    # POSIX: 先 SIGTERM 整个进程组（start_new_session 让 bridge 自成组）
-    try:
-        os.killpg(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
+    # POSIX: 先 SIGTERM 整个进程组（start_new_session 让 bridge 自成组）。
+    # pid 复用防护：持久化 pid 在 bridge 死后可能被 OS 回收分给无关
+    # 进程，killpg(pid) 会连带误杀其整个进程组——先校验 cmdline 仍是
+    # bridge 才允许 killpg，校验失败退化为单进程信号（有界损伤）。
+    if _pid_cmdline_is_bridge(pid):
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception as e:
+                debug(f'SIGTERM pid={pid} 失败', e)
+    else:
+        debug(f'stop_bridge: pid={pid} cmdline 非 bridge 或不可读，'
+              '跳过 killpg 退化为单进程 SIGTERM')
         try:
             os.kill(pid, signal.SIGTERM)
         except Exception as e:
@@ -328,10 +396,16 @@ def stop_bridge(pid: int, timeout: float = 2.0) -> bool:
             return True
         time.sleep(0.05)
 
-    # 强杀
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except Exception:
+    # 强杀（同样先校验 cmdline——TERM 等待窗内 pid 可能已易主）
+    if _pid_cmdline_is_bridge(pid):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception as e:
+                debug(f'SIGKILL pid={pid} 失败', e)
+    else:
         try:
             os.kill(pid, signal.SIGKILL)
         except Exception as e:

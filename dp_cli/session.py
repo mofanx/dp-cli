@@ -34,21 +34,42 @@ def get_session_file(name: str) -> Path:
 
 
 def load_session(name: str) -> dict:
-    """读取会话信息"""
+    """读取会话信息。
+
+    - 文件不存在 → {}（正常"无会话"语义）
+    - 文件存在但损坏（JSON 解析失败 / 内容非 dict）→ {'_corrupt': <原因>}：
+      损坏文件无法判定归属（可能是 user_connected/auto-connect 会话），
+      不能静默当空会话让上层直接覆盖——'_corrupt' 标记供
+      _connect_browser / close_browser 分流处理，损坏原因记 debug 日志。
+    """
     f = get_session_file(name)
     if not f.exists():
         return {}
     try:
-        return json.loads(f.read_text(encoding='utf-8'))
-    except Exception:
-        return {}
+        data = json.loads(f.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return {}  # exists()→read 竞态：文件刚被删，等价于无会话
+    except Exception as e:
+        debug(f'会话文件 {f} 损坏，按 _corrupt 标记返回', e)
+        return {'_corrupt': f'{type(e).__name__}: {e}'}
+    if not isinstance(data, dict):
+        debug(f'会话文件 {f} 内容不是 JSON 对象'
+              f'（{type(data).__name__}），按 _corrupt 标记返回')
+        return {'_corrupt': f'内容不是 JSON 对象: {type(data).__name__}'}
+    return data
 
 
 def save_session(name: str, data: dict) -> None:
-    """保存会话信息"""
-    get_session_file(name).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8'
-    )
+    """保存会话信息。
+
+    tmp + os.replace 原子写（复用 bridge_registry._write_json_atomic，
+    同格式 ensure_ascii=False + indent=2）——写一半崩溃不会留下截断的
+    会话文件被 load_session 判成 _corrupt。'_corrupt' 是 load 侧只读
+    标记，永不落盘（防止坏文件修复后标记残留误导分流）。
+    """
+    from dp_cli.bridge_registry import _write_json_atomic
+    data = {k: v for k, v in data.items() if k != '_corrupt'}
+    _write_json_atomic(get_session_file(name), data)
 
 
 def delete_session(name: str) -> bool:
@@ -606,6 +627,23 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     saved_port = sess.get('port')
     probe_dir = sess.get('probe_dir')  # auto-connect 模式记录的 user-data-dir
 
+    # 显式带建立参数（--user-data-dir/--headless/--proxy/--browser-path）
+    # 视为用户主动要求新建——与下方"所有复用路径失败"守卫同一判据
+    want_new = bool(browser_path or user_data_dir or proxy or headless)
+
+    # 会话文件损坏：无法判定归属——可能 attach 着用户浏览器，绝不静默
+    # 当空会话落"新建分支"顶替（与 user_connected 不可达守卫同理，
+    # 报错比静默开错目标好）。want_new 调用视为用户主动放弃旧会话。
+    if sess.get('_corrupt') and not want_new:
+        raise ConnectionError(
+            f'会话 [{session_name}] 状态文件损坏：{sess["_corrupt"]}\n'
+            f'文件: {get_session_file(session_name)}\n'
+            f'该会话可能 attach 着用户浏览器，不会用新实例顶替。\n'
+            f'处理建议：\n'
+            f'  - 手动检查/修复上述文件后重试\n'
+            f'  - 放弃会话：dpx close -S {session_name} 清掉损坏记录后重开'
+        )
+
     # 2a) 先尝试 saved_port 直连（死端口先 TCP 探测，免 30s 空转）。
     # 注意：探测失败只置 skip_saved 标记，不清空 saved_port——后面
     # "user_connected 不可达"守卫要靠原始端口值判断，清空了会让
@@ -672,7 +710,6 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
     # dpx close 或 dpx open --new。
     # 例外：显式带建立参数（--user-data-dir/--headless/--proxy/
     # --browser-path）的调用视为用户主动要求新建，放行新建分支。
-    want_new = bool(browser_path or user_data_dir or proxy or headless)
     if (saved_port or probe_dir) and not want_new and \
             (sess.get('user_connected') or probe_dir):
         raise ConnectionError(
@@ -774,6 +811,10 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
     _evict_browser_cache(session_name)
     if not sess:
         return False
+    if sess.get('_corrupt'):
+        # 损坏文件无法判定归属——清掉坏文件让下次干净重建
+        delete_session(session_name)
+        return True
     port = sess.get('port')
     bridge_pid = sess.get('bridge_pid')
     user_connected = sess.get('user_connected') or bool(sess.get('probe_dir'))

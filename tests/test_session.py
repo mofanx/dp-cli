@@ -64,12 +64,111 @@ def test_load_session_missing_returns_empty(session_dir):
 
 
 @pytest.mark.unit
-def test_load_session_corrupt_returns_empty(session_dir):
-    """写入非法 JSON → load 返回 {}(不抛异常)。"""
+def test_load_session_corrupt_returns_marker(session_dir):
+    """写入非法 JSON → 返回 {'_corrupt': <原因>} 标记（不抛异常、不静默
+    当空会话——损坏文件可能是 user_connected 会话，上层据此拒绝静默
+    覆盖）。文件不存在仍返回 {}。"""
     session_dir.mkdir(parents=True, exist_ok=True)
     f = session_dir / 'corrupt.json'
     f.write_text('not valid json', encoding='utf-8')
-    assert session.load_session('corrupt') == {}
+    loaded = session.load_session('corrupt')
+    assert loaded != {}
+    assert loaded.get('_corrupt'), loaded
+
+
+@pytest.mark.unit
+def test_load_session_corrupt_non_dict_json(session_dir):
+    """合法 JSON 但内容不是对象（如数组/标量）→ 同样按 _corrupt 处理，
+    防下游 .get() AttributeError。"""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / 'arr.json').write_text('[1, 2, 3]', encoding='utf-8')
+    assert session.load_session('arr').get('_corrupt')
+
+
+@pytest.mark.unit
+def test_load_session_race_delete_returns_empty(session_dir, monkeypatch):
+    """exists()→read 竞态：exists 返回 True 后文件被删（read 抛
+    FileNotFoundError）→ 仍按无会话返回 {}，不判 _corrupt。"""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(Path, 'exists', lambda self: True)
+    assert session.load_session('ghost') == {}
+
+
+@pytest.mark.unit
+def test_save_session_atomic_write_failure_keeps_original(session_dir, monkeypatch):
+    """原子写：tmp 文件写失败不得截断/破坏原会话文件（修复前裸
+    write_text 会在写一半崩溃时留下截断文件）。"""
+    session.save_session('s1', {'port': 9222, 'user_connected': True})
+    f = session_dir / 's1.json'
+    original = f.read_bytes()
+
+    def _boom(self, *a, **k):
+        raise OSError('disk full (mock)')
+    monkeypatch.setattr(Path, 'write_text', _boom)
+
+    with pytest.raises(OSError):
+        session.save_session('s1', {'port': 1})
+    # 原文件字节级不变（tmp+replace 保证替换要么完整发生要么不发生）
+    assert f.read_bytes() == original
+
+
+@pytest.mark.unit
+def test_save_session_atomic_roundtrip_and_no_tmp_left(session_dir):
+    """原子写正常路径：内容一致（中文不转义）且不残留 .tmp 文件。"""
+    session.save_session('rt', {'port': 9223, 'note': '测试中文'})
+    loaded = session.load_session('rt')
+    assert loaded == {'port': 9223, 'note': '测试中文'}
+    assert not list(session_dir.glob('*.tmp'))
+
+
+@pytest.mark.unit
+def test_save_session_strips_corrupt_marker(session_dir):
+    """'_corrupt' 是 load 侧只读标记——被调用方原样回传时不落盘，
+    防坏文件修复后标记残留误导 _corrupt 分流。"""
+    session.save_session('m', {'_corrupt': 'stale', 'port': 9222})
+    loaded = session.load_session('m')
+    assert '_corrupt' not in loaded
+    assert loaded['port'] == 9222
+
+
+@pytest.mark.unit
+def test_connect_browser_corrupt_session_refuses_silent_replace(session_dir):
+    """损坏会话文件不得被静默当空会话覆盖——可能是 user_connected
+    会话，静默新建会用新浏览器顶替用户浏览器（比报错更糟）。"""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / 'uc.json').write_text('{broken', encoding='utf-8')
+    with pytest.raises(ConnectionError, match='损坏'):
+        session._connect_browser('uc')
+
+
+@pytest.mark.unit
+def test_connect_browser_corrupt_session_want_new_overrides(session_dir, monkeypatch):
+    """损坏会话 + 显式新建参数（user_data_dir）→ 视为用户主动放弃旧
+    会话，放行新建分支并覆盖坏文件。"""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / 'uc.json').write_text('{broken', encoding='utf-8')
+
+    fake_page = Mock()
+    fake_page.browser.address = '127.0.0.1:9999'
+    monkeypatch.setattr(
+        "DrissionPage._configs.chromium_options.ChromiumOptions",
+        _fake_co_factory())
+    monkeypatch.setattr(session, '_spawn_page', lambda cls, co: fake_page)
+
+    page = session._connect_browser('uc', user_data_dir=str(session_dir))
+    assert page is fake_page
+    saved = session.load_session('uc')
+    assert saved.get('port') == 9999 and '_corrupt' not in saved
+
+
+@pytest.mark.unit
+def test_close_browser_corrupt_session_cleans_file(session_dir):
+    """close 遇到损坏会话文件：清掉坏文件让下次干净重建，返回 True。"""
+    session_dir.mkdir(parents=True, exist_ok=True)
+    f = session_dir / 'bad.json'
+    f.write_text('{{{', encoding='utf-8')
+    assert session.close_browser('bad') is True
+    assert not f.exists()
 
 
 @pytest.mark.unit

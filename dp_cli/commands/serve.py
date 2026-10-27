@@ -209,9 +209,10 @@ def _exec_line(line: str, session: str) -> None:
             and '-S' not in argv and _accepts_session(cmd)):
         argv = argv + ['--session', session]
     try:
+        record_session = _record_session(argv, session)
+        _pre = _snap_state(record_session)   # 未开录制时 {} 零开销
         code, result = _invoke(argv)
         _write_out(json.dumps(result, ensure_ascii=False))
-        record_session = _record_session(argv, session)
         is_unsure = (cmd == 'decide' and len(argv) > 1
                      and result.get('code') == 'AGENT_UNSURE')
         if (code == 0 or is_unsure) and not _IN_SNAP:
@@ -233,12 +234,14 @@ def _exec_line(line: str, session: str) -> None:
                 record(record_session, argv,
                        load_refs(record_session) or {},
                        goal=argv[1], engine_ref=ref, unsure=is_unsure,
-                       **({'post_state': _ps} if _ps else {}))
+                       **({'post_state': _ps} if _ps else {}),
+                       **({'pre_state': _pre} if _pre else {}))
             else:
                 _ps = _snap_state(record_session)
                 record(record_session, argv,
                        load_refs(record_session) or {},
-                       **({'post_state': _ps} if _ps else {}))
+                       **({'post_state': _ps} if _ps else {}),
+                       **({'pre_state': _pre} if _pre else {}))
         _refresh_refs(cmd, record_session)
     except KeyboardInterrupt:
         _write_err('（已中断）\n')
@@ -402,6 +405,8 @@ def _serve(session: str = None, tty: bool = False) -> int:
                 except Exception:
                     pass
                 _armed_alarm = False
+                _pre = _snap_state(_record_session(argv, session))
+                # 执行前快照——enabled() 未开时 {} 零开销
                 if _tm and hasattr(__import__('signal'), 'setitimer'):
                     import signal as _sig
                     _sig.setitimer(_sig.ITIMER_REAL,
@@ -428,6 +433,8 @@ def _serve(session: str = None, tty: bool = False) -> int:
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
         record_session = _record_session(argv, session)
+        _pre = {}       # _serve 路径命令已执行完才到此处——
+                        # 无执行前时机，pre_state 只能由 REPL 路径采集
         is_unsure = (bool(argv) and argv[0] == 'decide'
                      and len(argv) > 1
                      and result.get('code') == 'AGENT_UNSURE')
@@ -450,12 +457,14 @@ def _serve(session: str = None, tty: bool = False) -> int:
                 record(record_session, argv,
                        load_refs(record_session) or {},
                        goal=argv[1], engine_ref=ref, unsure=is_unsure,
-                       **({'post_state': _ps} if _ps else {}))
+                       **({'post_state': _ps} if _ps else {}),
+                       **({'pre_state': _pre} if _pre else {}))
             else:
                 _ps = _snap_state(record_session)
                 record(record_session, argv,
                        load_refs(record_session) or {},
-                       **({'post_state': _ps} if _ps else {}))
+                       **({'post_state': _ps} if _ps else {}),
+                       **({'pre_state': _pre} if _pre else {}))
         _maybe_arm_netlog()
 
 

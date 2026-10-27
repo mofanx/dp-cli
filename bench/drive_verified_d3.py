@@ -223,10 +223,146 @@ def capture(session, task):
     return row
 
 
+# ── TASK_IDX=auto：现场看 refs 生成任务（页面意图+用户视角 goal，非「点击{role}」复读）──
+AUTO_PAGES = [u for u in os.environ.get('AUTO_PAGES', '').split(',') if u] \
+    or [f'http://127.0.0.1:8901/deep/p{i:02d}.html' for i in range(1, 25)]
+
+# name→用户意图改写（fixture 语义跳跃名；fallback 走 role 意图句式但打散措辞）
+_INTENT = {
+    '去结算': ['我要结账付款', '帮我完成下单'],
+    '👍 顶一下': ['给这条内容点赞', '喜欢这个帖子'],
+    '☆ 收藏': ['把这篇存起来以后看', '收藏这篇文章备用'],
+    '← 上一页': ['回到列表页', '退回上一页看看'],
+    '⚙ 偏好设置': ['打开设置面板', '调一下偏好选项'],
+    '🔍': ['搜一下这个商品', '用它搜个东西'],
+    '×': ['关闭这个弹窗', '把弹窗关掉'],
+    'Your comment': ['在评论区写下你的看法', '留言说两句'],
+    '获取文件': ['下载这份报表', '把文件拿下来'],
+    '家': ['选择收货地址二', '用家里的地址收货'],
+    '安全退出': ['退出当前账号登录', '从账号里退出去'],
+    '了解更多': ['查看产品详情', '看看这东西的详情'],
+    '往后翻': ['翻到下一页', '看下一页内容'],
+    '确认无误': ['提交订单', '确认这单没问题提交吧'],
+    '↻': ['刷新当前页面数据', '重新拉一下数据'],
+    '?': ['查看使用帮助', '看下这功能怎么用'],
+    '推荐好友': ['把这个页面分享出去', '推荐给朋友看看'],
+    '☑ 全部': ['选中列表里所有条目', '把清单全勾上'],
+    '加入书签': ['收藏这个地址', '把链接存书签里'],
+    '免费试用': ['开通会员', '试一下会员功能'],
+    '忘记密码': ['找回我的密码', '密码忘了怎么办'],
+    '移出清单': ['把商品移出清单', '这个不要了删出去'],
+    '归档': ['别点删除点归档', '这条邮件先归档'],
+    'To': ['搜飞东京的航班', '目的地填东京查航班'],
+}
+_ROLE_INTENT = {
+    'link': '打开{name}对应的页面',
+    'button': '执行{name}这个操作',
+    'textbox': '在{name}里写点东西',
+    'checkbox': '把{name}勾上',
+    'radio': '选{name}这个选项',
+}
+
+
+def _js_get(session, expr):
+    """eval_raw 取 data.result——auto 模式探测元素属性用。"""
+    return eval_raw(session, expr).get('data', {}).get('result')
+
+
+import re as _re
+_EVAL_GOALS = [None]
+def _norm(s):
+    return _re.sub(r'[\s，。、！？""'']+', '', (s or '').lower())
+
+def _eval_goals():
+    """eval_cases 全 goal 规范化集——auto 生成防撞前置（后拦截不如不产）。"""
+    if _EVAL_GOALS[0] is None:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from eval_cases import EVAL_CASES
+        _EVAL_GOALS[0] = {_norm(c['goal']) for c in EVAL_CASES}
+    return _EVAL_GOALS[0]
+
+
+def auto_tasks(session, page_url):
+    """现场生成 (goal,ref-名,action,断言) 任务——断言值从页面属性实取非猜。"""
+    tasks = []
+    try:
+        call(session, 'goto', page_url)
+        time.sleep(1.0)
+        refs = snapshot(session)
+    except Exception as e:
+        print(f'auto goto/snapshot fail {page_url}: {e}', flush=True)
+        return tasks
+    opts = [{'ref': int(k), 'role': v.get('role', ''),
+             'name': v.get('name', '')}
+            for k, v in refs.items() if str(k).isdigit()]
+    hrefs = _js_get(session,
+        "[...document.querySelectorAll('a')].map(a=>[a.textContent.trim(),a.getAttribute('href')])") or []
+    onclick = _js_get(session,
+        "[...document.querySelectorAll('button')].map(b=>[b.textContent.trim(),b.getAttribute('onclick')])") or []
+    link_href = {n: h for n, h in hrefs if h}
+    btn_oc = {n: oc for n, oc in onclick if oc}
+
+    for o in opts:
+        role, name = o['role'], o['name']
+        goals = _INTENT.get(name) or [_ROLE_INTENT.get(role, '').format(name=name)]
+        goal = next((g for g in goals if g and _norm(g) not in _eval_goals()),
+                    None)
+        if not goal:
+            continue
+        try:
+            if role == 'link' and link_href.get(name, '').startswith('/'):
+                tasks.append((page_url, goal, role, name, ('click',),
+                              'location.pathname', link_href[name], 0, 0))
+            elif role == 'button':
+                oc = btn_oc.get(name, '')
+                import re
+                m = re.search(r"textContent\s*=\s*'([^']+)'", oc)
+                if m:  # fixture 的 st 断言钩子——无钩子按钮跳过（断言不可造）
+                    tasks.append((page_url, goal, role, name, ('click',),
+                                  "document.getElementById('st').textContent",
+                                  m.group(1), 0, 0))
+            elif role == 'textbox':
+                tasks.append((page_url, goal, role, name, ('fill', 'auto-fx'),
+                              f"[...document.querySelectorAll('input')].find(i=>i.placeholder==='{name}')?.value",
+                              'auto-fx', 0, 0))
+            elif role in ('checkbox', 'radio'):
+                idx_js = ("[...document.querySelectorAll('label')]"
+                          f".findIndex(l=>l.textContent.trim().endsWith('{name}'))")
+                pos = _js_get(session, idx_js)
+                if isinstance(pos, int) and pos >= 0:
+                    tasks.append((page_url, goal, role, name, ('click',),
+                                  f"document.querySelectorAll('input[type={role}]')[{pos}].checked",
+                                  True, 0, 0))
+        except Exception:
+            continue
+    return tasks[:5]
+
+
 def main():
     session = 'verified_d3_' + uuid.uuid4().hex[:10]
     rows, fails = [], []
+    auto = os.environ.get('TASK_IDX', '') == 'auto'
+    out = OUT if not auto else \
+        ROOT / 'bench' / os.environ.get('AUTO_OUT', 'drive_verified_auto.jsonl')
     try:
+        if auto:
+            call(session, 'open', AUTO_PAGES[0], '--headless')
+            time.sleep(2)
+            for page in AUTO_PAGES:
+                tasks = auto_tasks(session, page)
+                for task in tasks:
+                    try:
+                        r = capture(session, task)
+                        rows.append(r)
+                        with open(out, 'a', encoding='utf-8') as f:
+                            f.write(json.dumps(r, ensure_ascii=False) + '\n')
+                        print(f'ok   {task[1]}', flush=True)
+                    except Exception as e:
+                        fails.append((task[1], str(e)[:90]))
+                        print(f'skip {task[1]}: {str(e)[:90]}', flush=True)
+            call(session, 'close')
+            print(f'captured {len(rows)} verified rows, {len(fails)} skipped -> {out}')
+            return
         call(session, 'open', TASKS[0][0], '--headless')
         time.sleep(2)
         idx=set(int(x) for x in os.environ.get('TASK_IDX','').split(',') if x) or set(range(len(TASKS)))

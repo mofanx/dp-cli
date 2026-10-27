@@ -1,0 +1,1381 @@
+[
+ {
+  "src": "verified_real",
+  "query": "把这篇存起来以后看",
+  "positive": "button ☆ 收藏",
+  "negatives": [
+   "button 稍后读",
+   "link 标签",
+   "button 举报"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p03.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:49:43.765645+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p03.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "☆ 收藏"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "稍后读"
+    },
+    {
+     "ref": 3,
+     "role": "link",
+     "name": "标签"
+    },
+    {
+     "ref": 4,
+     "role": "button",
+     "name": "举报"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已收藏",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已收藏"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "选择收货地址二",
+  "positive": "radio 家",
+  "negatives": [
+   "radio 公司",
+   "radio 学校",
+   "radio 公司",
+   "radio 学校",
+   "button 继续",
+   "clickable/label 公司",
+   "clickable/label 家",
+   "clickable/label 学校",
+   "clickable/label 公司",
+   "clickable/label 学校"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p10.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:29.068460+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p10.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "radio",
+     "name": "公司"
+    },
+    {
+     "ref": 2,
+     "role": "radio",
+     "name": "家"
+    },
+    {
+     "ref": 3,
+     "role": "radio",
+     "name": "学校"
+    },
+    {
+     "ref": 4,
+     "role": "radio",
+     "name": "公司"
+    },
+    {
+     "ref": 5,
+     "role": "radio",
+     "name": "学校"
+    },
+    {
+     "ref": 6,
+     "role": "button",
+     "name": "继续"
+    },
+    {
+     "ref": 7,
+     "role": "clickable/label",
+     "name": "公司"
+    },
+    {
+     "ref": 8,
+     "role": "clickable/label",
+     "name": "家"
+    },
+    {
+     "ref": 9,
+     "role": "clickable/label",
+     "name": "学校"
+    },
+    {
+     "ref": 10,
+     "role": "clickable/label",
+     "name": "公司"
+    },
+    {
+     "ref": 11,
+     "role": "clickable/label",
+     "name": "学校"
+    }
+   ],
+   "chosen_ref": 2,
+   "before": {
+    "expr": "document.querySelectorAll('input[type=radio]')[1].checked",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": false
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:2"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.querySelectorAll('input[type=radio]')[1].checked",
+    "expected": true,
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": true
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "开通会员",
+  "positive": "button 免费试用",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p20.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:38.396123+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p20.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "免费试用"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已开通",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已开通"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "找回我的密码",
+  "positive": "link 忘记密码",
+  "negatives": [
+   "button 登录",
+   "link 注册账号",
+   "link 帮助中心"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p21.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:44.190997+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p21.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "忘记密码"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "登录"
+    },
+    {
+     "ref": 3,
+     "role": "link",
+     "name": "注册账号"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "帮助中心"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p21.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "把商品移出清单",
+  "positive": "button 移出清单",
+  "negatives": [
+   "button 加入收藏",
+   "button 降价提醒",
+   "link 相似商品"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p22.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:49.972834+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p22.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "移出清单"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "加入收藏"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "降价提醒"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "相似商品"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已移除",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已移除"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "别点删除点归档",
+  "positive": "button 归档",
+  "negatives": [
+   "button 删除",
+   "button 标记已读",
+   "link 移动至"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p23.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:55.782347+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p23.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "归档"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "删除"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "标记已读"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "移动至"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已归档",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已归档"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "搜飞东京的航班",
+  "positive": "textbox To",
+  "negatives": [
+   "textbox From",
+   "button Search",
+   "link 帮助"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p24.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:52:04.882291+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p24.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "textbox",
+     "name": "From"
+    },
+    {
+     "ref": 2,
+     "role": "textbox",
+     "name": "To"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "Search"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "帮助"
+    }
+   ],
+   "chosen_ref": 2,
+   "before": {
+    "expr": "[...document.querySelectorAll('input')].find(i=>i.placeholder==='To')?.value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "fill",
+     "ref:2",
+     "auto-fx"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "[...document.querySelectorAll('input')].find(i=>i.placeholder==='To')?.value",
+    "expected": "auto-fx",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "auto-fx"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "我要结账付款",
+  "positive": "link 去结算",
+  "negatives": [
+   "link 继续购物",
+   "button 清空",
+   "link 查看订单"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p01.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:49:32.162390+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p01.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "去结算"
+    },
+    {
+     "ref": 2,
+     "role": "link",
+     "name": "继续购物"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "清空"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "查看订单"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p01.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "给这条内容点赞",
+  "positive": "button 👍 顶一下",
+  "negatives": [
+   "button 💬 评论",
+   "button ↗ 转发",
+   "link 举报"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p02.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:49:37.974152+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p02.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "👍 顶一下"
+    },
+    {
+     "ref": 2,
+     "role": "button",
+     "name": "💬 评论"
+    },
+    {
+     "ref": 3,
+     "role": "button",
+     "name": "↗ 转发"
+    },
+    {
+     "ref": 4,
+     "role": "link",
+     "name": "举报"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已赞",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已赞"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "回到列表页",
+  "positive": "link ← 上一页",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p04.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:49:49.578187+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p04.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "← 上一页"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p04.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "打开设置面板",
+  "positive": "button ⚙ 偏好设置",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p05.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:49:55.255829+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p05.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "⚙ 偏好设置"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已打开",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已打开"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "搜一下这个商品",
+  "positive": "link 🔍",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p06.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:01.044701+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p06.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "🔍"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p06.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "关闭这个弹窗",
+  "positive": "button ×",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p07.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:06.879397+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p07.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "×"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已关闭",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已关闭"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "在评论区写下你的看法",
+  "positive": "textbox Your comment",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p08.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:12.423035+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p08.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "textbox",
+     "name": "Your comment"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "[...document.querySelectorAll('input')].find(i=>i.placeholder==='Your comment')?.value",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": ""
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "fill",
+     "ref:1",
+     "auto-fx"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "[...document.querySelectorAll('input')].find(i=>i.placeholder==='Your comment')?.value",
+    "expected": "auto-fx",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "auto-fx"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "下载这份报表",
+  "positive": "link 获取文件",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p09.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:18.225418+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p09.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "获取文件"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p09.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "退出当前账号登录",
+  "positive": "button 安全退出",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p11.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:45.968002+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p11.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "安全退出"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已退出",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已退出"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "查看产品详情",
+  "positive": "link 了解更多",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p12.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:51.812613+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p12.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "了解更多"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p12.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "翻到下一页",
+  "positive": "button 往后翻",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p13.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:50:57.574995+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p13.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "往后翻"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "第2页",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "第2页"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "提交订单",
+  "positive": "button 确认无误",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p14.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:03.385942+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p14.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "确认无误"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已提交",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已提交"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "刷新当前页面数据",
+  "positive": "button ↻",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p15.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:09.163198+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p15.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "↻"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已刷新",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已刷新"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "查看使用帮助",
+  "positive": "link ?",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p16.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:14.941567+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p16.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "link",
+     "name": "?"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "location.pathname",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/p16.html"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "location.pathname",
+    "expected": "/deep/done.html",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "/deep/done.html"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "把这个页面分享出去",
+  "positive": "button 推荐好友",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p17.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:20.742005+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p17.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "推荐好友"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "已生成分享链接",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "已生成分享链接"
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "选中列表里所有条目",
+  "positive": "checkbox ☑ 全部",
+  "negatives": [
+   "clickable/label ☑ 全部"
+  ],
+  "page": "http://127.0.0.1:8901/deep/p18.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:26.810628+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p18.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "checkbox",
+     "name": "☑ 全部"
+    },
+    {
+     "ref": 2,
+     "role": "clickable/label",
+     "name": "☑ 全部"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.querySelectorAll('input[type=checkbox]')[0].checked",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": false
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.querySelectorAll('input[type=checkbox]')[0].checked",
+    "expected": true,
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": true
+     }
+    }
+   }
+  }
+ },
+ {
+  "src": "verified_real",
+  "query": "收藏这个地址",
+  "positive": "button 加入书签",
+  "negatives": [],
+  "page": "http://127.0.0.1:8901/deep/p19.html",
+  "evidence": {
+   "recorded_at": "2026-10-27T02:51:32.576624+00:00",
+   "session": "verified_d3_928382eb66",
+   "url": "http://127.0.0.1:8901/deep/p19.html",
+   "before_refs": [
+    {
+     "ref": 1,
+     "role": "button",
+     "name": "加入书签"
+    }
+   ],
+   "chosen_ref": 1,
+   "before": {
+    "expr": "document.getElementById('st').textContent",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "待操作"
+     }
+    }
+   },
+   "action": {
+    "argv": [
+     "click",
+     "ref:1"
+    ],
+    "exit": 0,
+    "result": {
+     "status": "ok"
+    }
+   },
+   "after": {
+    "expr": "document.getElementById('st').textContent",
+    "expected": "书签已添加",
+    "result": {
+     "status": "ok",
+     "data": {
+      "result": "书签已添加"
+     }
+    }
+   }
+  }
+ }
+]

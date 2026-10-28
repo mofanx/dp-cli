@@ -125,3 +125,29 @@ def test_promote_recorded_ref_colon_form():
     # 非 ref 定位形态→不提升
     bad3 = dict(base); bad3['chosen'] = 'click text:登录'
     assert promote_recorded(bad3) is None
+
+
+def test_export_pairs_same_source_skipped(tmp_path, monkeypatch):
+    """P2-契约：chosen_ref==engine_ref 同源污染行 export 整行
+    skip——"人工覆盖"实为引擎建议自身，不产训练对防自我强化；
+    仅 engine_ref 行与 chosen≠engine 行不受影响。"""
+    import dp_cli.decide_train as dt
+    f = tmp_path / 'decide_train.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    refs = {'1': {'role': 'link', 'name': '首页'},
+            '2': {'role': 'button', 'name': '登录'}}
+    # 同源污染行：chosen_ref == engine_ref → skip
+    dt.record('s', ['decide', '点登录'], refs, goal='点登录',
+              chosen_ref=2, engine_ref=2)
+    assert dt.export_pairs(f) == []
+    # chosen≠engine（真人工覆盖）→ 照常产出
+    dt.record('s', ['decide', '点首页'], refs, goal='点首页',
+              chosen_ref=1, engine_ref=2)
+    # 仅 engine_ref（无人工覆盖）→ 弱标注照常产出
+    dt.record('s', ['decide', '再点登录'], refs, goal='再点登录',
+              engine_ref=2)
+    pairs = dt.export_pairs(f)
+    assert len(pairs) == 2
+    assert pairs[0]['positive'] == 'link 首页'
+    assert pairs[1]['positive'] == 'button 登录'

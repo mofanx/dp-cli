@@ -28,20 +28,20 @@
 
 | 文件 | 缺陷 | 建议修法 | 严重度理由 |
 |---|---|---|---|
-| `serve.py` 错误响应 | 部分异常路径返回缺 `status/code` 字段的裸 dict | JSON 契约断言测试补全——每条错误路径走 `contract` 校验 | P2——主路径已合规，边角响应漏 |
-| `decide_train.py` export | unsure 行 export 边界：`engine_ref` 有但 `chosen_ref` 无时正例为空已被 skip；残留边界为 engine_ref==chosen 同源污染 | export 加 `engine_ref != chosen_ref` 断言注释 | P2——已 skip 主路径 |
+| `serve.py` 错误响应 | 部分异常路径返回缺 `status/code` 字段的裸 dict | JSON 契约断言测试补全——每条错误路径走 `contract` 校验 | P2——主路径已合规，边角响应漏 ✅已修(commit待) |
+| `decide_train.py` export | unsure 行 export 边界：`engine_ref` 有但 `chosen_ref` 无时正例为空已被 skip；残留边界为 engine_ref==chosen 同源污染 | export 加 `engine_ref != chosen_ref` 断言注释 | P2——已 skip 主路径 ✅已修(commit待) |
 | `eval`/`frame` 坐标 | frame 内元素坐标系（page vs frame 相对）存疑——需实机验证 | 实机复现后再定 | P2 待验证项 |
 | `tab` `tab-list` 只读 | `tab-list` 不清缓存正确；残留：tab detach 事件后 list 滞后 | CDP detached 事件监听惰性标记 | P2——滞后窗口小 |
 | `storage.py` cookie HttpOnly | 已修导出 skipped_lines；残留：导入路径对部分 HttpOnly cookie 静默跳过（浏览器策略） | 导入结果同样报 skipped 数 | P1 已半修，残留为导入侧同报 |
-| `hook.py` event_handlers | 事件回调异常吞掉无上报通道 | 回调 except 分支写 debug 计数到响应 detail | P2——调试可见性 |
+| `hook.py` event_handlers | 事件回调异常吞掉无上报通道 | 回调 except 分支写 debug 计数到响应 detail | P2——调试可见性 ✅已修(commit待) |
 
 ## 四、DoS/资源面（~6 条）
 
 | 文件 | 缺陷 | 建议修法 | 严重度理由 |
 |---|---|---|---|
 | `serve.py` 单请求 | 单请求 `daemon-stop`/`kill` 类命令无鉴权——本地 socket 默认可信但共享机风险 | serve 绑定 token 可选旗（`--token`），默认仅 localhost | P2——威胁模型为本地，远程绑定才有真实风险 |
-| `serve.py` 请求体 | 单行 JSONL 无大小上限——超大 payload 内存撑爆 | `readline` 加 1MB 截断+413 契约错 | P2——本地工具 |
-| `daemon.py` 连接数 | 无并发连接上限——慢请求堆积 fd 泄漏 | accept 循环加 max_conn 闸 | P2 |
+| `serve.py` 请求体 | 单行 JSONL 无大小上限——超大 payload 内存撑爆 | `readline` 加 1MB 截断+413 契约错 | P2——本地工具 ✅已修(commit待) |
+| `daemon.py` 连接数 | 无并发连接上限——慢请求堆积 fd 泄漏 | accept 循环加 max_conn 闸 | P2 ✅已修(commit待) |
 | `bridge_manager.py` Popen PIPE | stdout/stderr PIPE 无人 drain——bridge 大量输出时管道满阻塞 | stderr→DEVNULL 或 drain 线程 | P2——bridge 输出量实际小 |
 
 ## 五、韧性/边界（~7 条）

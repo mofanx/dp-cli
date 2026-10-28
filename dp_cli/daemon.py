@@ -30,6 +30,8 @@ _IDLE_TTL = 3600          # headless 空闲自退秒数
 _WATCH_TICK = 30          # idle watcher 巡检间隔（秒）
 _SPAWN_WAIT = 8.0         # spawn 后等 socket 就绪
 _TIMEOUT_MARGIN = 15      # read 超时 margin（秒）
+_MAX_CONN = 32            # 并发处理闸——处理中连接数上限；
+                          # 慢请求堆积撑爆 fd 的 DoS 面在此收口
 _SKIP_CMDS = {'serve', 'sh', 'batch', 'daemon-start', 'daemon-status',
               'daemon-stop', 'install', 'catalog', 'mcp'}
 # record-* 精确枚举（进程内录制状态，daemon 不可转发）——
@@ -667,7 +669,11 @@ def _handle_conn(conn, session):
         raise
     except Exception:
         try:
-            conn.sendall(b'{"exit":1,"result":{"status":"error"}}\n')
+            conn.sendall((json.dumps({
+                'exit': 1,
+                'result': {'status': 'error', 'code': 'ERROR',
+                           'message': 'daemon 处理异常', 'detail': ''}},
+                ensure_ascii=False) + '\n').encode('utf-8'))
         except OSError:
             pass
     finally:
@@ -714,7 +720,39 @@ def _idle_watcher(sock_path, meta_path, stop_ev, session):
             pass
 
 
-_state = {'last_activity': time.time()}
+_state = {'last_activity': time.time(), 'active': 0}
+
+
+def _busy_reply(conn) -> None:
+    """并发闸满应答：立即回 BUSY 结构化错误并 close——连接
+    不进入 _handle_conn，慢请求堆积不耗处理位。"""
+    try:
+        conn.sendall((json.dumps({
+            'exit': 1,
+            'result': {'status': 'error', 'code': 'BUSY',
+                       'message': 'daemon 并发连接超限，稍后重试',
+                       'detail': f'上限 {_MAX_CONN}'}},
+            ensure_ascii=False) + '\n').encode('utf-8'))
+    except OSError:
+        pass
+    try:
+        conn.close()
+    except OSError:
+        pass
+
+
+def _serve_conn(conn, session) -> None:
+    """accept 后分派：闸满→BUSY 即关；否则处理中计数+1 进
+    _handle_conn，try/finally 保证任何退出路径都释放计数
+    （SystemExit 走 daemon-stop 正常语义向上抛）。"""
+    if _state['active'] >= _MAX_CONN:
+        _busy_reply(conn)
+        return
+    _state['active'] += 1
+    try:
+        _handle_conn(conn, session)
+    finally:
+        _state['active'] -= 1
 
 
 def run_daemon(session: str):
@@ -764,7 +802,7 @@ def run_daemon(session: str):
                                _socket.TCP_NODELAY, 1)
             _state['last_activity'] = time.time()
             try:
-                _handle_conn(conn, session)
+                _serve_conn(conn, session)
             except SystemExit:
                 break
             except Exception:

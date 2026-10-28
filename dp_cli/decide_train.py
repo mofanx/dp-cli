@@ -187,9 +187,14 @@ def export_pairs(path: Path = None) -> list:
             continue
         if d.get('goal'):           # decide 路径：goal=推理分布 query
             query = d['goal']
+            cr, er = d.get('chosen_ref'), d.get('engine_ref')
+            if cr is not None and er is not None and cr == er:
+                # 同源污染：chosen_ref==engine_ref 时"正例"实为引擎
+                # 建议自身（非独立人工核验）——整行 skip 防自我强化偏差
+                continue
             # 生产录制只写 engine_ref（serve/daemon 渠道无人工确认）——
             # chosen_ref（人工覆盖）优先，engine_ref（引擎建议）兜底
-            pos_ref = d.get('chosen_ref') or d.get('engine_ref')
+            pos_ref = cr if cr is not None else er
             src = 'decide'          # 弱标注——引擎 pick 非用户确认
         else:
             m = re.search(r'@e(\d+)', chosen)

@@ -33,6 +33,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'CONFLICTING_OPTIONS':  (EXIT_USAGE, '互斥选项同时使用'),
     'PW_SYNTAX':            (EXIT_USAGE, 'pw 定位器语法错误'),
     'FILE_NOT_FOUND':       (EXIT_USAGE, '指定文件不存在'),
+    'PAYLOAD_TOO_LARGE':    (EXIT_USAGE, '请求体超限（serve JSONL 单行上限）'),
 
     # ── connect（退出码 3）──
     'SESSION_NOT_FOUND':    (EXIT_CONNECT, '无法连接浏览器会话'),
@@ -128,6 +129,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'BYPASS_CSP_FAILED':    (EXIT_RUNTIME, 'CSP 绕过设置失败'),
     'THROTTLE_FAILED':      (EXIT_RUNTIME, '网络/CPU 节流设置失败'),
     'FILE_CHOOSER_FAILED':  (EXIT_RUNTIME, '文件选择对话框处理失败'),
+    'BUSY':                 (EXIT_RUNTIME, 'daemon 并发连接超限'),
 }
 
 

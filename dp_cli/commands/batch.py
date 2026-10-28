@@ -77,12 +77,28 @@ def _invoke(argv: list) -> tuple:
 
     text = buf.getvalue().strip()
     try:
-        return code, json.loads(text)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         result = {'status': 'ok' if code == 0 else 'error'}
         if text:
             result['output'] = text
+        if code != 0:
+            # 非 JSON 错误输出（click 用法错/裸报错文本）——补
+            # status/code/message/detail 契约字段，下游 serve/
+            # daemon 渠道应答不再是缺 code 的裸 dict
+            result.setdefault(
+                'code', 'INVALID_ARGS' if code == 2 else 'ERROR')
+            result.setdefault('message', text or f'exit {code}')
+            result.setdefault('detail', '')
         return code, result
+    if code != 0 and isinstance(parsed, dict):
+        # 命令自身吐出的 JSON 缺契约字段时兜底补齐（setdefault
+        # 不覆盖已有值）
+        parsed.setdefault('status', 'error')
+        parsed.setdefault('code', 'ERROR')
+        parsed.setdefault('message', text[:200] if text else 'error')
+        parsed.setdefault('detail', '')
+    return code, parsed
 
 
 def _screenshot_evidence(shot_dir: str, seq: int, argv: list,
@@ -110,7 +126,10 @@ def _screenshot_evidence(shot_dir: str, seq: int, argv: list,
 
 
 def _invalid(msg: str) -> tuple:
-    return 2, {'status': 'error', 'code': 'INVALID_ARGS', 'message': msg}
+    """参数错误统一入口——serve/daemon 三渠道共用；错误应答一律
+    补齐 status/code/message/detail 契约字段。"""
+    return 2, {'status': 'error', 'code': 'INVALID_ARGS',
+               'message': msg, 'detail': ''}
 
 
 @click.command('batch')

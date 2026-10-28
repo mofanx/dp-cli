@@ -32,6 +32,7 @@
 | `CONFLICTING_OPTIONS` | 互斥选项同时使用 |
 | `PW_SYNTAX` | pw 定位器语法错误 |
 | `FILE_NOT_FOUND` | 指定文件不存在 |
+| `PAYLOAD_TOO_LARGE` | 请求体超限（serve JSONL 单行超 1MB 上限） |
 
 ### connect（退出码 3）
 
@@ -106,6 +107,7 @@
 | `FILE_CHOOSER_FAILED` | 文件选择对话框拦截/填文件失败 |
 | `RPC_FAILED` / `RPC_CALL_FAILED` | RPC 注册/列表/移除失败、RPC 调用执行失败 |
 | `HOOK_FAILED` | hook 注入/移除/导出失败 |
+| `BUSY` | daemon 并发连接数超限（处理中连接达上限，稍后重试） |
 
 ## 兼容性说明
 

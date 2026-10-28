@@ -345,6 +345,7 @@ class _FakeConn:
     """_handle_conn 用 socket 桩：一次性吐请求字节，收集响应。"""
     def __init__(self, raw):
         self._raw, self.sent = raw, b''
+        self.closed = False
     def settimeout(self, t):
         pass
     def recv(self, n):
@@ -353,7 +354,7 @@ class _FakeConn:
     def sendall(self, b):
         self.sent += b
     def close(self):
-        pass
+        self.closed = True
 
 
 def _stub_record_env(monkeypatch, rec):
@@ -601,3 +602,58 @@ def test_spawn_lock_excl_confirmed_dead_reclaims(monkeypatch, tmp_path):
     with daemon._acquire_spawn_lock(lp, timeout=1):
         pass
     assert not lp.exists()                      # 获取+释放后无残留
+
+
+# ── P2：DoS——daemon 并发连接闸 ─────────────────────────────
+
+def test_serve_conn_busy_gate_full(monkeypatch):
+    """P2-DoS：处理中计数达 _MAX_CONN → accept 后立即 BUSY 结构
+    化应答+close，不进 _handle_conn（慢请求不耗处理位）。"""
+    import json
+    from dp_cli import daemon
+    handled = []
+    monkeypatch.setattr(daemon, '_handle_conn',
+                        lambda c, s: handled.append(c))
+    monkeypatch.setitem(daemon._state, 'active', daemon._MAX_CONN)
+    c = _FakeConn(b'{"argv": ["snapshot"]}\n')
+    daemon._serve_conn(c, 't')
+    resp = json.loads(c.sent.split(b'\n')[0])
+    assert resp['result']['status'] == 'error'
+    assert resp['result']['code'] == 'BUSY'
+    assert 'message' in resp['result'] and 'detail' in resp['result']
+    assert c.closed is True                      # 连接立即关闭
+    assert handled == []                         # 未进入处理
+    assert daemon._state['active'] == daemon._MAX_CONN  # 计数未动
+
+
+def test_serve_conn_counts_inflight_and_releases(monkeypatch):
+    """P2-DoS：闸未满 → active inc/dec 成对；_handle_conn 抛
+    异常也在 finally 释放计数（不泄漏闸位）。"""
+    from dp_cli import daemon
+    seen = []
+
+    def fake_handle(conn, session):
+        seen.append(daemon._state['active'])
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr(daemon, '_handle_conn', fake_handle)
+    monkeypatch.setitem(daemon._state, 'active', 0)
+    c = _FakeConn(b'x\n')
+    with pytest.raises(RuntimeError):
+        daemon._serve_conn(c, 't')
+    assert seen == [1]                           # 处理中计数=1
+    assert daemon._state['active'] == 0          # finally 已释放
+
+
+def test_serve_conn_systemexit_releases_counter(monkeypatch):
+    """P2-DoS：daemon-stop 的 SystemExit 穿透 _serve_conn——
+    finally 释放计数后向上抛（accept 循环 break 语义不变）。"""
+    from dp_cli import daemon
+    monkeypatch.setattr(daemon, '_handle_conn',
+                        lambda c, s: (_ for _ in ()).throw(
+                            SystemExit(0)))
+    monkeypatch.setitem(daemon._state, 'active', 0)
+    c = _FakeConn(b'x\n')
+    with pytest.raises(SystemExit):
+        daemon._serve_conn(c, 't')
+    assert daemon._state['active'] == 0

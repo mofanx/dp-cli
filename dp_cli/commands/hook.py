@@ -32,16 +32,46 @@ _JS_PATH = re.compile(r'^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$')
 _BUF_MAX = 5000
 
 # __dp_hook 命名空间 + _emit 初始化（所有 hook 脚本共享的前导）
+# H.errs：事件回调内吞异常计数（原裸 catch(e){} 无上报通道）——
+# hook-list/hook-dump 响应 data.hook_errors 透出
 _NS_JS = (
-    'window.__dp_hook=window.__dp_hook||{buf:[],seq:0,hooks:{}};'
+    'window.__dp_hook=window.__dp_hook||{buf:[],seq:0,hooks:{},errs:0};'
     'var H=window.__dp_hook;'
     'if(!H._emit)H._emit=function(id,kind,data){'
     'H.buf.push({seq:H.seq++,ts:Date.now(),hook:id,kind:kind,data:data});'
     f'if(H.buf.length>{_BUF_MAX})H.buf.splice(0,H.buf.length-{_BUF_MAX});}};'
     # 参数序列化：JSON 往返容错循环引用/不可序列化值
     'if(!H._ser)H._ser=function(v){try{return JSON.parse(JSON.stringify(v))}'
-    'catch(e){return String(v)}};'
+    'catch(e){H.errs=(H.errs||0)+1;return String(v)}};'
 )
+
+
+_hook_err_count = 0     # Python 侧 hook 回调/操作吞异常计数
+
+
+def _hook_err(msg: str, exc=None) -> None:
+    """hook 吞异常统一出口：计数 + debug——原裸 except 无上报通道，
+    计数经 hook-list/hook-dump 响应 data.hook_errors 透出。"""
+    global _hook_err_count
+    _hook_err_count += 1
+    try:
+        debug(msg, exc)
+    except Exception:
+        pass
+
+
+def _hook_errors(page) -> int:
+    """hook 异常计数透出：页内 H.errs（JS 事件回调吞异常计数）+
+    本进程 _hook_err_count（Python 侧）。读取失败静默归零——
+    计数透出是增强项不阻塞主响应。"""
+    total = _hook_err_count
+    try:
+        js_n = _cdp_eval(page, '(window.__dp_hook||{}).errs||0')
+        if isinstance(js_n, (int, float)) and not isinstance(js_n, bool):
+            total += int(js_n)
+    except Exception:
+        pass
+    return total
 
 
 def _regex_js(pattern: str | None) -> str:
@@ -64,7 +94,7 @@ def _cookie_js(hid: str, name_pat: str | None) -> str:
         'var nm=String(v).split("=")[0].trim();'
         'if(!RE||RE.test(nm))H._emit(' + json.dumps(hid) + ',"set",{name:nm,'
         'value:String(v).slice(0,500),stack:(new Error()).stack});'
-        '}catch(e){}return desc.set.call(this,v)}};'
+        '}catch(e){H.errs=(H.errs||0)+1}return desc.set.call(this,v)}};'
         'try{Object.defineProperty(document,"cookie",nd)}catch(e){'
         'return "define-fail:"+e.message};'
         f'H.hooks[{json.dumps(hid)}]={{type:"cookie",desc:desc}};'
@@ -85,7 +115,7 @@ def _func_js(hid: str, path: str) -> str:
         'var wrapped=function(){'
         'try{H._emit(' + json.dumps(hid) + ',"call",{'
         'args:H._ser(Array.prototype.slice.call(arguments)),'
-        'stack:(new Error()).stack})}catch(e){}'
+        'stack:(new Error()).stack})}catch(e){H.errs=(H.errs||0)+1}'
         'return orig.apply(this,arguments)};'
         'wrapped.__dp_orig=orig;'
         'try{Object.defineProperty(wrapped,"name",{value:nm})}catch(e){}'
@@ -119,14 +149,16 @@ def _prop_js(hid: str, path: str, when: str) -> str:
         'var nd={configurable:true,enumerable:desc.enumerable};'
         'if("value" in desc){var v=desc.value;'
         'nd.get=function(){if(W_GET)try{H._emit(' + json.dumps(hid) + ','
-        '"get",{value:H._ser(v)})}catch(e){}return v};'
+        '"get",{value:H._ser(v)})}catch(e){H.errs=(H.errs||0)+1}return v};'
         'nd.set=function(nv){if(W_SET)try{H._emit(' + json.dumps(hid) + ','
-        '"set",{old:H._ser(v),new:H._ser(nv)})}catch(e){}v=nv};'
+        '"set",{old:H._ser(v),new:H._ser(nv)})}catch(e){H.errs=(H.errs||0)+1}'
+        'v=nv};'
         '}else{var g=desc.get,s=desc.set;'
         'nd.get=function(){if(W_GET)try{H._emit(' + json.dumps(hid) + ','
-        '"get",{})}catch(e){}return g?g.call(this):undefined};'
+        '"get",{})}catch(e){H.errs=(H.errs||0)+1}'
+        'return g?g.call(this):undefined};'
         'nd.set=function(nv){if(W_SET)try{H._emit(' + json.dumps(hid) + ','
-        '"set",{new:H._ser(nv)})}catch(e){}'
+        '"set",{new:H._ser(nv)})}catch(e){H.errs=(H.errs||0)+1}'
         'return s&&s.call(this,nv)}};'
         # hook 到 desc 所在层（原型链上层）——直接 define obj 会遮蔽原型 desc
         'try{Object.defineProperty(owner,nm,nd)}catch(e){'
@@ -152,7 +184,7 @@ def _xhr_js(hid: str, url_pat: str | None, m_pat: str | None) -> str:
         'if((!URL_RE||URL_RE.test(u))&&(!M_RE||M_RE.test(m)))'
         'H._emit(' + json.dumps(hid) + ',"xhr",{method:m,url:u,'
         'body:String(body||"").slice(0,1000),stack:(new Error()).stack});'
-        '}catch(e){}return os.apply(this,arguments)};'
+        '}catch(e){H.errs=(H.errs||0)+1}return os.apply(this,arguments)};'
         'var of=window.fetch;'
         'if(of){window.fetch=function(){try{'
         'var a=arguments,r=a[0];'
@@ -162,7 +194,7 @@ def _xhr_js(hid: str, url_pat: str | None, m_pat: str | None) -> str:
         'H._emit(' + json.dumps(hid) + ',"fetch",{method:m,url:u,'
         'body:String((a[1]&&a[1].body)||"").slice(0,1000),'
         'stack:(new Error()).stack});'
-        '}catch(e){}return of.apply(this,arguments)}};'
+        '}catch(e){H.errs=(H.errs||0)+1}return of.apply(this,arguments)}};'
         f'H.hooks[{json.dumps(hid)}]={{type:"xhr",'
         'orig:{open:oo,send:os,fetch:of}};'
         'return "ok";})()')
@@ -296,7 +328,10 @@ def register(cli):
                 while f'{htype}-{i}' in used:
                     i += 1
                 hid = f'{htype}-{i}'
-            except Exception:
+            except Exception as e:
+                # 自动编号探测失败回落 cookie-1——原裸吞无上报，
+                # 计数+debug 透出
+                _hook_err('hook 自动编号探测失败', e)
                 hid = f'{htype}-1'
         script = _hook_js(hid, htype, spec)
         try:
@@ -342,7 +377,8 @@ def register(cli):
             out.append({'id': hid, 'type': persisted[hid]['type'],
                         'persist': True, 'missing': True})
         ok({'hooks': out, 'count': len(out),
-            'buf': (items[0]['buf'] if items else 0)})
+            'buf': (items[0]['buf'] if items else 0),
+            'hook_errors': _hook_errors(page)})
 
     @cli.command('hook-clear')
     @click.option('--id', 'hid', default=None, help='清除指定 hook')
@@ -442,5 +478,7 @@ def register(cli):
                           '(window.__dp_hook||{}).buf=[];'
                           '(window.__dp_hook||{}).seq=0;true')
             except Exception as e:
-                debug('缓冲清空失败', e)
+                _hook_err('缓冲清空失败', e)
+        # 放最末——本次 --clear 失败刚计的数也透出
+        result['hook_errors'] = _hook_errors(page)
         ok(result)

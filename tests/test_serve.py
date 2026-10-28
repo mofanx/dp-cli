@@ -780,3 +780,90 @@ def test_serve_pre_state_untouched_on_blocked_paths(monkeypatch):
     assert len(rec) == 1
     assert rec[0][0][1][0] == 'click'
     assert rec[0][1]['pre_state'] == {'url': 'https://x/'}
+
+
+# ── P2：DoS / 契约桶 ──────────────────────────────────────
+
+def _assert_err_contract(result):
+    """错误应答契约断言——status/code/message/detail 四字段齐全
+    （JSON 契约铁律，缺 code 裸 dict 属回归）。"""
+    assert isinstance(result, dict)
+    assert result.get('status') == 'error'
+    assert isinstance(result.get('code'), str) and result['code']
+    assert isinstance(result.get('message'), str) and result['message']
+    assert 'detail' in result
+
+
+@pytest.mark.unit
+def test_serve_oversize_line_rejected(monkeypatch):
+    """P2-DoS：单行 >1MB 无换行截断 → PAYLOAD_TOO_LARGE 结构化错
+    （不整行读入内存），残行丢弃后后续请求照常服务。"""
+    big = 'x' * (serve_mod._MAX_REQ_LINE + 10)
+    _, lines, argv_log = _invoke_serve(
+        [big, '{"cmd": "snapshot"}'], monkeypatch)
+    assert lines[0]['exit'] == 2
+    assert lines[0]['result']['code'] == 'PAYLOAD_TOO_LARGE'
+    _assert_err_contract(lines[0]['result'])
+    assert lines[1]['exit'] == 0
+    assert argv_log == [['snapshot']]            # 残行未被当命令
+    assert [l['seq'] for l in lines] == [1, 2]
+
+
+@pytest.mark.unit
+def test_serve_eof_final_line_no_newline_ok(monkeypatch):
+    """P2-DoS 边界：EOF 终结的短行（无换行、长度未达上限）
+    仍正常处理——探长逻辑不误伤末行。"""
+    monkeypatch.setattr(serve_mod, '_invoke',
+                        lambda a: (0, {'status': 'ok', 'echo': a}))
+    monkeypatch.setattr(sys, 'stdin', io.StringIO('{"cmd": "snapshot"}'))
+    out = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', out)
+    code = serve_mod._serve()
+    lines = [json.loads(l) for l in out.getvalue().strip().splitlines()]
+    assert code == 0 and lines[0]['exit'] == 0
+
+
+@pytest.mark.unit
+def test_serve_error_responses_contract(monkeypatch):
+    """P2-契约：每条 invalid/异常应答路径均过契约校验——
+    status=error + code/message/detail 齐全。"""
+    effects = iter([serve_mod._TimeoutInterrupt(),   # → TIMEOUT
+                    RuntimeError('boom'),            # → ERROR
+                    KeyboardInterrupt()])            # → INTERRUPTED
+
+    def fake_invoke(argv):
+        raise next(effects)
+
+    monkeypatch.setattr(serve_mod, '_invoke', fake_invoke)
+    stdin_lines = [
+        'not-json',                                # INVALID_ARGS（解析）
+        '{"foo": 1}',                              # INVALID_ARGS（缺 cmd）
+        '{"cmd": "serve"}',                        # INVALID_ARGS（嵌套）
+        '{"cmd": "-v"}',                           # INVALID_ARGS（空命令）
+        '{"cmd": "snapshot", "timeout_ms": "x"}',  # INVALID_ARGS（畸形）
+        '{"cmd": "snapshot", "timeout_ms": 100}',  # TIMEOUT
+        '{"cmd": "snapshot"}',                     # ERROR
+        '{"cmd": "snapshot"}']                     # INTERRUPTED
+    monkeypatch.setattr(sys, 'stdin',
+                        io.StringIO('\n'.join(stdin_lines) + '\n'))
+    out = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', out)
+    serve_mod._serve()
+    lines = [json.loads(l) for l in out.getvalue().strip().splitlines()]
+    assert len(lines) == 8
+    for l in lines:
+        _assert_err_contract(l['result'])
+    assert [l['result']['code'] for l in lines] == [
+        'INVALID_ARGS', 'INVALID_ARGS', 'INVALID_ARGS', 'INVALID_ARGS',
+        'INVALID_ARGS', 'TIMEOUT', 'ERROR', 'INTERRUPTED']
+
+
+@pytest.mark.unit
+def test_invoke_nonjson_error_contract():
+    """P2-契约：_invoke 非 JSON 错误输出（click 用法错文本）补
+    code/message/detail——不再回缺 code 的裸 dict。"""
+    code, r = batch_mod._invoke(['snapshot', '--bogus-flag-xyz'])
+    assert code == 2
+    _assert_err_contract(r)
+    assert r['code'] == 'INVALID_ARGS'
+    assert r['output']                            # 原始文本保留

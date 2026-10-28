@@ -29,6 +29,8 @@ from dp_cli.output import error, _write_out, _write_err
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
+_MAX_REQ_LINE = 1_048_576   # 单行 JSONL 请求上限 1MB——超限不整行
+                            # 读入内存（超大 payload 撑爆内存的 DoS 面）
 
 
 class _TimeoutInterrupt(BaseException):
@@ -356,11 +358,27 @@ def _serve(session: str = None, tty: bool = False) -> int:
             _write_err('dp> ')
             sys.stderr.flush()
         try:
-            raw = sys.stdin.readline()
+            # readline(size) 限定读取探行长——超长行只取回前
+            # _MAX_REQ_LINE+1 字符的截断段（无换行结尾即超限标记），
+            # 不把整行读进内存
+            raw = sys.stdin.readline(_MAX_REQ_LINE + 1)
         except KeyboardInterrupt:
             return 0                       # Ctrl-C 于读入时 → 优雅退出
         if raw == '':                      # EOF → 退出
             return 0
+        if len(raw) > _MAX_REQ_LINE and not raw.endswith('\n'):
+            # 超长行：按块丢弃残行（仍不整体入内存）后回结构化
+            # 错误——serve 不崩，后续请求继续服务
+            while True:
+                rest = sys.stdin.readline(_MAX_REQ_LINE + 1)
+                if not rest or rest.endswith('\n'):
+                    break
+            seq += 1
+            _emit(seq, None, 2, {
+                'status': 'error', 'code': 'PAYLOAD_TOO_LARGE',
+                'message': '请求体超限',
+                'detail': f'单行上限 {_MAX_REQ_LINE} 字节'})
+            continue
         line = raw.strip()
         if not line or line.startswith('#'):
             continue
@@ -423,15 +441,17 @@ def _serve(session: str = None, tty: bool = False) -> int:
                         except _TimeoutInterrupt:
                             code, result = 1, {
                                 'status': 'error', 'code': 'TIMEOUT',
-                                'message': f'命令超时 {_tm}ms'}
+                                'message': f'命令超时 {_tm}ms',
+                                'detail': ''}
                     except KeyboardInterrupt:
                         code, result = 1, {
                             'status': 'error', 'code': 'INTERRUPTED',
-                            'message': '命令被中断'}
+                            'message': '命令被中断', 'detail': ''}
                     except Exception as e:
                         code, result = 1, {
                             'status': 'error', 'code': 'ERROR',
-                            'message': f'serve 执行异常: {e}'}
+                            'message': f'serve 执行异常: {e}',
+                            'detail': repr(e)}
                     finally:
                         # alarm 必须复位——残留 SIGALRM 会被下一条
                         # 命令吃到（_TimeoutInterrupt 是 BaseException）

@@ -435,3 +435,81 @@ def test_hook_auto_id_still_unique_same_type_sequence(monkeypatch):
     r = runner.invoke(cli, ['hook-set', '--type', 'cookie'])
     assert r.exit_code == 0
     assert _out(r)['data']['id'] == 'cookie-2'
+
+
+# ── P2：event_handlers 回调吞异常计数透出 ──────────────────
+
+class _ErrsPage(_HookPage):
+    """errs 探针表达式返回固定计数，其余走默认桩。"""
+
+    def __init__(self, buf_val, errs_val):
+        super().__init__(buf_val)
+        self._errs = errs_val
+
+    def run_cdp(self, cmd, **kw):
+        expr = kw.get('expression', '')
+        if 'errs' in expr:
+            return {'result': {'value': self._errs}}
+        return super().run_cdp(cmd, **kw)
+
+
+@pytest.mark.unit
+def test_hook_js_emit_catch_counts_errs():
+    """P2：四类 hook 注入脚本的事件回调 except 分支不再裸吞——
+    catch 内计 H.errs（页内错误计数通道）。"""
+    for htype, spec in (('cookie', {}),
+                        ('func', {'path': 'a.b'}),
+                        ('prop', {'path': 'a.b'}),
+                        ('xhr', {})):
+        js = hook_mod._hook_js('h-1', htype, spec)
+        assert 'H.errs=(H.errs||0)+1' in js, htype
+
+
+@pytest.mark.unit
+def test_hook_err_counts_and_debugs(monkeypatch):
+    """P2：_hook_err 统一出口——每次调用 _hook_err_count+1 且
+    走 debug（异常对象透传，不再是静默裸吞）。"""
+    rec = []
+    monkeypatch.setattr(hook_mod, 'debug',
+                        lambda m, e=None: rec.append((m, e)))
+    monkeypatch.setattr(hook_mod, '_hook_err_count', 0)
+    hook_mod._hook_err('auto-id 探测失败', RuntimeError('x'))
+    hook_mod._hook_err('缓冲清空失败')
+    assert hook_mod._hook_err_count == 2
+    assert rec[0][0] == 'auto-id 探测失败'
+    assert isinstance(rec[0][1], RuntimeError)
+
+
+@pytest.mark.unit
+def test_hook_dump_exposes_hook_errors(monkeypatch):
+    """P2：hook-dump 响应 data.hook_errors = 页内 H.errs +
+    Python _hook_err_count——两侧吞异常计数透出。"""
+    page = _ErrsPage(buf_val=[{'seq': 0, 'kind': 'xhr'}], errs_val=2)
+    _patch(monkeypatch, page)
+    monkeypatch.setattr(hook_mod, '_hook_err_count', 3)
+    r = runner.invoke(cli, ['hook-dump'])
+    assert r.exit_code == 0, r.output
+    d = _out(r)['data']
+    assert d['hook_errors'] == 5
+    assert d['count'] == 1
+
+
+@pytest.mark.unit
+def test_hook_list_exposes_hook_errors(monkeypatch):
+    """P2：hook-list 响应同样带 hook_errors；页内 errs 读不出
+    （非数值/异常）时静默归零不阻塞主响应。"""
+    page = _ErrsPage(buf_val=[
+        {'id': 'xhr-1', 'type': 'xhr', 'path': None, 'buf': 1}],
+        errs_val=4)
+    _patch(monkeypatch, page)
+    monkeypatch.setattr(hook_mod, '_hook_err_count', 1)
+    r = runner.invoke(cli, ['hook-list'])
+    assert r.exit_code == 0, r.output
+    assert _out(r)['data']['hook_errors'] == 5
+
+    # errs 返回非数值（老版本命名空间无 errs 字段外的异常形态）
+    page2 = _ErrsPage(buf_val=[], errs_val='weird')
+    _patch(monkeypatch, page2)
+    r = runner.invoke(cli, ['hook-list'])
+    assert r.exit_code == 0, r.output
+    assert _out(r)['data']['hook_errors'] == 1   # 只计 Python 侧

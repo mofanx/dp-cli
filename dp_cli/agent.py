@@ -30,7 +30,9 @@ from dp_cli.output import ok, error, debug, _dump, _write_err
 from dp_cli.session import load_session, save_session, save_refs, load_refs
 from dp_cli.commands._utils import session_option, _get_page
 
-_MODELS_DIR = Path.home() / '.dp_cli' / 'models'
+def _models_dir() -> Path:
+    """agent 模型目录——惰性求值（import 期固化会让 HOME 隔离失效）。"""
+    return Path.home() / '.dp_cli' / 'models'
 _TOP_K = 20            # Julia-1 选项数上限（2-20）
 _ACTIONS = ['click', 'type', 'select', 'scroll_up', 'scroll_down',
             'back', 'wait', 'done', 'blocked']

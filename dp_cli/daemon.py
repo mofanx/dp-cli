@@ -25,7 +25,6 @@ import click
 
 from dp_cli.output import ok, error, debug, _write_out
 
-_DIR = Path.home() / '.dp_cli' / 'daemon'
 _IDLE_TTL = 3600          # headless 空闲自退秒数
 _IDLE_TTL_ATTACHED = 6 * 3600   # attached(user_connected) 会话宽限 TTL——
                               # 重建 attach 需重新点 Allow，频繁自退体验差；
@@ -45,6 +44,12 @@ _RECORD_CMDS = {'record-start', 'record-stop', 'record-show',
 
 def _skipped(cmd: str) -> bool:
     return cmd in _SKIP_CMDS or cmd in _RECORD_CMDS
+
+
+def _dir() -> Path:
+    """daemon 状态目录——惰性求值（import 期固化会让 HOME 隔离失效，
+    同 session._session_dir 教训）。"""
+    return Path.home() / '.dp_cli' / 'daemon'
 
 
 _HAS_UNIX_SOCK = hasattr(_socket, 'AF_UNIX')   # Windows 无 AF_UNIX
@@ -119,11 +124,11 @@ def _version_probe(session: str) -> None:
 
 
 def _sock_path(session: str) -> Path:
-    return _DIR / f'{session}.sock'
+    return _dir() / f'{session}.sock'
 
 
 def _meta_path(session: str) -> Path:
-    return _DIR / f'{session}.session'
+    return _dir() / f'{session}.session'
 
 
 def _tcp_alive(session: str) -> bool:
@@ -522,9 +527,9 @@ def _spawn_daemon(session: str) -> bool:
     一次（与 bridge_registry.acquire_or_spawn 同款），败者持锁后
     重查 socket 直接 adopt，不产生孤儿 daemon。
     """
-    _DIR.mkdir(parents=True, exist_ok=True)
+    _dir().mkdir(parents=True, exist_ok=True)
     try:
-        with _acquire_spawn_lock(_DIR / f'{session}.lock'):
+        with _acquire_spawn_lock(_dir() / f'{session}.lock'):
             if _daemon_ready(session):
                 return True          # 前一轮已起好 → adopt
             try:
@@ -775,7 +780,7 @@ def _serve_conn(conn, session) -> None:
 
 def run_daemon(session: str):
     """daemon 主循环：bind socket → 每连接一个 JSONL 请求 → 应答。"""
-    _DIR.mkdir(parents=True, exist_ok=True)
+    _dir().mkdir(parents=True, exist_ok=True)
     sock_path = _sock_path(session)
     meta_path = _meta_path(session)
     _cleanup_stale(session)      # 统一清理：sock+meta+缓存三件套

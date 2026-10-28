@@ -14,9 +14,9 @@ from dp_cli import session
 
 @pytest.fixture
 def session_dir(tmp_path, monkeypatch):
-    """把模块级 _SESSION_DIR 重定向到临时目录,隔离真实用户目录。"""
+    """把 _session_dir() seam 重定向到临时目录,隔离真实用户目录。"""
     d = tmp_path / "sessions"
-    monkeypatch.setattr(session, "_SESSION_DIR", d)
+    monkeypatch.setattr(session, "_session_dir", lambda: d)
     session._evict_browser_cache()  # _PAGE_CACHE 是进程级全局，需同步隔离
     yield d
     session._evict_browser_cache()

@@ -12,14 +12,15 @@ import pytest
 def _isolate_session_state(tmp_path: Path, monkeypatch):
     """autouse：会话目录/页面缓存/DP_CLI_* 环境变量全量隔离。
 
-    _SESSION_DIR 是 import 期模块常量，真实 ~/.dp_cli/sessions 残留
-    （真机冒烟、其他工程会话）会污染未挂 isolated_session_dir 的用例
-    ——全部重定向到每用例独立 tmp；_PAGE_CACHE 与逃生开关同样复位。
+    session._session_dir() 是惰性 seam（不再 import 期固化），
+    仍显式 patch 重定向到每用例独立 tmp——真实 ~/.dp_cli/sessions
+    残留（真机冒烟、其他工程会话）不得进入任何用例；
+    _PAGE_CACHE 与逃生开关同样复位。
     """
     import dp_cli.session as session_mod
     d = tmp_path / '.dp_cli' / 'sessions'
     d.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(session_mod, '_SESSION_DIR', d)
+    monkeypatch.setattr(session_mod, '_session_dir', lambda: d)
     monkeypatch.delenv('DP_CLI_NO_STUB', raising=False)
     session_mod._PAGE_CACHE.clear()
     # bridge 注册表同样隔离——find_bridge/acquire_or_spawn 直读
@@ -40,13 +41,17 @@ def tmp_work_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def isolated_home(tmp_path: Path, monkeypatch) -> Path:
-    """
-    将 HOME 指向临时目录,隔离会话文件等对真实用户目录的读写。
-    需要操作 ~/.dp-cli 之类路径的测试可使用本 fixture。
+    """将用户主目录指向临时目录，隔离对真实 HOME 的读写。
+
+    Path.home() 的平台分流：POSIX 吃 HOME；Windows 吃 USERPROFILE
+    （不存在才回落 HOMEDRIVE+HOMEPATH，不读 HOME）——两个变量都设
+    才三平台生效。dp_cli 各模块的 home 路径已全改调用期惰性求值，
+    本 fixture 对 session/daemon/netlog/agent 全部生效。
     """
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     return home
 
 
@@ -147,15 +152,15 @@ def fake_page_factory():
 
 @pytest.fixture
 def isolated_session_dir(tmp_path: Path, monkeypatch) -> Path:
-    """把 dp_cli.session._SESSION_DIR 重定向到临时目录。
+    """把 dp_cli.session._session_dir() 重定向到临时目录。
 
-    _SESSION_DIR 是模块级常量，monkeypatch.setenv(HOME) 不生效，
-    需直接 patch 模块属性。真实浏览器冒烟/会话落盘类用例使用。
+    patch 惰性 seam 而非 setenv(HOME)——与 _isolate_session_state
+    同机制，供需显式拿目录句柄的会话落盘类用例使用。
     """
     import dp_cli.session as session_mod
     d = tmp_path / 'sessions'
     d.mkdir()
-    monkeypatch.setattr(session_mod, '_SESSION_DIR', d)
+    monkeypatch.setattr(session_mod, '_session_dir', lambda: d)
     return d
 
 

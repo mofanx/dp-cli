@@ -107,6 +107,118 @@ def test_daemon_ready_posix_spawn_window(monkeypatch, tmp_path):
     assert sock.exists()                     # 未被误清
 
 
+# ── 跨平台降级：_HAS_UNIX_SOCK=False 强制 TCP 分支 ─────────────
+# （对齐 test_commands.py 的 _HAS_UNIX_SOCK mock 先例——开发机
+# 是 POSIX，Windows 路径只能靠 mock 平台常量跑分支验证）
+
+def _tcp_sock_factory(calls, connect_ex_ret=0, response=b''):
+    """伪造 socket.socket——记录 family/端点/调用，connect_ex 返回
+    值可编程（断言 AF_INET vs AF_UNIX 行为分叉用）。"""
+    def _factory(family, sock_type, *a, **k):
+        calls.append(('socket', family, sock_type))
+
+        class _S:
+            _resp = response
+
+            def settimeout(self, t):
+                calls.append(('settimeout', t))
+
+            def setsockopt(self, *args):
+                calls.append(('setsockopt',) + args)
+
+            def connect_ex(self, ep):
+                calls.append(('connect_ex', ep))
+                return connect_ex_ret
+
+            def connect(self, ep):
+                calls.append(('connect', ep))
+
+            def sendall(self, b):
+                calls.append(('sendall', len(b)))
+
+            def recv(self, n):
+                d, self._resp = self._resp, b''
+                return d
+
+            def close(self):
+                pass
+        return _S()
+    return _factory
+
+
+def test_daemon_tcp_endpoint_and_send_recv_family(monkeypatch, tmp_path):
+    """TCP 降级：_connect_endpoint 从 meta port 解析 ('127.0.0.1',
+    port) 元组；_send_recv 建 AF_INET socket+TCP_NODELAY 并 connect
+    到该端点——不触 AF_UNIX .sock 路径。"""
+    import json
+    from dp_cli import daemon
+    _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    monkeypatch.setattr(daemon, '_HAS_UNIX_SOCK', False)
+    (tmp_path / 't.session').write_text(
+        json.dumps({'pid': 1234, 'port': 54321}))
+    assert daemon._connect_endpoint('t') == ('127.0.0.1', 54321)
+
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _tcp_sock_factory(
+            calls, response=b'{"exit":0,"result":{"ok":1}}\n'))
+    r = daemon._send_recv('t', {'argv': ['snapshot']}, 5)
+    assert r['exit'] == 0 and r['result']['ok'] == 1
+    assert ('socket', daemon._socket.AF_INET,
+            daemon._socket.SOCK_STREAM) in calls
+    assert ('connect', ('127.0.0.1', 54321)) in calls
+    # TCP_NODELAY 仅在 TCP 分支设置（AF_UNIX 无此 setsockopt）
+    assert any(c[0] == 'setsockopt' for c in calls)
+    assert not any(c[0] == 'socket'
+                   and c[1] == getattr(daemon._socket, 'AF_UNIX', -1)
+                   for c in calls)
+
+
+def test_daemon_ready_tcp_probe_alive_via_connect_ex(
+        monkeypatch, tmp_path):
+    """TCP 探活分叉（活）：meta port + connect_ex==0 → True——
+    _daemon_ready 走 meta+connect_ex 分支，AF_UNIX 专属的
+    _unix_alive/_spawn_fresh 不应触达。"""
+    import json
+    from dp_cli import daemon
+    _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    monkeypatch.setattr(daemon, '_HAS_UNIX_SOCK', False)
+    (tmp_path / 't.session').write_text(
+        json.dumps({'pid': -1, 'port': 54321}))
+    calls = []
+    monkeypatch.setattr(daemon._socket, 'socket',
+                        _tcp_sock_factory(calls, connect_ex_ret=0))
+    monkeypatch.setattr(daemon, '_unix_alive',
+                        lambda s: (_ for _ in ()).throw(AssertionError(
+                            'TCP 分支不调 _unix_alive')))
+    monkeypatch.setattr(daemon, '_spawn_fresh',
+                        lambda s: (_ for _ in ()).throw(AssertionError(
+                            'TCP 分支不调 _spawn_fresh')))
+    assert daemon._daemon_ready('t') is True
+    assert ('connect_ex', ('127.0.0.1', 54321)) in calls
+
+
+def test_daemon_ready_tcp_probe_refused_cleans_meta(
+        monkeypatch, tmp_path):
+    """TCP 探活分叉（死）：connect_ex 拒连+meta pid 死 → False
+    且 meta 回收——死标记不留，下条命令不白等 TCP 超时。"""
+    import json
+    from dp_cli import daemon
+    _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    monkeypatch.setattr(daemon, '_HAS_UNIX_SOCK', False)
+    meta = tmp_path / 't.session'
+    meta.write_text(json.dumps({'pid': -1, 'port': 54321}))
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _tcp_sock_factory(calls, connect_ex_ret=111))   # ECONNREFUSED
+    monkeypatch.setattr(daemon, '_pid_alive', lambda p: False)
+    assert daemon._daemon_ready('t') is False
+    assert ('connect_ex', ('127.0.0.1', 54321)) in calls
+    assert not meta.exists()                 # 死标记已清
+
+
 class _FakeSock:
     """_send_recv 故障注入用 socket 桩。"""
     def __init__(self, fail_at):

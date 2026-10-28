@@ -3783,7 +3783,7 @@ def test_daemon_socket_roundtrip(tmp_path, monkeypatch):
     import threading
     from dp_cli import daemon as dm
     sp = tmp_path / 'test.sock'
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
     monkeypatch.setattr(dm, '_IDLE_TTL', 99999)
@@ -3819,7 +3819,7 @@ def test_daemon_spawn_concurrent_once(tmp_path, monkeypatch):
     """8 线程并发 spawn：flock 下恰好起 1 次（bridge_registry 同款）。"""
     import threading
     from dp_cli import daemon as dm
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
     # 就绪判定按 POSIX 语义走 sock 文件——Windows 的 meta+TCP 探活
     # 由 test_windows_ready_* 专项覆盖，此处聚焦锁的互斥语义
@@ -3848,7 +3848,7 @@ def test_daemon_stop_reaches_handler(tmp_path, monkeypatch):
     from dp_cli import daemon as dm
     monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     t = threading.Thread(target=dm.run_daemon, args=('z',), daemon=True)
     t.start()
     import time as _t
@@ -3957,7 +3957,7 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
     import threading
     import dp_cli.daemon as dm
     order = []
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
 
@@ -4220,7 +4220,7 @@ def test_daemon_tcp_transport_windows(tmp_path, monkeypatch):
     import dp_cli.daemon as dm
 
     monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     # _connect_endpoint 从 meta 读端口
     (tmp_path / 's.session').write_text(
         '{"pid":1,"transport":"tcp","port":54321}', encoding='utf-8')
@@ -4242,7 +4242,7 @@ def test_daemon_send_recv_tcp_roundtrip(tmp_path, monkeypatch):
     import socket as sk, threading as th, json as js
 
     monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', False)
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
 
     srv = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
     srv.bind(('127.0.0.1', 0))
@@ -4427,7 +4427,7 @@ def test_daemon_unknown_command_error(tmp_path, monkeypatch):
     import dp_cli.daemon as dm
     import socket as sk, threading as th, json as js
 
-    monkeypatch.setattr(dm, '_DIR', tmp_path)
+    monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path',
                         lambda s: tmp_path / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path',

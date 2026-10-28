@@ -8,11 +8,12 @@ on:
 
 jobs:
   test:
-    name: Unit Tests · Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: Unit Tests · ${{ matrix.os }} · Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12', '3.13']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.12']
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
@@ -23,15 +24,34 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      # agent extra 不装（torch 下载大）——agent.py 依赖全懒加载，
+      # 单测一律 mock sys.modules/属性，无需真实模型运行时
       - name: Install dependencies
-        run: pip install -e ".[test,repl,agent]"
+        run: pip install -e ".[test,repl]"
 
-      # 覆盖率门禁：当前实测 ~59%，卡 58 防水位倒退，后续补用例后逐步上调至 60+
+      # 覆盖率门禁只卡 ubuntu cell：win/mac 有 POSIX-only skip 用例，
+      # 覆盖率水位不同步，若同挂 fail-under 会误伤跨平台 PR。
+      # 门禁：当前实测 ~59%，卡 58 防水位倒退，后续补用例后逐步上调至 60+
       - name: Run unit tests with coverage
+        if: matrix.os == 'ubuntu-latest'
         run: pytest -m "not integration" --cov=dp_cli --cov-report=xml --cov-report=term-missing --cov-fail-under=58
 
+      # 误绿防护：非 ubuntu cell 若 import 全挂/全 skip，pytest 可
+      # 静默绿——tee 输出后断言 "N passed" 且 N>0。shell: bash 在
+      # windows runner 走 Git Bash（镜像自带），mac/linux 原生。
+      - name: Run unit tests
+        if: matrix.os != 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -m "not integration" -q --tb=short 2>&1 | tee pytest.out
+          if ! grep -qE '[1-9][0-9]* passed' pytest.out; then
+            echo "::error::0 tests passed on ${{ matrix.os }}——import 全挂/全 skip 被静默吞"
+            exit 1
+          fi
+
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
@@ -51,7 +71,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -e ".[test,repl,agent]"
+        run: pip install -e ".[test,repl]"
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1

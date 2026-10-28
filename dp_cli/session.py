@@ -20,13 +20,22 @@ from time import sleep, perf_counter
 from dp_cli.logs import debug
 
 
-# 会话状态文件默认目录
-_SESSION_DIR = Path.home() / '.dp_cli' / 'sessions'
+# 会话状态文件默认目录——惰性求值：Path.home() 必须在调用期算，
+# import 期固化会让测试 setenv(HOME/USERPROFILE) 隔离失效
+# （win 上 Path.home() 走 USERPROFILE 不吃 HOME，常量化则双平台都漏）
+def _default_session_dir() -> Path:
+    return Path.home() / '.dp_cli' / 'sessions'
+
+
+def _session_dir() -> Path:
+    """测试 seam：conftest/单测 patch 本函数重定向会话目录。"""
+    return _default_session_dir()
 
 
 def get_session_dir() -> Path:
-    _SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    return _SESSION_DIR
+    d = _session_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def get_session_file(name: str) -> Path:

@@ -27,3 +27,48 @@ def test_page_cache_starts_empty():
 @pytest.mark.unit
 def test_page_cache_reset_between_tests():
     assert sm._PAGE_CACHE == {}
+
+
+@pytest.mark.unit
+def test_isolated_home_drives_lazy_paths(isolated_home, monkeypatch):
+    """setenv(HOME/USERPROFILE) 后所有惰性 Path.home() 路径必须落新 HOME。
+
+    win/mac CI 教训：Path.home() 若在模块顶层固化（_SESSION_DIR/_DIR/
+    _MODELS_DIR 旧形态），setenv 补丁无效，用例静默读写真实用户目录。
+    现全部改调用期惰性求值——本用例逐模块断言路径前缀在新 HOME 下。
+    """
+    import dp_cli.agent as ag
+    import dp_cli.daemon as dm
+    import dp_cli.netlog as nl
+
+    assert Path.home() == isolated_home
+    # session 的 autouse seam 还原为真实实现，验证其同样跟随 HOME
+    monkeypatch.setattr(sm, '_session_dir', sm._default_session_dir)
+
+    home = str(isolated_home)
+    for p in (sm._session_dir(),
+              dm._sock_path('s'), dm._meta_path('s'),
+              nl._path('s'), nl._lock_path('s'),
+              ag._models_dir()):
+        assert str(p).startswith(home), f'{p} 不在隔离 HOME 下'
+
+
+@pytest.mark.unit
+def test_no_import_time_home_constants():
+    """防回归：dp_cli 模块顶层禁止 Path.home()/expanduser 赋值。
+
+    import 期固化的 home 常量会让 isolated_home/CI HOME 隔离全部
+    失效——AST 扫全包顶层赋值语句，出现即失败。
+    """
+    import ast
+
+    import dp_cli
+    root = Path(dp_cli.__file__).parent
+    for f in root.rglob('*.py'):
+        tree = ast.parse(f.read_text(encoding='utf-8'), filename=str(f))
+        for node in tree.body:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) \
+                    and getattr(node, 'value', None) is not None:
+                s = ast.dump(node.value)
+                assert 'home' not in s and 'expanduser' not in s, \
+                    f'{f}:{node.lineno} 顶层固化了 home 路径——改为函数内惰性求值'

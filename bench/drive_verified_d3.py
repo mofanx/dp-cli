@@ -180,6 +180,21 @@ def capture(session, task):
         raise RuntimeError(f'expected >{pick} {role} {name!r}, got {len(selected)}')
     chosen = selected[pick]
     ref = chosen['ref']
+    def _run_step(step):
+        refs2 = snapshot(session)
+        opts2 = [{'ref': int(k), 'role': v.get('role', ''), 'name': v.get('name', '')}
+                 for k, v in refs2.items() if str(k).isdigit()]
+        sel2 = [o for o in opts2 if o['role'] == step['role']
+                and (step['name'] is None or o['name'] == step['name'])]
+        if len(sel2) <= step.get('pick', 0):
+            raise RuntimeError(f"step ref {step['role']} {step['name']!r} not found")
+        r2 = sel2[step.get('pick', 0)]['ref']
+        call(session, step['cmd'][0], f'ref:{r2}', *step['cmd'][1:])
+        time.sleep(0.8)
+
+    # 多步流前置步：主动作前的准备动作（如先 fill 再 submit）
+    for step in (task[10] if len(task) > 10 else ()):
+        _run_step(step)
     url = eval_raw(session, 'location.href')['data']['result']
     before = call(session, 'eval', expr)
     old = before['data']['result']
@@ -187,6 +202,10 @@ def capture(session, task):
         raise RuntimeError(f'pre-state already satisfies outcome ({old!r})')
     argv = [command[0], f'ref:{ref}', *command[1:]]
     action = call(session, *argv)
+    # 多步流：主动作后顺序执行 task[9] 步（每步重新解析 ref）
+    steps = task[9] if len(task) > 9 else ()
+    for step in steps:
+        _run_step(step)
     if wait:
         deadline = time.time() + wait
         after = eval_raw(session, expr)
@@ -317,6 +336,22 @@ def auto_tasks(session, page_url):
         "[...document.querySelectorAll('button')].map(b=>[b.textContent.trim(),b.getAttribute('onclick')])") or []
     link_href = {n: h for n, h in hrefs if h}
     btn_oc = {n: oc for n, oc in onclick if oc}
+    # button aria 状态探针（无 onclick 按钮的可确定断言子集）
+    btn_attrs = _js_get(session,
+        "[...document.querySelectorAll('button')].map(b=>[b.textContent.trim(),"
+        "b.getAttribute('aria-pressed'),b.getAttribute('aria-expanded'),"
+        "b.getAttribute('aria-controls')])") or []
+    # form GET 提交探针（多步 fill→submit→导航断言）
+    forms = _js_get(session,
+        "[...document.querySelectorAll('form')].map(f=>{"
+        "const inp=[...f.querySelectorAll('input[type=text],input:not([type]),"
+        "input[type=search],textarea')][0];"
+        "const sub=[...f.querySelectorAll('button[type=submit],input[type=submit],"
+        "button')][0];"
+        "return[f.getAttribute('action')||'',(f.method||'get').toLowerCase(),"
+        "inp?(inp.placeholder||inp.getAttribute('aria-label')||inp.name||inp.id||''):'',"
+        "sub?(sub.textContent.trim()||sub.value||''):'']})") or []
+    forms_done = False
 
     for o in opts:
         role, name = o['role'], o['name']
@@ -345,6 +380,33 @@ def auto_tasks(session, page_url):
                     tasks.append((page_url, goal, role, name, ('click',),
                                   "document.getElementById('st').textContent",
                                   m.group(1), 0, 0))
+                    continue
+                # aria 状态翻转断言（无 onclick 按钮的可确定闭合子集）
+                nm_js = name.replace("'", "\\'")
+                sel = (f"[...document.querySelectorAll('button')]"
+                       f".find(b=>b.textContent.trim()==='{nm_js}')")
+                for bn, ap, ae, ac in btn_attrs:
+                    if bn != name:
+                        continue
+                    if ap in ('true', 'false'):
+                        cur = _js_get(session, f"{sel}.getAttribute('aria-pressed')")
+                        if cur in ('true', 'false'):
+                            tasks.append((page_url, goal, role, name, ('click',),
+                                          f"{sel}.getAttribute('aria-pressed')",
+                                          'false' if cur == 'true' else 'true', 0, 0))
+                    elif ae in ('true', 'false'):
+                        cur = _js_get(session, f"{sel}.getAttribute('aria-expanded')")
+                        if cur in ('true', 'false'):
+                            tasks.append((page_url, goal, role, name, ('click',),
+                                          f"{sel}.getAttribute('aria-expanded')",
+                                          'false' if cur == 'true' else 'true', 0, 0))
+                    elif ac:
+                        cur = _js_get(session,
+                            f"document.getElementById('{ac}')?.offsetHeight>0")
+                        if isinstance(cur, bool):
+                            tasks.append((page_url, goal, role, name, ('click',),
+                                          f"document.getElementById('{ac}').offsetHeight>0",
+                                          not cur, 0, 0))
             elif role == 'textbox':
                 tasks.append((page_url, goal, role, name, ('fill', 'auto-fx'),
                               f"[...document.querySelectorAll('input')].find(i=>i.placeholder==='{name}')?.value",
@@ -359,7 +421,29 @@ def auto_tasks(session, page_url):
                                   True, 0, 0))
         except Exception:
             continue
-    return tasks[:5]
+    # 多步流：form GET fill→submit→导航断言（每页最多 1 个）
+    if not forms_done:
+        from urllib.parse import urljoin, urlparse
+        cur_path = urlparse(page_url).path
+        for action, method, inp_name, sub_name in forms:
+            if forms_done or method != 'get' or not inp_name:
+                continue
+            if action and action != '#':
+                p = urlparse(urljoin(page_url, action))
+                if p.path not in ('', cur_path):
+                    expr, expected = 'location.pathname', p.path
+                else:
+                    expr, expected = 'location.search.length>0', True
+            else:
+                continue  # 无 action 的 JS 表单不可预测——跳过
+            goal = f'填写{inp_name}并提交' if inp_name else '填完表单提交'
+            tasks.append((page_url, goal, 'button', sub_name or None,
+                          ('click',), expr, expected, 2, 0,
+                          [],  # post steps
+                          [{'cmd': ('fill', 'auto-fx'), 'role': 'textbox',
+                            'name': inp_name or None, 'pick': 0}]))
+            forms_done = True
+    return tasks[:8]
 
 
 def main():

@@ -133,6 +133,7 @@ def main():
         else:
             print('无训练数据——先 DPX_RECORD_DECIDE=1 录制或 --smoke')
             return
+    pairwise = '--pairwise' in sys.argv
     hits = check_leakage(pairs)
     if hits:
         print(f'泄漏拒绝：{len(hits)} 条训练 query 命中 eval 集——'
@@ -145,17 +146,43 @@ def main():
     from sentence_transformers.cross_encoder import CrossEncoderTrainer, CrossEncoderTrainingArguments
     from datasets import Dataset
     random.seed(0); random.shuffle(pairs)
-    ds = Dataset.from_list([{'sentence1': q, 'sentence2': c, 'label': l}
-                            for q, c, l in pairs])
-    m = CrossEncoder(BASE, num_labels=1)
+    if pairwise:
+        # pairwise margin：chosen vs runner-up 差分目标，而非 0/1 硬标签。
+        # 复用录制行负例列表做 (q,pos,neg) 三元组，margin 标签 +1——
+        # MarginMSELoss 学 score(pos)-score(neg)→1 的差分而非分类。
+        rows = json.loads(Path(src).read_text(encoding='utf-8')) if src else []
+        flat = []
+        for r in rows:
+            q, pos = r.get('query', ''), r.get('positive', '')
+            if r.get('src') == 'unsure' or not q.strip() or not pos:
+                continue
+            for n in r.get('negatives', [])[:3]:
+                if n and n != pos:
+                    flat.append({'sentence1': q, 'sentence2': pos,
+                                 'sentence3': n, 'label': 1.0})
+        if len(flat) < 10:
+            print(f'pairwise 三元组不足（{len(flat)}<10）——换 --pointwise')
+            return
+        ds = Dataset.from_list(flat)
+        from sentence_transformers.cross_encoder.losses import MarginMSELoss
+        loss_fn = MarginMSELoss(m_model := CrossEncoder(BASE, num_labels=1))
+        m = m_model
+        pairs = [(f'{len(flat)} triplets', '', 0)]
+    else:
+        ds = Dataset.from_list([{'sentence1': q, 'sentence2': c, 'label': l}
+                                for q, c, l in pairs])
+        loss_fn = None
+        m = CrossEncoder(BASE, num_labels=1)
     args = CrossEncoderTrainingArguments(
         output_dir=str(OUT), num_train_epochs=int(__import__('os').environ.get('TRAIN_EPOCHS','2')),
         per_device_train_batch_size=8, learning_rate=2e-5,
         logging_steps=20, save_strategy='no')
-    tr = CrossEncoderTrainer(model=m, args=args, train_dataset=ds)
+    tr = CrossEncoderTrainer(model=m, args=args, train_dataset=ds,
+                             loss=loss_fn) if loss_fn else \
+        CrossEncoderTrainer(model=m, args=args, train_dataset=ds)
     tr.train()
     m.save_pretrained(str(OUT))
-    print(f'trained {len(pairs)} pairs → {OUT}')
+    print(f'trained {len(ds)} {"triplets" if pairwise else "pairs"} → {OUT}')
 
 
 if __name__ == '__main__':

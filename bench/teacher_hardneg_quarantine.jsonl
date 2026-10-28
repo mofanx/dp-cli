@@ -1,0 +1,6 @@
+{"page": "https://fixture.hardneg/quar/ident-x", "query": "关掉第一条弹出的通知", "reason": "unlearnable: 全部候选同名 button ×，正/负例文本一致标签矛盾"}
+{"page": "https://fixture.hardneg/quar/sel-ordinal", "query": "下拉列表里挑第 2 项", "reason": "eval-semantic-twin: m26 选下拉的第二个选项；且 _meta_decide 序数短路已接管，数据层不可修"}
+{"page": "https://fixture.hardneg/quar/dl-twin", "query": "download the report as a spreadsheet", "reason": "eval-semantic-twin: n08 download the CSV report；meta \"load\" 子串误命中 wait，数据层不可修"}
+{"page": "https://fixture.hardneg/quar/replies-twin", "query": "expand all replies under this comment", "reason": "eval-semantic-twin: c10 展开回复线程；meta 滚动词误命中，不可修"}
+{"page": "https://fixture.hardneg/quar/reply-twin", "query": "reply in this forum thread", "reason": "eval-semantic-twin: m12；且 expect=click 而 textbox→type，标注口径与 _ROLE_ACTION 冲突，不可判"}
+{"page": "https://fixture.hardneg/quar/addr-twin", "query": "把地址二那栏勾上", "reason": "eval-semantic-twin: n05/m11 地址二→第二个地址 entry；CE 无位置信号，正例名不定无法收敛"}

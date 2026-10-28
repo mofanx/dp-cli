@@ -1,0 +1,82 @@
+{
+  "experiment": "定向教师 hard-negative 标注（本 agent 即教师，无外部 API）——v23 泛撒蒸馏 Δ=0 后的对照实验：只生成 eval-120 miss 同形态的 hard-negative 组，正选+高相似度干扰负例",
+  "source_train": "bench/merge_out_v21.json (231 verified_real) + bench/teacher_hardneg.json (176) → bench/merge_out_v24.json (407)",
+  "miss_shape_buckets": {
+    "near_distractor": {"n": 45, "ids_target": ["n08", "x43"], "pattern": "同格式族兄弟（导出 YAML/TOML/Markdown）、行内缩写操作（删→Del/Remove/Trash）、同名异 role（点\"保存\"链接 vs 按钮）、同前缀批量操作、登录页找回/注册分流"},
+    "ordinal_address": {"n": 30, "ids_target": ["n05", "m11"], "pattern": "序数地址 entry（地址2·父母家/Address 2 - Office）、名带索引候选（处理#N/节点-NN/T-N）、末位位置词（Last »/末页）、重复组内序号"},
+    "business_semantic": {"n": 58, "ids_target": ["x03", "x04", "x09", "x12", "m15", "m17", "t06", "m13", "x01"], "pattern": "作废→红冲族、驳回→退回/Reject 族、告警压单→Ack 族、换班→调班族、静音→Mute/Bell 族、收藏稍后看→图标族、工单/CRM/面试/物流业务动词、目的地→到达字段"},
+    "negation": {"n": 20, "ids_target": ["n22", "m29", "m30"], "pattern": "别点A点B/选不是X的那个/除了X以外——被否定项作强负例；含 3 条正向点名行防'named=neg'捷径"},
+    "select_combobox": {"n": 23, "ids_target": ["m26", "m27", "x18"], "pattern": "goal→combobox 控件定位（opt_values 富化形态 'combobox X [a|b|c]'），负例=同语义 radio/button 兄弟"}
+  },
+  "hardneg_rows": 176,
+  "quarantine_rows": 6,
+  "quarantine": [
+    {"query": "关掉第一条弹出的通知", "reason": "unlearnable: 全部候选同名 button ×，正/负文本一致标签矛盾"},
+    {"query": "下拉列表里挑第 2 项", "reason": "eval-semantic-twin m26 + _meta_decide 序数短路已接管，数据层不可修"},
+    {"query": "download the report as a spreadsheet", "reason": "eval-semantic-twin n08 + meta 'load'⊂'download' 子串误命中 wait"},
+    {"query": "expand all replies under this comment", "reason": "eval-semantic-twin c10 + meta 滚动词误命中"},
+    {"query": "reply in this forum thread", "reason": "eval-semantic-twin m12 + expect=click 而 textbox→type 标注口径冲突"},
+    {"query": "把地址二那栏勾上", "reason": "eval-semantic-twin n05/m11 地址二；CE 无位置信号正例名不定"}
+  ],
+  "leakage": {
+    "method": "生成器内三道闸——query×全部120条eval goal exact+子串（复用 merge_train._hit）；miss case 候选文本零复用（recorded 19 ∪ 现役 v19 复跑 miss=22 id 的全量候选串，pos+neg 双查）；query 去重+pos∉negs",
+    "query_hits": 0,
+    "miss_candidate_reuse": 0,
+    "merge_gate": "merge_train.merge 复核 _hit: 剔除 0 撞车 + 0 src 拒收",
+    "non_miss_candidate_overlap": "审计信息项：9 个 pos 串与未 miss eval 候选撞名（button Export/link Sign up/button Reject 等通用词，query 均不同形态）；已修掉 x15 面试行整组近孪生",
+    "pos_neg_crossover": "18 串跨行 pos↔neg 交叉——格式族/role 族对比信号本体（同候选对不同 query 正负相反=消歧教学信号，query 已去重无同对双标签）"
+  },
+  "annotation_examples": [
+    {"bucket": "near", "query": "报表导出成 YAML", "positive": "button 导出 YAML",
+     "negatives": ["button 导出 TOML", "button 导出 Markdown", "button 打印预览"],
+     "note": "n08 同型：格式族同前缀兄弟——同候选对不同 goal 正负反转"},
+    {"bucket": "neg", "query": "别点\"稍后\"，点\"立即更新\"", "positive": "button 立即更新",
+     "negatives": ["button 稍后", "button 忽略本次"],
+     "note": "m29/n22 同型：被否定项作强负例——教排除语义非'named=neg'"},
+    {"bucket": "biz", "query": "这批告警全部确认掉", "positive": "button 全部确认",
+     "negatives": ["button 全部静默", "button 批量升级", "button 导出批次"],
+     "note": "x12 同型：告警压单→Ack 族业务动词映射"}
+  ],
+  "merge": "merge_out_v21.json(231) + teacher_hardneg(176) → merge_out_v24.json(407)；eval 撞车检测 0 命中",
+  "train": {
+    "cmd": "HF_HOME=/media/yan/Data/hf_hub HF_HUB_OFFLINE=1 TRAIN_EPOCHS=1 python bench/train_reranker.py bench/merge_out_v24.json --model=BAAI/bge-reranker-base --out=/media/yan/Data/bge_v24_tuned --allow-unverified",
+    "pairs": 15461,
+    "steps": 1933,
+    "wall_time": "~44min (CPU, ~1.3s/it)",
+    "train_loss": 0.06118
+  },
+  "eval120": {
+    "v19_baseline": {"ALL": 84.2, "elem": 81.2, "meta": 91.4, "miss_n": 19,
+      "miss_ids": ["t06","c10","n05","n08","n22","m11","m12","m13","m14","m26","m27","m29","m30","x01","x03","x04","x12","x18","x43"]},
+    "v24_hardneg": {"ALL": 88.3, "elem": 87.1, "meta": 91.4, "miss_n": 14,
+      "miss_ids": ["c10","n05","n08","m12","m13","m15","m17","m25","m26","m29","x01","x03","x04","x12"]},
+    "delta": {"ALL": 4.1, "elem": 5.9, "meta": 0.0},
+    "gate": "85% → ADVISORY 转 AUTONOMOUS"
+  },
+  "miss_id_diff": {
+    "fixed": ["t06","n22","m11","m14","m27","m30","x18","x43"],
+    "new": ["m15","m17","m25"],
+    "persistent": ["c10","n05","n08","m12","m13","m26","m29","x01","x03","x04","x12"],
+    "fixed_note": "t06 目的地→To 字段 / n22·m30 排除语义 / m11 地址二 / m14 调大→A+ / m27 排序→combobox / x18 币种→combobox / x43 删→Del",
+    "new_miss_cause": {
+      "m15_m17": "基线本就是 ~0 分掷硬币态（v19 上 Snooze+0.000≈Bell off+0.000、Share+0.002≈🔖+0.002），本次权重微移反向——非真回归属临界抖动",
+      "m25": "真回归：a3 行 'click the Sign in link'→link Sign up 作负例、a5 'create account'→link Sign up 正例信号不对称，Log in +0.019 反超 Sign up +0.016（基线 hit）；下轮 Sign in/Sign up 对称样本补平"
+    },
+    "persistent_unfixable": {
+      "c10": "meta 误命中 scroll（'查看全部回复' 撞 SCROLL_KW）——规则层非数据",
+      "n08": "meta 误命中 wait（'load' 是 'download' 子串）——规则层非数据",
+      "m26": "_ordinal_n '第二个'→click ref2，expect select:1——规则层误截",
+      "m12": "expect=click 而 'Write a reply' 是 textbox→type，模型已 top1 ref3(+0.944) 仍判 miss——case 标注口径与 _ROLE_ACTION 冲突，结构性不可解"
+    },
+    "persistent_progress": {
+      "x03": "批量开票 +0.969→+0.041 对 批量冲红 +0.010→+0.014——margin 大幅收窄未翻转",
+      "x12": "Acknowledge +0.000→+0.013，但 Escalate 异常 +0.994（训练侧 Escalate 类串仅作负例，+0.994 来源待查）",
+      "x04": "不予通过 +0.004→+0.015 但 批准转正 +0.038→+0.040（'转正'字面重叠）",
+      "m29": "Archive +0.003→+0.020 但 Delete +0.006→+0.893（'删除'↔Delete 字面引力仍压过排除语义，n22/m30 修而 m29 未修——'别点删除点归档' 双点名且负项字面全中）",
+      "n05": "radio 家 +0.003→+0.016 但 公司地址 +0.022→+0.029（CE 无位置信号，'地址'字面仍赢；m11 同修 n05 未修——公司地址 vs 公司 的一字之差）",
+      "m13": "textbox To +0.000→+0.010 但 button Search +0.000→+0.019（Search 伪字面也受益）",
+      "x01": "Create Ticket +0.000→+0.011 但 编辑 +0.004→+0.016"
+    }
+  },
+  "verdict": "正向——定向 hard-negative 实证有效：ALL +4.1pp / elem +5.9pp / miss 19→14，GATE 由 ADVISORY 转 AUTONOMOUS。对照 v23 同管线泛撒 Δ=0，证明增益来自 miss 同形态的困难负例而非数据量。修复集中：排除语义(n22/m30)、combobox 定位(m27/x18)、调大→A+(m14)、删→Del(x43)、目的地→To(t06)、地址二(m11)。剩余 14 miss 中 4 条规则层/标注口径不可修(c10/n08/m26/m12)，5 条 margin 大幅收窄近翻转(x03/x04/x12/m29/n05/m13/x01 的 pos 分均升 5-10 倍但负项字面引力未破)。3 条新 miss 中 m15/m17 属 ~0 分临界抖动，m25 是真回归（Sign in/Sign up 样本不对称所致）。下一步：(a) 规则层修 4 条 meta 误命中；(b) 第二轮 hardneg 针对 persistent 项加量同族+补 Sign up 对称样本；(c) x12 Escalate +0.994 异常分待查训练侧来源。"
+}

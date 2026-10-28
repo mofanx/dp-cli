@@ -1,0 +1,69 @@
+{
+  "experiment": "goal 同态扩增（LLM paraphrase aug）小步验证",
+  "source_train": "bench/merge_out_v21.json (231 eligible rows)",
+  "sampled_goals": 50,
+  "paraphrases_per_goal": 5,
+  "aug_rows": 248,
+  "quarantine_rows": 2,
+  "quarantine": [
+    {
+      "src_idx": 44,
+      "query": "翻到第 3 页",
+      "reason": "eval-goal-collision"
+    },
+    {
+      "src_idx": 49,
+      "query": "点第 12 个分类链接",
+      "reason": "eval-goal-collision"
+    }
+  ],
+  "quality_gate": "逐行守卫:同字面拒收/区分性 token 缺失(序号/用户名vs密码/公司vs学校等)/负例冲突 token/eval goal 撞车(精确+子串)",
+  "examples": [
+    {
+      "src_idx": 57,
+      "orig": "回到列表页",
+      "para": "返回列表页",
+      "positive": "link ← 上一页"
+    },
+    {
+      "src_idx": 66,
+      "orig": "提交订单",
+      "para": "订单确认提交",
+      "positive": "button 确认无误"
+    },
+    {
+      "src_idx": 52,
+      "orig": "搜索去东京的航班",
+      "para": "目的地填东京搜航班",
+      "positive": "textbox To"
+    }
+  ],
+  "merge_out_v22_rows": 479,
+  "train": {
+    "cmd": "TRAIN_EPOCHS=1 python bench/train_reranker.py bench/merge_out_v22.json --model=BAAI/bge-reranker-base --out=/media/yan/Data/bge_v22_tuned",
+    "pairs": 41952,
+    "steps": 5244,
+    "wall_time": "~1h57m (CPU, ~1.33s/it)",
+    "loss": "BCE trainer 日志未被管道捕获;log file 无 loss 行"
+  },
+  "eval120": {
+    "v19_baseline": {
+      "ALL": 84.2,
+      "elem": 81.2,
+      "meta": 91.4,
+      "miss_n": 19
+    },
+    "v22_aug": {
+      "ALL": 82.5,
+      "elem": 78.8,
+      "meta": 91.4,
+      "miss_n": 21
+    },
+    "delta": {
+      "ALL": -1.7,
+      "elem": -2.4,
+      "meta": 0.0
+    }
+  },
+  "verdict": "持平偏降(-1.7pp ALL/-2.4pp elem,约2个 case,接近±0.8pp/case噪声但方向一致为负)——与历史『合成改写增广无效』结论一致,同分布改写不扩泛化;判定中性偏污染,非增益候选"
+}

@@ -1,0 +1,66 @@
+{
+  "experiment": "LLM 教师蒸馏小步验证（本 agent 即教师，无外部 API）",
+  "source_train": "bench/merge_out_v21.json (231 eligible rows)",
+  "snapshot_source": "drive_verified_*.jsonl 的 evidence.before_refs——10 个不同页面各 5 组 (goal,candidates)",
+  "pages": [
+    "https://the-internet.herokuapp.com/status_codes",
+    "https://demoqa.com/radio-button",
+    "https://demoqa.com/text-box",
+    "http://uitestingplayground.com/visibility",
+    "https://demoqa.com/buttons",
+    "https://demo.automationtesting.in/Index.html",
+    "https://demo.playwright.dev/todomvc/#/",
+    "http://127.0.0.1:8901/tpl/t1.html",
+    "https://letcode.in/elements",
+    "https://devexpress.github.io/testcafe/example/"
+  ],
+  "aug_rows": 50,
+  "quarantine_rows": 2,
+  "quarantine": [
+    {"page": "https://demo.automationtesting.in/Index.html",
+     "query": "不登录，直接跳过进站",
+     "reason": "unsure: link/button Skip Sign In 同名双候选无法区分"},
+    {"page": "http://127.0.0.1:8901/deep/p10.html",
+     "query": "收货地址选家里那个",
+     "reason": "eval-semantic-twin: n05 选择收货地址二→radio 家"}
+  ],
+  "noise_estimate": {
+    "method": "随机抽 10/50 组二次盲审（换角度重判不与首判对照）+ 同页 verified 标签交叉核对",
+    "blind_rejudge_agreement": "10/10",
+    "verified_crosscheck": "教师正例与同页 verified 已确认元素零冲突（radio Impressive/Yes、link Remo H. Jansen、checkbox Support for testing on remote devices、link 301/404、textbox Full Name/name@example.com、button Click Me 等全部一致）",
+    "point_estimate": "0%（n=10 小样本，置信上限约 26%；另有 2 组主动丢弃未入 aug）"
+  },
+  "annotation_examples": [
+    {"page": "http://uitestingplayground.com/visibility",
+     "query": "试试让元素宽度归零的那种",
+     "positive": "button Zero Width",
+     "negatives": ["link UITAP", "button Toggle navigation", "heading Visibility"],
+     "note": "8 个隐藏方式按钮近名高区分度场景"},
+    {"page": "https://demo.automationtesting.in/Index.html",
+     "query": "按那个 Sign In 按钮提交",
+     "positive": "button Sign In",
+     "negatives": ["link Sign In", "link Skip Sign In", "button Skip Sign In"],
+     "note": "同名 link/button 歧义——goal 自带形态限定词消歧"},
+    {"page": "https://devexpress.github.io/testcafe/example/",
+     "query": "勾上能后台并行跑的那个选项",
+     "positive": "checkbox Running tests in background and/or in parallel in multiple browsers",
+     "negatives": ["heading Example", "paragraph This webpage is used as a sample in TestCafe tutorials.", "textbox"],
+     "note": "语义映射 goal→长名 checkbox"}
+  ],
+  "merge": "merge_out_v21.json(231) + teacher_aug(50) → merge_out_v23.json(281)；eval 撞车检测 0 命中",
+  "train": {
+    "cmd": "HF_HOME=/media/yan/Data/hf_hub HF_HUB_OFFLINE=1 TRAIN_EPOCHS=1 python bench/train_reranker.py bench/merge_out_v23.json --model=BAAI/bge-reranker-base --out=/media/yan/Data/bge_v23_tuned --allow-unverified",
+    "note": "teacher 行无执行后证据，eligible() 拒收→显式 --allow-unverified；HF xet 下载 stall 两次（604MB/10MB 处冻住），改 aria2 -x16 续传+hf-mirror 签名 URL 完成 1.1GB model.safetensors（sha256 校验通过）",
+    "pairs": 14976,
+    "steps": 1872,
+    "wall_time": "~42min (CPU, ~1.33s/it)",
+    "train_loss": 0.05222
+  },
+  "eval120": {
+    "v19_baseline": {"ALL": 84.2, "elem": 81.2, "meta": 91.4, "miss_n": 19},
+    "v23_teacher": {"ALL": 84.2, "elem": 81.2, "meta": 91.4, "miss_n": 19},
+    "delta": {"ALL": 0.0, "elem": 0.0, "meta": 0.0},
+    "miss_ids": ["t06","c10","n05","n08","n22","m11","m12","m13","m15","m17","m26","m29","m30","x03","x04","x09","x12","x18","x43"]
+  },
+  "verdict": "中性——50 行高置信教师标注（盲审一致率 10/10、verified 交叉核对零冲突）合并后 eval-120 与 v19 基线完全一致（84.2/81.2，miss 19）。新增数据既未引入污染也未带来增益：正例质量高但多为同分布近字面/浅语义映射，reranker 已会；50 行对 14976 pairs 占比 0.3% 量级太小。结论：教师标注管线本身可信（噪声率点估 0%），但要见增益需更大规模或专挑 hard-negative/深语义组，建议下一步按 eval miss 桶（n05 地址序号/x03 冲红/x12 告警压掉类）定向标注而非均匀铺页。"
+}

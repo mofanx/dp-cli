@@ -1,0 +1,2 @@
+{"page": "https://demo.automationtesting.in/Index.html", "query": "不登录，直接跳过进站", "reason": "unsure: link Skip Sign In vs button Skip Sign In 同名双候选无法区分"}
+{"page": "http://127.0.0.1:8901/deep/p10.html", "query": "收货地址选家里那个", "reason": "eval-semantic-twin: n05 选择收货地址二→radio 家"}

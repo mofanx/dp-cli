@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.15] - 2026-10-27
+
+### 修复（模块级生产审查四波 21 项 P1）
+- **session**：refs 原子写 `os.replace` 防撕裂+`_corrupt` 结构化错误
+- **bridge**：killpg cmdline 校验防 pid 复用误杀+zombie reaper
+- **daemon**：`_unix_alive` POSIX 探活、`_flock LOCK_NB`+轮询超时、幂等防护、契约补齐
+- **serve**：超时接入、契约补齐、录制守卫、pre_state 复用
+- **decide 录制**：`_record_decide_row` 公共函数三调用点统一断供、engine_ref 不冒充 chosen、ref:N 双形态判据
+- **network/netlog/storage**：har-dump 回调快照回填、netlog `_armed` tab_id 跟随重挂、storage HttpOnly 导入+skipped_lines
+
 ## [0.15.14] - 2026-10-27
 
 ### 新增

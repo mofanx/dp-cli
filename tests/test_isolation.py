@@ -47,10 +47,23 @@ def test_isolated_home_drives_lazy_paths(isolated_home, monkeypatch):
 
     home = str(isolated_home)
     for p in (sm._session_dir(),
-              dm._sock_path('s'), dm._meta_path('s'),
+              dm._meta_path('s'),
               nl._path('s'), nl._lock_path('s'),
               ag._models_dir()):
         assert str(p).startswith(home), f'{p} 不在隔离 HOME 下'
+    # _sock_path 有 sun_path 兜底——sock 路径超 AF_UNIX 上限时
+    # 退 TMPDIR 短前缀是正确行为而非隔离失效（深 HOME/深 tmp_path
+    # 的 macOS CI 会命中）；未超限时仍须跟 HOME。
+    import os
+    import tempfile
+    sp = dm._sock_path('s')
+    deep = len(os.fsencode(str(
+        isolated_home / '.dp_cli' / 'daemon' / 's.sock'))) > 100
+    if deep:
+        assert str(sp).startswith(str(Path(tempfile.gettempdir()))), \
+            f'{sp} 深 HOME 下应退 TMPDIR 短前缀'
+    else:
+        assert str(sp).startswith(home), f'{sp} 不在隔离 HOME 下'
 
 
 @pytest.mark.unit

@@ -2,8 +2,9 @@
 """daemon socket 化：普通 dpx <cmd> 免 Python 启动+attach 税。
 
 - unix socket：~/.dp_cli/daemon/{session}.sock（不放 TMPDIR——重启即失效
-  易留僵尸；HOME 下稳定可定位）+ {session}.session 元数据
-  （pid/socket/started_at/owner）
+  易留僵尸；HOME 下稳定可定位；路径超 AF_UNIX sun_path 上限时例外，
+  退 TMPDIR/dpx-<hash>.sock 短前缀，见 _sock_path）+ {session}.session
+  元数据（pid/socket/started_at/owner）
 - 客户端：连 socket → ENOENT/ECONNREFUSED → spawn `python -m dp_cli.daemon`
   （setsid detached）→ retry once
 - 超时分层：socket read 超时 = 命令 --timeout + 15s margin
@@ -123,8 +124,30 @@ def _version_probe(session: str) -> None:
         pass
 
 
+_SUN_PATH_LIMIT = 100   # AF_UNIX sun_path 安全字节上限——
+                        # Linux 108B/macOS 104B，留余量统一阈值
+
+
 def _sock_path(session: str) -> Path:
-    return _dir() / f'{session}.sock'
+    """POSIX sock 路径——超 sun_path 上限退 TMPDIR 短前缀。
+
+    HOME 深路径（长用户名/网络 home/深 TMPDIR 测试基建）下
+    ~/.dp_cli/daemon/{session}.sock 可超 AF_UNIX sun_path 上限
+    （Linux 108B/macOS 104B），bind/connect 抛 'AF_UNIX path too
+    long'——超限退 tempfile.gettempdir()/dpx-<sha1(session+目录)
+    [:8]>.sock：纯函数按 session 可重建，client connect/server
+    bind/stale 清理全走本函数天然同决策；不同 HOME 目录不同哈希
+    不互踩。meta 文件无 sun_path 限制仍留 _dir() 原路径。
+    Windows（无 AF_UNIX）不走本判定，路径形态不变。"""
+    p = _dir() / f'{session}.sock'
+    if not _HAS_UNIX_SOCK \
+            or len(os.fsencode(str(p))) <= _SUN_PATH_LIMIT:
+        return p
+    import hashlib
+    import tempfile
+    h = hashlib.sha1(f'{session}|{p.parent}'
+                     .encode('utf-8')).hexdigest()[:8]
+    return Path(tempfile.gettempdir()) / f'dpx-{h}.sock'
 
 
 def _meta_path(session: str) -> Path:

@@ -107,6 +107,81 @@ def test_daemon_ready_posix_spawn_window(monkeypatch, tmp_path):
     assert sock.exists()                     # 未被误清
 
 
+# ── sun_path 兜底：深 HOME 退 TMPDIR 短前缀 ────────────────────
+
+def _deep_dir():
+    """确定性深目录（纯路径计算不建文件）：>100B 必超 sun_path 上限。"""
+    import os
+    from pathlib import Path
+    return Path(os.path.abspath(os.sep)) / ('d' * 120)
+
+
+def test_sock_path_sun_path_fallback_deep_home(monkeypatch):
+    """sun_path 兜底：sock 路径超 AF_UNIX 上限（>100B）退
+    tempfile.gettempdir()/dpx-<sha1>.sock——深 HOME（长用户名/
+    网络 home）下 bind/connect 不再抛 'AF_UNIX path too long'。"""
+    import os
+    import tempfile
+    from pathlib import Path
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    monkeypatch.setattr(daemon, '_dir', _deep_dir)
+    p = daemon._sock_path('s')
+    assert p.parent == Path(tempfile.gettempdir())
+    assert p.name.startswith('dpx-') and p.name.endswith('.sock')
+    assert len(os.fsencode(str(p))) <= daemon._SUN_PATH_LIMIT
+    # 同 session 可重建——client connect/server bind/stale 清理
+    # 全走 _sock_path 天然同决策
+    assert daemon._sock_path('s') == p
+    # 不同 session 不互踩
+    assert daemon._sock_path('s2') != p
+    # _connect_endpoint 与 _sock_path 同决策（meta 不受限留原路径）
+    assert daemon._connect_endpoint('s') == str(p)
+    assert daemon._meta_path('s') == _deep_dir() / 's.session'
+
+
+def test_sock_path_short_home_unchanged(monkeypatch):
+    """短路径行为不变：sock 在 _dir() 内、文件名 {session}.sock。"""
+    import os
+    from pathlib import Path
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    d = Path(os.path.abspath(os.sep)) / 'd'    # len('/d/s.sock')=9B
+    monkeypatch.setattr(daemon, '_dir', lambda: d)
+    assert daemon._sock_path('s') == d / 's.sock'
+
+
+def test_sock_path_sun_path_boundary(monkeypatch):
+    """边界值：=100B 不兜底（Linux 108/macOS 104 余量内），
+    101B 起退短前缀。"""
+    import os
+    from pathlib import Path
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    root = Path(os.path.abspath(os.sep))
+    # '/<name>/s.sock' 凑整：总长 = name 长 + len('//s.sock')=+8
+    d100 = root / ('e' * 92)
+    assert len(os.fsencode(str(d100 / 's.sock'))) == 100
+    monkeypatch.setattr(daemon, '_dir', lambda: d100)
+    assert daemon._sock_path('s') == d100 / 's.sock'
+    d101 = root / ('e' * 93)
+    assert len(os.fsencode(str(d101 / 's.sock'))) == 101
+    monkeypatch.setattr(daemon, '_dir', lambda: d101)
+    assert daemon._sock_path('s') != d101 / 's.sock'
+
+
+def test_sock_path_tcp_platform_no_fallback(monkeypatch):
+    """Windows（无 AF_UNIX）不做 sun_path 兜底——sock 路径形态不变
+    （平台分支只按 _HAS_UNIX_SOCK 判定）。"""
+    from dp_cli import daemon
+    monkeypatch.setattr(daemon, '_HAS_UNIX_SOCK', False)
+    monkeypatch.setattr(daemon, '_dir', _deep_dir)
+    assert daemon._sock_path('s') == _deep_dir() / 's.sock'
+
+
 # ── 跨平台降级：_HAS_UNIX_SOCK=False 强制 TCP 分支 ─────────────
 # （对齐 test_commands.py 的 _HAS_UNIX_SOCK mock 先例——开发机
 # 是 POSIX，Windows 路径只能靠 mock 平台常量跑分支验证）

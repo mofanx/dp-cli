@@ -36,6 +36,12 @@ _ACTIONS = ['click', 'type', 'select', 'scroll_up', 'scroll_down',
             'back', 'wait', 'done', 'blocked']
 _CONF_FLOOR = 0.35     # 低于此置信 → AGENT_UNSURE
 _STUCK_WINDOW = 3      # 连续 N 步哈希不变 → stuck
+# refs epoch 签名纳入的交互属性子集——disabled/hidden/checked 等
+# 属性级变化此前不重签，epoch 旧戳照样命中陈旧 refs
+_SIG_PROPS = ('disabled', 'hidden', 'checked', 'expanded', 'selected',
+              'pressed', 'required', 'readonly', 'focused', 'value',
+              'valuetext', 'level', 'modal', 'multiselectable',
+              'orientation', 'valuemin', 'valuemax')
 _INTERACTIVE_ROLES = {
     'link', 'button', 'textbox', 'searchbox', 'combobox', 'listbox',
     'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option',
@@ -53,6 +59,7 @@ def _page_state(page, session, max_opts=_TOP_K):
     if isinstance(nodes, dict):
         nodes = nodes.get('children', [])
     opts, refs = [], {}
+    prop_bits = []            # 交互属性子集指纹——进 epoch sig
     i = 0
     for n in _walk(nodes):
         role = (n.get('role') or '').lower()
@@ -67,6 +74,12 @@ def _page_state(page, session, max_opts=_TOP_K):
         if cur not in (None, ''):
             entry['current'] = str(cur)[:80]
         opts.append(entry)
+        _p = n.get('properties') or {}
+        _bits = [f'{k}={_p[k]}' for k in _SIG_PROPS
+                 if _p.get(k) not in (None, '')]
+        if cur not in (None, ''):
+            _bits.append(f'cur={cur}')
+        prop_bits.append(','.join(_bits))
         ref_entry = {'locator': n.get('locator') or f'css:[data-dpx-ref="{i}"]',
                      'role': role, 'name': name,
                      'backendNodeId': n.get('backendNodeId')}
@@ -79,9 +92,12 @@ def _page_state(page, session, max_opts=_TOP_K):
         title = page.title or ''
     except Exception:
         pass
-    # refs 版本戳：URL+控件签名——decide/后续动作据此检测过期
+    # refs 版本戳：URL+控件签名（名字+交互属性子集+值）——
+    # disabled/hidden/checked 等属性级变化同样重签，decide/后续
+    # 动作据此检测过期
     sig = hashlib.sha1(
         f"{url}|{len(opts)}|{','.join(o['name'] for o in opts[:10])}"
+        f"|{'|'.join(prop_bits)}"
         .encode()).hexdigest()[:12]
     if refs:
         save_refs(session, url, refs)

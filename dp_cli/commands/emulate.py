@@ -408,8 +408,15 @@ def register(cli):
                 'state': getattr(m, 'state', None),
                 'path': getattr(m, 'final_path', None) or str(getattr(m, 'folder', '') or ''),
             } for m in missions]
+            # download_dir 回显口径统一走 _dl_path()：命令行旗 > session
+            # 持久化配置 > DP 运行时默认（cwd）——configured 字段显式区分
+            # "用户配置过"与"DP 默认值"，防止下游把 cwd 当已配置判定
+            from dp_cli.session import _dl_path
+            _cfg_dir = _dl_path(session)
             result = {
-                'download_dir': download_dir or str(getattr(page, 'download_path', '')),
+                'download_dir': (download_dir or _cfg_dir
+                                 or str(getattr(page, 'download_path', ''))),
+                'configured': bool(download_dir or _cfg_dir),
                 'missions': completed,
             }
             if missions and not all(getattr(m, 'is_done', True) for m in missions):

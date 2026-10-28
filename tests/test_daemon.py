@@ -657,3 +657,71 @@ def test_serve_conn_systemexit_releases_counter(monkeypatch):
     with pytest.raises(SystemExit):
         daemon._serve_conn(c, 't')
     assert daemon._state['active'] == 0
+
+
+class _TickOnceEv:
+    """wait() 第一次返回 False（执行一轮检查）、之后 True（退出循环）。"""
+
+    def __init__(self):
+        self.flag = False
+        self.calls = 0
+
+    def wait(self, t):
+        self.calls += 1
+        return self.calls > 1 or self.flag
+
+    def set(self):
+        self.flag = True
+
+    def is_set(self):
+        return self.flag
+
+
+def test_idle_watcher_attached_live_port_extended_ttl(monkeypatch):
+    """P2：attached(user_connected) 会话浏览器端口活→宽限 TTL 豁免，
+    idle 超普通 TTL 也不自退。"""
+    import time
+    from dp_cli import daemon
+    ev = _TickOnceEv()
+    monkeypatch.setitem(daemon._state, 'last_activity',
+                        time.time() - daemon._IDLE_TTL - 10)
+    monkeypatch.setattr('dp_cli.session.load_session',
+                        lambda s: {'user_connected': True, 'port': 9333})
+    monkeypatch.setattr('dp_cli.session._port_open',
+                        lambda ip, p, timeout=0.3: True)
+    daemon._idle_watcher(None, None, ev, 's')
+    assert ev.flag is False        # 宽限 TTL 内——不自退
+
+
+def test_idle_watcher_attached_dead_port_normal_ttl(monkeypatch):
+    """P2：attached 会话浏览器端口已死→豁免无依据，回落普通 TTL 自退。"""
+    import time
+    from dp_cli import daemon
+    ev = _TickOnceEv()
+    monkeypatch.setitem(daemon._state, 'last_activity',
+                        time.time() - daemon._IDLE_TTL - 10)
+    monkeypatch.setattr('dp_cli.session.load_session',
+                        lambda s: {'user_connected': True, 'port': 9333})
+    monkeypatch.setattr('dp_cli.session._port_open',
+                        lambda ip, p, timeout=0.3: False)
+    wakes = []
+    monkeypatch.setattr(daemon, '_wake_acceptor', lambda s: wakes.append(s))
+    daemon._idle_watcher(None, None, ev, 's')
+    assert ev.flag is True and wakes == ['s']
+
+
+def test_idle_watcher_attached_live_port_beyond_extended(monkeypatch):
+    """P2：attached+端口活但 idle 超宽限 TTL→仍自退（豁免不是永久）。"""
+    import time
+    from dp_cli import daemon
+    ev = _TickOnceEv()
+    monkeypatch.setitem(daemon._state, 'last_activity',
+                        time.time() - daemon._IDLE_TTL_ATTACHED - 10)
+    monkeypatch.setattr('dp_cli.session.load_session',
+                        lambda s: {'user_connected': True, 'port': 9333})
+    monkeypatch.setattr('dp_cli.session._port_open',
+                        lambda ip, p, timeout=0.3: True)
+    wakes = []
+    monkeypatch.setattr(daemon, '_wake_acceptor', lambda s: wakes.append(s))
+    daemon._idle_watcher(None, None, ev, 's')
+    assert ev.flag is True and wakes == ['s']

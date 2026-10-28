@@ -549,9 +549,9 @@ def register(cli):
             elif downloads_done or downloads_done_alias:
                 # download_dir 是显式配置标记（download --dir 写入）；
                 # page.download_path 是 DP 默认值（恒 truthy，不可作判定）
-                from dp_cli.session import load_session as _ls
-                _sess = _ls(session) or {}
-                _dl_dir = _sess.get('download_dir')
+                # ——取回封装见 session._dl_path()
+                from dp_cli.session import _dl_path as _dlp
+                _dl_dir = _dlp(session)
                 if not _dl_dir:
                     error('下载目录未设置，无法等待下载完成——'
                           '先运行 `dpx download --dir <path>` 设置',

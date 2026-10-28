@@ -535,9 +535,15 @@ def register(cli):
 
             har = _build_har(entries, getattr(page, 'url', '') or '')
             if output:
-                Path(output).write_text(
+                # tmp+os.replace 原子产出——写一半中断不留半成品 HAR
+                # （同 cookie-export --output 模式）
+                import os as _os
+                _p = Path(output)
+                _tmp = _p.with_name(_p.name + '.tmp')
+                _tmp.write_text(
                     json.dumps(har, ensure_ascii=False, indent=2),
                     encoding='utf-8')
+                _os.replace(_tmp, _p)
                 ok({'saved_to': output,
                     'entries': len(har['log']['entries'])})
             else:

@@ -380,19 +380,37 @@ def register(cli):
             error('cookie 源为空', code='INVALID_ARGS')
             return
         n_ok = 0
+        ok_names = []
         n_fail = []
         for c in cookies:
             try:
                 page.set.cookies(c)
                 n_ok += 1
+                ok_names.append(c.get('name'))
             except Exception as e:
                 n_fail.append(f"{c.get('name')}: {e}")
+        # 浏览器静默拒收核验：page.set.cookies 底层 Network.setCookie
+        # 返 success=False 不抛错（httpOnly 前缀不符/域不匹配/Secure
+        # 前置条件等策略丢）——不核验就会报 imported=N 实际落地更少。
+        # 导入后一次回读 jar，按名字核验；核验本身失败按 set 结果报。
+        dropped = []
+        if ok_names:
+            try:
+                jar = {c.get('name') for c in
+                       (page.cookies(all_domains=True) or [])}
+                dropped = [n for n in ok_names if n and n not in jar]
+                n_ok -= len(dropped)
+            except Exception:
+                dropped = []
         result = {'imported': n_ok}
         if skipped:
             result['skipped_lines'] = skipped
+        if dropped:
+            result['skipped_cookies'] = dropped
         if n_fail:
             result['failed'] = n_fail
         ok(result, msg=f'已导入 {n_ok} 个 cookie'
+                       + (f'（浏览器拒收 {len(dropped)}）' if dropped else '')
                        + (f'（失败 {len(n_fail)}）' if n_fail else ''))
 
     # ── LocalStorage ────────────────────────────

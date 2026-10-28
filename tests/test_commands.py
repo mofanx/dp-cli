@@ -4718,3 +4718,213 @@ def test_conf_tier_boundaries():
     assert _conf_tier(0.5, 'probs') == 'confirm'
     assert _conf_tier(0.2, 'probs') == 'refuse'
     assert _conf_tier(0.2, 'single_side') == 'refuse'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2 第三波处置测试：netlog prune / cookie 静默拒收 / _dl_path / refs sig
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+def test_prune_armed_reaps_dead_sessions():
+    """_armed 按活跃 session 集收编——已删除会话的标记键回收，
+    活跃键不受影响。"""
+    import dp_cli.netlog as nl
+    nl._armed.clear()
+    try:
+        nl._armed.update({'live': 't1', 'dead': 't2', 'gone': 't3'})
+        nl.prune_armed(['live'])
+        assert nl._armed == {'live': 't1'}
+        # 空活跃集→全收
+        nl._armed['x'] = 't9'
+        nl.prune_armed([])
+        assert nl._armed == {}
+    finally:
+        nl._armed.clear()
+
+
+@pytest.mark.unit
+def test_maybe_arm_netlog_prunes_armed(monkeypatch):
+    """serve._maybe_arm_netlog：arm 循环后 _armed 收编到 _PAGE_CACHE
+    键集——stale session 键不再滞留长驻进程内存。"""
+    import dp_cli.netlog as nl
+    import dp_cli.commands.serve as sv
+    nl._armed.clear()
+    try:
+        from types import SimpleNamespace
+        nl._armed['dead-session'] = 't0'      # 模拟已删会话残留
+        monkeypatch.setattr('dp_cli.session._PAGE_CACHE',
+                            {'live': SimpleNamespace(latest_tab=None)})
+        monkeypatch.setattr(nl, 'arm_netlog', lambda p, s: True)
+        sv._maybe_arm_netlog()
+        assert 'dead-session' not in nl._armed
+    finally:
+        nl._armed.clear()
+
+
+@pytest.mark.unit
+def test_cookies_import_silent_reject_counted(runner, monkeypatch,
+                                              tmp_path):
+    """cookies-import：page.set.cookies 不抛错但浏览器静默拒收
+    （Network.setCookie success=False 路径）——导入后回读 jar 核验，
+    未落地名字进 skipped_cookies 且不计入 imported。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class _Set:
+        def cookies(self, c):
+            pass                       # 不抛错——模拟静默拒收面
+
+    class P:
+        set = _Set()
+
+        def cookies(self, all_domains=False):
+            # jar 里只有 landed，dropped 被浏览器策略丢掉
+            return [{'name': 'landed'}]
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    f = tmp_path / 'c.txt'
+    f.write_text('landed=1; dropped=2', encoding='utf-8')
+    r = runner.invoke(cli, ['cookies-import', str(f)])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['imported'] == 1
+    assert d['skipped_cookies'] == ['dropped']
+
+
+@pytest.mark.unit
+def test_cookies_import_jar_check_failure_fallback(runner, monkeypatch,
+                                                   tmp_path):
+    """cookies-import：jar 回读核验本身失败（无 cookies API/异常）
+    → 按 set.cookies 结果如实报，不阻塞不扣数。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    class _Set:
+        def cookies(self, c):
+            pass
+
+    class P:
+        set = _Set()
+        # 无 cookies() 方法——AttributeError 走核验失败回退
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    f = tmp_path / 'c.txt'
+    f.write_text('a=1; b=2', encoding='utf-8')
+    r = runner.invoke(cli, ['cookies-import', str(f)])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['imported'] == 2
+    assert 'skipped_cookies' not in d
+
+
+@pytest.mark.unit
+def test_dl_path_semantics(monkeypatch):
+    """session._dl_path()：封装"download_path 恒 truthy≠已配置"教训——
+    只有 download --dir 写入的 download_dir 键才算显式配置。"""
+    import dp_cli.session as sess_mod
+    monkeypatch.setattr(sess_mod, 'load_session',
+                        lambda s: {'download_dir': '/tmp/dl'})
+    assert sess_mod._dl_path('s') == '/tmp/dl'
+    monkeypatch.setattr(sess_mod, 'load_session', lambda s: {})
+    assert sess_mod._dl_path('s') is None
+    monkeypatch.setattr(sess_mod, 'load_session',
+                        lambda s: {'port': 9222})   # 无 download_dir 键
+    assert sess_mod._dl_path('s') is None
+
+
+@pytest.mark.unit
+def test_download_result_configured_flag(runner, monkeypatch, tmp_path):
+    """download 结果：无显式配置时 configured=False，download_dir
+    回显 DP 运行时默认（cwd 不再冒充已配置）。"""
+    import dp_cli.commands.emulate as em
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    mgr = SimpleNamespace(missions={})
+    page = SimpleNamespace(
+        browser=SimpleNamespace(_dl_mgr=mgr),
+        download_path='/some/cwd',
+        set=SimpleNamespace(download_path=lambda p: None,
+                            when_download_file_exists=lambda m: None),
+    )
+    monkeypatch.setattr(em, '_get_page', lambda s: page)
+    monkeypatch.setattr('dp_cli.session._dl_path', lambda s: None)
+    result = runner.invoke(cli, ['download', '--timeout', '0'])
+    assert result.exit_code == 0
+    out = json.loads(result.output)['data']
+    assert out['download_dir'] == '/some/cwd'
+    assert out['configured'] is False
+
+
+@pytest.mark.unit
+def test_agent_state_sig_includes_interactive_props(monkeypatch):
+    """refs epoch sig：交互属性子集（disabled/hidden 等）变化重签——
+    属性级 DOM 变更不再命中旧 epoch。"""
+    import dp_cli.agent as ag
+
+    def _tree(disabled):
+        return {'tree': {'role': 'WebArea', 'children': [
+            {'role': 'button', 'name': 'Go', 'value': '',
+             'properties': {'disabled': disabled},
+             'backendNodeId': 1, 'locator': 'css:#go',
+             'children': []}]}}
+
+    class _P:
+        url = 'https://x/'
+        title = 't'
+
+    saved = {}
+    monkeypatch.setattr(ag, 'save_refs', lambda s, u, r: saved.update(r))
+    monkeypatch.setattr(ag, 'load_session', lambda s: {})
+    monkeypatch.setattr(ag, 'save_session', lambda s, d: None)
+    import dp_cli.snapshot.a11y as a11y
+    monkeypatch.setattr(a11y, 'take_a11y_snapshot',
+                        lambda p, max_depth=12: _tree(False))
+    st1 = ag._page_state(_P(), 's')
+    monkeypatch.setattr(a11y, 'take_a11y_snapshot',
+                        lambda p, max_depth=12: _tree(True))
+    st2 = ag._page_state(_P(), 's')
+    assert st1['epoch'] != st2['epoch']
+    assert st1['state']['sig'] != st2['state']['sig']
+
+
+@pytest.mark.unit
+def test_state_save_atomic_no_tmp_leftover(runner, monkeypatch, tmp_path):
+    """state-save tmp+os.replace 原子产出——成品文件完整且无 .tmp
+    残留（中断不留截断 state 文件）。"""
+    import dp_cli.commands.misc as misc_mod
+    from dp_cli.main import cli
+    from types import SimpleNamespace
+
+    page = SimpleNamespace(
+        cookies=lambda all_domains=True: SimpleNamespace(
+            as_dict=lambda: {'a': '1'}),
+        url='https://x/',
+        run_js=lambda *a, **k: '{}',
+    )
+    monkeypatch.setattr(misc_mod, '_get_page', lambda s: page)
+    f = tmp_path / 'state.json'
+    r = runner.invoke(cli, ['state-save', str(f)])
+    assert r.exit_code == 0, r.output
+    d = json.loads(f.read_text(encoding='utf-8'))
+    assert d['cookies'] == {'a': '1'}
+    assert not (tmp_path / 'state.json.tmp').exists()
+
+
+@pytest.mark.unit
+def test_har_dump_output_atomic_no_tmp_leftover(runner, monkeypatch,
+                                                tmp_path):
+    """har-dump --output tmp+os.replace 原子产出——成品完整且无
+    .tmp 残留。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    page = _HarPage(_HAR_EVENTS)
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    out_file = tmp_path / 't.har'
+    r = runner.invoke(cli, ['har-dump', '--seconds', '0.05',
+                            '--output', str(out_file)])
+    assert r.exit_code == 0, r.output
+    har = json.loads(out_file.read_text(encoding='utf-8'))
+    assert har['log']['version'] == '1.2'
+    assert not (tmp_path / 't.har.tmp').exists()

@@ -151,3 +151,34 @@ def test_export_pairs_same_source_skipped(tmp_path, monkeypatch):
     assert len(pairs) == 2
     assert pairs[0]['positive'] == 'link 首页'
     assert pairs[1]['positive'] == 'button 登录'
+
+
+def test_decide_train_jsonl_trim(tmp_path, monkeypatch):
+    """decide_train.jsonl 超水位截留尾部近似 ring——复用 netlog
+    trim 模式；未超水位不整读不裁剪。"""
+    import dp_cli.decide_train as dt
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    f = tmp_path / 'r.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+    refs = {'1': {'role': 'link', 'name': 'Sign in'}}
+    # 直接造超水位文件再录一条触发 trim
+    f.write_text(''.join(
+        '{"ts":%d,"chosen":"x"}\n' % i
+        for i in range(dt._TRIM_HIGH + 10)))
+    dt.record('s', ['click', '@e1'], refs)
+    lines = f.read_text().splitlines()
+    assert len(lines) <= dt._MAX_LINES + 1
+    assert not (tmp_path / 'r.jsonl.tmp').exists()
+
+
+def test_decide_train_trim_below_high_water_untouched(tmp_path,
+                                                    monkeypatch):
+    """未超水位：record 不触发裁剪，行数原样增长。"""
+    import dp_cli.decide_train as dt
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    f = tmp_path / 'r.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+    refs = {'1': {'role': 'link', 'name': 'Sign in'}}
+    dt.record('s', ['click', '@e1'], refs)
+    dt.record('s', ['click', '@e1'], refs)
+    assert len(f.read_text().splitlines()) == 2

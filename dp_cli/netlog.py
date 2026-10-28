@@ -135,6 +135,19 @@ def arm_netlog(page, session: str, force: bool = False) -> bool:
         return False
 
 
+def prune_armed(active_sessions) -> None:
+    """`_armed` 按活跃 session 集收编——session 删除/关闭后残留键回收
+    （长驻 serve/daemon 进程的内存微漏，重启即清但长跑会积）。
+
+    调用点：serve._maybe_arm_netlog 每条命令后——active 集即
+    _PAGE_CACHE 键（本进程实际 attach 的会话全集）。
+    """
+    live = set(active_sessions)
+    for k in list(_armed):
+        if k not in live:
+            _armed.pop(k, None)
+
+
 def read_entries(session: str) -> list:
     """读 ring buffer 全部条目（时间序）。文件不存在返回 None。"""
     p = _path(session)

@@ -224,9 +224,12 @@ def start_bridge(user_data_dir: str | os.PathLike,
     _write_err('[dp] 💡 若浏览器弹出 "Allow remote debugging" 对话框，'
                '请切到浏览器窗口点击 "Allow"（后续命令会自动复用连接）\n')
 
-    # 异步读 stderr，方便 timeout 时回显给用户
+    # 异步读 stderr，方便 timeout 时回显给用户。
+    # deque(maxlen) 有界：bridge 长驻高输出时 buf 不无限积内存
+    # （drain 线程只为防空管阻塞，回显只需尾部）
     import threading
-    stderr_buf: list[str] = []
+    from collections import deque
+    stderr_buf: deque = deque(maxlen=200)
     stderr_lock = threading.Lock()
 
     def _read_stderr():
@@ -246,10 +249,15 @@ def start_bridge(user_data_dir: str | os.PathLike,
     # 根本没生效，是被子进程 ws open_timeout=120s 兜住的）。
     import queue as _queue
     stdout_q: _queue.Queue = _queue.Queue()
+    # READY 之后主循环不再消费 stdout_q——drain 线程只读不积，
+    # 否则长驻 bridge 的 stdout 行在无界队列里积内存
+    _ready_seen = threading.Event()
 
     def _read_stdout():
         try:
             for line in proc.stdout:
+                if _ready_seen.is_set():
+                    continue
                 stdout_q.put(line)
         except Exception as e:
             debug('bridge stdout 读取线程结束异常', e)
@@ -320,8 +328,9 @@ def start_bridge(user_data_dir: str | os.PathLike,
     # spawn 成功后父进程不再持有 proc 引用——注册 daemon 线程 wait
     # 回收退出码，否则 bridge 退出后在本进程内残留 zombie。
     threading.Thread(target=proc.wait, daemon=True).start()
-    # _read_stdout 线程在 READY 后持续消费 stdout，天然承担 drain 职责；
-    # stderr 已有 stderr_thread 在持续消费。
+    # _read_stdout/_read_stderr 线程 READY 后持续消费管道（drain 职责），
+    # _ready_seen 翻牌后 stdout 行只丢不积——管道不堵+内存不涨。
+    _ready_seen.set()
     return proc.pid, actual_port
 
 

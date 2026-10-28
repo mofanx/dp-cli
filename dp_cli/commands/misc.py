@@ -162,8 +162,14 @@ def register(cli):
                     state['localStorage'] = json.loads(ls) if isinstance(ls, str) else ls or {}
                 except Exception:
                     state['localStorage'] = {}
-            Path(filename).write_text(
+            # tmp+os.replace 原子产出——写一半中断不留截断的 state 文件
+            # （同 cookie-export --output 模式）
+            import os as _os
+            _p = Path(filename)
+            _tmp = _p.with_name(_p.name + '.tmp')
+            _tmp.write_text(
                 json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
+            _os.replace(_tmp, _p)
             ok({'filename': str(Path(filename).absolute()),
                 'cookies_count': len(state['cookies']), 'format': fmt},
                msg='状态已保存')

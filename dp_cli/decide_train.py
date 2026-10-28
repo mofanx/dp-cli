@@ -18,6 +18,29 @@ from dp_cli.session import get_session_dir
 _FLAG = 'DPX_RECORD_DECIDE'
 _SKIP = {'ping', 'help', 'exit', 'quit', 'snapshot', 'agent-state',
          'decide-train-export'}
+_MAX_LINES = 4000       # ring 上限
+_TRIM_HIGH = 5000       # 超过即截到 _MAX_LINES（复用 netlog 滚动模式）
+
+
+def _maybe_trim(f: Path) -> None:
+    """decide_train.jsonl 无限增长防护——超水位截留尾部近似 ring。
+
+    tmp+rename 原子重写：并发读（export_pairs）永远见完整文件。
+    录制是旁路增强，trim 失败静默不阻塞主链路。
+    """
+    try:
+        lines = f.read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return
+    if len(lines) <= _TRIM_HIGH:
+        return
+    try:
+        tmp = f.with_suffix(f.suffix + '.tmp')
+        tmp.write_text('\n'.join(lines[-_MAX_LINES:]) + '\n',
+                       encoding='utf-8')
+        tmp.replace(f)
+    except OSError:
+        pass
 
 
 def enabled() -> bool:
@@ -71,6 +94,7 @@ def record(session: str, argv: list, refs: dict,
         f.parent.mkdir(parents=True, exist_ok=True)
         with f.open('a', encoding='utf-8') as fp:
             fp.write(json.dumps(entry, ensure_ascii=False) + '\n')
+        _maybe_trim(f)
     except OSError:
         pass          # 采集失败不阻塞主链路（录制非关键路径）
 

@@ -487,6 +487,9 @@ def _maybe_arm_netlog() -> None:
         # （旧 driver WebSocket 已死）时自动重挂，无需在此预判
         for sess, page in list(_PAGE_CACHE.items()):
             arm_netlog(page.latest_tab or page, sess)
+        # _armed 键按活跃 session 集收编——已删除会话的标记不留内存
+        from dp_cli.netlog import prune_armed
+        prune_armed(_PAGE_CACHE.keys())
     except Exception:
         pass
 

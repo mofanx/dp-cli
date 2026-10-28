@@ -27,6 +27,9 @@ from dp_cli.output import ok, error, debug, _write_out
 
 _DIR = Path.home() / '.dp_cli' / 'daemon'
 _IDLE_TTL = 3600          # headless 空闲自退秒数
+_IDLE_TTL_ATTACHED = 6 * 3600   # attached(user_connected) 会话宽限 TTL——
+                              # 重建 attach 需重新点 Allow，频繁自退体验差；
+                              # 但浏览器端口已死则豁免无依据，回落普通 TTL
 _WATCH_TICK = 30          # idle watcher 巡检间隔（秒）
 _SPAWN_WAIT = 8.0         # spawn 后等 socket 就绪
 _TIMEOUT_MARGIN = 15      # read 超时 margin（秒）
@@ -701,16 +704,31 @@ def _wake_acceptor(session: str) -> None:
 
 
 def _idle_watcher(sock_path, meta_path, stop_ev, session):
-    """headless 会话 1h 无活动自退；user_connected 豁免。"""
+    """headless 会话 1h 无活动自退；attached 会话按活动宽限豁免。
+
+    user_connected/probe_dir 会话不再无条件豁免（只看连接态不看活动
+    的残留缺陷）：浏览器端口还活着→宽限 _IDLE_TTL_ATTACHED；
+    端口已死（浏览器退出/重启）→回落普通 _IDLE_TTL 自退。
+    端口探测失败保守按活处理（宁可多留不误杀授权链路）。
+    """
     while not stop_ev.wait(_WATCH_TICK):
         try:
-            from dp_cli.session import load_session
+            from dp_cli.session import load_session, _port_open
             sess = load_session(session) or {}
-            if sess.get('user_connected'):
-                continue
             idle = time.time() - _state['last_activity']
-            if idle > _IDLE_TTL:
-                debug(f'daemon 空闲 {idle:.0f}s > {_IDLE_TTL}s，自退')
+            ttl = _IDLE_TTL
+            if sess.get('user_connected') or sess.get('probe_dir'):
+                port = sess.get('port')
+                if port:
+                    try:
+                        if _port_open('127.0.0.1', int(port)):
+                            ttl = _IDLE_TTL_ATTACHED
+                    except Exception:
+                        ttl = _IDLE_TTL_ATTACHED   # 探测失败保守豁免
+                else:
+                    ttl = _IDLE_TTL_ATTACHED       # 无端口记录按活豁免
+            if idle > ttl:
+                debug(f'daemon 空闲 {idle:.0f}s > {ttl}s，自退')
                 # 不 os._exit——绕过 run_daemon finally 会残留
                 # sock/meta 死标记；置 stop_ev+自连唤醒 accept
                 stop_ev.set()

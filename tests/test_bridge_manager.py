@@ -465,3 +465,40 @@ def test_registry_iter_entries_probe_failure_conservative(
     entries = reg.iter_entries()
     assert [e.get('pid') for e in entries] == [7777]
     assert reg._entry_path('/p/e').exists()
+
+
+def test_start_bridge_post_ready_drain_bounded(monkeypatch, tmp_path):
+    """P2：READY 后 stdout/stderr drain 线程持续消费（管道不堵），
+    且 stdout 行只丢不积（_ready_seen 翻牌后不入队）——用计数
+    迭代器验证 drain 全程走完，同时 stderr deque(maxlen) 有界。"""
+    from unittest.mock import Mock
+    consumed = {'out': 0, 'err': 0}
+
+    def _out_lines():
+        yield 'BRIDGE_READY host=127.0.0.1 port=4567\n'
+        for i in range(300):
+            consumed['out'] += 1
+            yield f'noise {i}\n'
+
+    def _err_lines():
+        for i in range(300):
+            consumed['err'] += 1
+            yield f'err {i}\n'
+
+    proc = Mock()
+    proc.poll.return_value = None
+    proc.pid = 4242
+    proc.stderr = _err_lines()
+    proc.stdout = _out_lines()
+    monkeypatch.setattr(bridge_manager.subprocess, 'Popen',
+                        lambda *a, **k: proc)
+    monkeypatch.setattr(bridge_manager, '_detach_spawn_kwargs', lambda: {})
+
+    pid, port = bridge_manager.start_bridge(tmp_path, ready_timeout=5)
+    assert (pid, port) == (4242, 4567)
+    # drain 线程跑完整个迭代器——READY 后输出不堵管道也不积内存
+    deadline = time.time() + 3
+    while (consumed['out'] < 300 or consumed['err'] < 300) \
+            and time.time() < deadline:
+        time.sleep(0.02)
+    assert consumed == {'out': 300, 'err': 300}

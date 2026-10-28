@@ -780,7 +780,11 @@ def save_refs(session_name: str, url: str, refs: dict) -> None:
     refs_dir = get_session_dir() / 'refs'
     refs_dir.mkdir(exist_ok=True)
     f = refs_dir / f'{session_name}.json'
-    f.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    # tmp+os.replace 原子写——写一半崩溃不留截断 refs.json（否则
+    # load_refs 整表丢失，@eN 补全/resolve_locator 全哑）
+    tmp = f.with_suffix(f.suffix + f'.{os.getpid()}.tmp')
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp, f)
 
 
 def load_refs(session_name: str) -> dict:
@@ -793,6 +797,17 @@ def load_refs(session_name: str) -> dict:
         return data.get('refs', {})
     except Exception:
         return {}
+
+
+def _dl_path(session_name: str) -> str | None:
+    """会话显式配置的下载目录；未配置返回 None。
+
+    语义封装（实测教训）：DrissionPage ``page.download_path`` 恒返回
+    默认值（cwd），不能当"已配置"判据——只有 ``download --dir`` 写入
+    session 的 ``download_dir`` 键才是显式配置。需要判定/取回下载目录
+    的调用点（wait --download、download 结果回显）一律走此函数。
+    """
+    return (load_session(session_name) or {}).get('download_dir')
 
 
 def close_browser(session_name: str = 'default', del_data: bool = False,

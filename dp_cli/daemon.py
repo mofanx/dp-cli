@@ -23,10 +23,11 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import ok, error, debug
+from dp_cli.output import ok, error, debug, _write_out
 
 _DIR = Path.home() / '.dp_cli' / 'daemon'
 _IDLE_TTL = 3600          # headless 空闲自退秒数
+_WATCH_TICK = 30          # idle watcher 巡检间隔（秒）
 _SPAWN_WAIT = 8.0         # spawn 后等 socket 就绪
 _TIMEOUT_MARGIN = 15      # read 超时 margin（秒）
 _SKIP_CMDS = {'serve', 'sh', 'batch', 'daemon-start', 'daemon-status',
@@ -147,6 +148,60 @@ def _meta_pid_alive(session: str) -> bool:
         return False
 
 
+def _unix_alive(session: str) -> bool:
+    """POSIX socket 探活：connect_ex .sock（对齐 _tcp_alive）。
+
+    死 daemon 的 .sock 残留会让仅看 exists() 的调用方白等超时——
+    ECONNREFUSED/ENOENT 即判死。spawn 窗口（bind 后 meta 落盘前）
+    的误杀由 _spawn_fresh 的 mtime 兜底，见 _daemon_ready。"""
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        ok_c = s.connect_ex(str(_sock_path(session))) == 0
+        s.close()
+        return ok_c
+    except Exception:
+        return False
+
+
+def _spawn_fresh(session: str) -> bool:
+    """spawn 窗口兜底（POSIX）：.sock 已 bind 但 meta 未落盘
+    （listen→meta write 间隙）且探活刚被拒绝——sock mtime 在
+    _SPAWN_WAIT 内视为活，防 _clean_stale 误删新 daemon 标记。"""
+    if _meta_path(session).exists():
+        return False                       # meta 在则探活已裁决
+    try:
+        return (time.time()
+                - _sock_path(session).stat().st_mtime) < _SPAWN_WAIT
+    except OSError:
+        return False
+
+
+def _pid_is_daemon(pid: int) -> bool:
+    """kill 前 pid 身份校验（POSIX）：cmdline 须含 'dp_cli.daemon'——
+    meta 残留 pid 被 OS 复用时防误杀无关进程（bridge_manager
+    ._pid_cmdline_is_bridge 同款）。/proc 读不到退化 ps；都读不到
+    返回 False（宁可不杀只清标记）。Windows 不调用本函数——
+    taskkill 分支保持原样。"""
+    cmdline = ''
+    try:
+        p = Path(f'/proc/{pid}/cmdline')
+        if p.is_file():
+            cmdline = p.read_bytes().replace(b'\x00', b' ') \
+                .decode('utf-8', 'replace')
+    except Exception:
+        pass
+    if not cmdline:
+        try:
+            r = subprocess.run(['ps', '-p', str(pid), '-o', 'command='],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                cmdline = r.stdout or ''
+        except Exception:
+            pass
+    return 'dp_cli.daemon' in cmdline
+
+
 def _clean_stale(session: str) -> None:
     """stale 标记清理——meta/sock 残留删干净防超时。"""
     _READY_CACHE.pop(session, None)      # 探活缓存同步失效
@@ -161,21 +216,27 @@ _READY_CACHE = {}   # session → (ts, alive)——Windows 探活 2s TTL
 
 
 def _daemon_ready(session: str) -> bool:
-    """daemon 就绪标记——Unix 看 .sock；Windows 看 meta+TCP/pid 探活，
-    死标记自动清理（防每条命令先吃超时）。Windows 探活 2s TTL 缓存：
-    try_daemon 一次调用链探两次，TTL 复用省一倍 connect_ex。"""
+    """daemon 就绪标记+探活——标记文件存在只是前提，connect_ex/
+    meta pid 任一存活才算活；死标记自动清理（防每条命令先吃超时）。
+    探活 2s TTL 缓存（双平台统一）：try_daemon 一次调用链探两次，
+    TTL 复用省一倍 connect_ex；POSIX spawn 窗口（sock 已 bind、
+    meta 未落盘）由 _spawn_fresh 的 mtime 新鲜度判活防误清。"""
     if _HAS_UNIX_SOCK:
-        return _sock_path(session).exists()
+        if not _sock_path(session).exists():
+            return False
+    elif not _meta_path(session).exists():
+        return False
     now = time.monotonic()
     hit = _READY_CACHE.get(session)
     if hit and now - hit[0] < 2.0:
         return hit[1]
-    ok_ = False
-    if _meta_path(session).exists():
-        if _tcp_alive(session) or _meta_pid_alive(session):
-            ok_ = True
-        else:
-            _clean_stale(session)      # 死标记回收
+    if _HAS_UNIX_SOCK:
+        ok_ = (_unix_alive(session) or _meta_pid_alive(session)
+               or _spawn_fresh(session))
+    else:
+        ok_ = _tcp_alive(session) or _meta_pid_alive(session)
+    if not ok_:
+        _clean_stale(session)          # 死标记回收
     _READY_CACHE[session] = (now, ok_)
     return ok_
 
@@ -195,12 +256,25 @@ def _connect_endpoint(session: str):
 
 
 def _session_of(argv: list) -> str:
+    """-Sfoo/-S x/--session x/--session=x 四形态全认
+    （对齐 serve._record_session 的 -S* 前缀判定）。"""
     for i, a in enumerate(argv):
         if a in ('--session', '-S') and i + 1 < len(argv):
             return argv[i + 1]
         if a.startswith('--session='):
             return a.split('=', 1)[1]
+        if a.startswith('-S') and len(a) > 2:
+            return a[2:]
     return 'default'
+
+
+def _has_session_flag(argv: list) -> bool:
+    """argv 是否已显式带 session 旗（与 _session_of 同判据）——
+    默认会话注入的前置判定，'-Sfoo' 连写也算已带。"""
+    return any(a in ('--session', '-S')
+               or a.startswith('--session=')
+               or (a.startswith('-S') and len(a) > 2)
+               for a in (argv or ()))
 
 
 def _cmd_timeout(argv: list) -> float:
@@ -223,7 +297,14 @@ def _cmd_timeout(argv: list) -> float:
 # ── 客户端 ─────────────────────────────────────────────────
 
 def _send_recv(session: str, payload: dict, read_timeout: float):
-    """一次 socket 往返 → dict 响应；异常返回 ('err', exc)。"""
+    """一次 socket 往返 → dict 响应；异常返回 ('err', exc, sent)。
+
+    sent=True 表示 sendall 已完整返回（请求送达 daemon）——此后
+    recv 超时/断连重发会让命令重复执行（click/fill 非幂等），
+    调用方只许对 sent=False（connect/sendall 阶段失败）重发。
+    sendall 自身抛错仍记 False：未带换行的残行不会被 daemon
+    当成命令解析，重发安全。"""
+    sent = False
     try:
         ep = _connect_endpoint(session)
         if _HAS_UNIX_SOCK:
@@ -236,6 +317,7 @@ def _send_recv(session: str, payload: dict, read_timeout: float):
                          _socket.TCP_NODELAY, 1)   # 单包协议免 Nagle
         s.connect(ep)
         s.sendall((json.dumps(payload, ensure_ascii=False) + '\n').encode())
+        sent = True
         buf = b''
         while True:
             chunk = s.recv(65536)
@@ -249,7 +331,7 @@ def _send_recv(session: str, payload: dict, read_timeout: float):
         _version_probe(session)
         return json.loads(line.decode('utf-8'))
     except (OSError, json.JSONDecodeError) as e:
-        return ('err', e)
+        return ('err', e, sent)
 
 
 def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
@@ -423,17 +505,35 @@ def try_daemon(argv: list):
         return None
     payload = {'argv': argv}
     rt = _cmd_timeout(argv)
-    r = _send_recv(session, payload, rt) if _daemon_ready(session)         else ('err', None)
+    r = (_send_recv(session, payload, rt) if _daemon_ready(session)
+         else ('err', None, False))
     if isinstance(r, tuple):
-        # ENOENT/ECONNREFUSED → spawn → retry once
+        if len(r) > 2 and r[2]:
+            _sent_timeout_exit(r[1])
+        # sent=False：connect/sendall 阶段失败（ENOENT/ECONNREFUSED）
+        # → 命令未送达 daemon，spawn 后重发一次是安全的
         if not _spawn_daemon(session):
             return None  # 起不来走本地，不阻塞
         r = _send_recv(session, payload, rt)
+        if isinstance(r, tuple) and len(r) > 2 and r[2]:
+            _sent_timeout_exit(r[1])
     if isinstance(r, tuple) or r is None:
-        return None     # daemon 仍不通 → 本地兜底
-    sys.stdout.write(json.dumps(r.get('result', r), ensure_ascii=False) + '\n')
-    sys.stdout.flush()
-    return int(r.get('exit', 0))
+        return None     # 未送达/daemon 仍不通 → 本地兜底
+    resp = r.get('result', r) if isinstance(r, dict) else r
+    # _write_out 走 UTF-8 字节写——非 UTF-8 locale（Windows GBK）下
+    # sys.stdout.write 打非 ASCII 结果会 UnicodeEncodeError 静默丢响应
+    _write_out(json.dumps(resp, ensure_ascii=False))
+    try:
+        return int(r.get('exit', 0)) if isinstance(r, dict) else 0
+    except (TypeError, ValueError):
+        return 0            # 畸形 exit 字段不崩客户端
+
+
+def _sent_timeout_exit(exc):
+    """sendall 送达后的超时/断连：只报错误绝不重发——重发=重复执行
+    非幂等命令（click/fill/type），本地兜底同理禁用。"""
+    error('daemon 已收命令但响应超时/断连（防重复执行不重发）',
+          code='WAIT_TIMEOUT', detail=str(exc or ''))
 
 
 # ── 服务端 ─────────────────────────────────────────────────
@@ -463,7 +563,7 @@ def _handle_conn(conn, session):
             elif cmd_name in _FORBIDDEN or _skipped(cmd_name):
                 code, result = _invalid(f'daemon 内不允许 {cmd_name}')
             else:
-                if ('--session' not in argv and '-S' not in argv
+                if (not _has_session_flag(argv)
                         and _accepts_session(cmd_name)):
                     argv = argv + ['--session', session]
                 # netlog 前置武装：首条导航命令的 Network 事件
@@ -491,9 +591,29 @@ def _handle_conn(conn, session):
         conn.close()
 
 
+def _wake_acceptor(session: str) -> None:
+    """idle 自退唤醒：向自身监听 socket 捅一发连接，让阻塞在 accept
+    的主循环返回并看到 stop_ev——走 finally 清理 sock/meta 正常退出
+    （替代 os._exit 硬退绕过清理的缺陷）。connect 失败重试几次，
+    失败也只是沿用旧的"挂住"风险面，不比 os._exit 更糟。"""
+    for _ in range(3):
+        try:
+            ep = _connect_endpoint(session)
+            if _HAS_UNIX_SOCK:
+                s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            else:
+                s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.settimeout(1)
+            s.connect(ep)
+            s.close()
+            return
+        except OSError:
+            time.sleep(0.05)
+
+
 def _idle_watcher(sock_path, meta_path, stop_ev, session):
     """headless 会话 1h 无活动自退；user_connected 豁免。"""
-    while not stop_ev.wait(30):
+    while not stop_ev.wait(_WATCH_TICK):
         try:
             from dp_cli.session import load_session
             sess = load_session(session) or {}
@@ -502,7 +622,11 @@ def _idle_watcher(sock_path, meta_path, stop_ev, session):
             idle = time.time() - _state['last_activity']
             if idle > _IDLE_TTL:
                 debug(f'daemon 空闲 {idle:.0f}s > {_IDLE_TTL}s，自退')
-                os._exit(0)
+                # 不 os._exit——绕过 run_daemon finally 会残留
+                # sock/meta 死标记；置 stop_ev+自连唤醒 accept
+                stop_ev.set()
+                _wake_acceptor(session)
+                return
         except Exception:
             pass
 
@@ -549,6 +673,13 @@ def run_daemon(session: str):
     try:
         while True:
             conn, _ = srv.accept()
+            if stop_ev.is_set():
+                # idle 自退唤醒连接——不派给 _handle_conn，直接退
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                break
             if not _HAS_UNIX_SOCK:
                 conn.setsockopt(_socket.IPPROTO_TCP,
                                _socket.TCP_NODELAY, 1)
@@ -643,8 +774,15 @@ def register(cli):
                 import subprocess as _sp
                 _sp.run(['taskkill', '/F', '/T', '/PID', str(pid)],
                         capture_output=True)
-            else:
+            elif pid and _pid_is_daemon(int(pid)):
+                # 杀前身份校验——meta 残留 pid 被 OS 复用时防误杀
                 os.kill(int(pid), 15)
+            else:
+                # pid 缺失/复用/cmdline 不可考——只清标记不杀
+                _clean_stale(session)
+                ok({'stopped': True, 'pid': pid},
+                   msg='meta pid 非 dp_cli.daemon（疑复用），已清理标记')
+                return
             _clean_stale(session)
             ok({'stopped': True, 'pid': pid}, msg='daemon 已 SIGTERM')
         except Exception:

@@ -25,13 +25,17 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import error, _write_out, _write_err
+from dp_cli.output import error, _write_out, _write_err, debug
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
 
 
-class _TimeoutInterrupt(Exception):
+class _TimeoutInterrupt(BaseException):
+    """setitimer 超时中断——必须 BaseException：命令/调用链里裸
+    except Exception 会把 timeout 吞掉（吞了=超时命令照跑完+
+    应答计时错乱）。外层 except _TimeoutInterrupt 显式捕获不变，
+    KeyboardInterrupt/SystemExit 同层语义。"""
     pass
 
 
@@ -126,6 +130,16 @@ def _record_session(argv: list, default: str = None) -> str:
     return default or 'default'
 
 
+def _has_session_flag(argv: list) -> bool:
+    """argv 是否已显式带 session 旗——-Sfoo/-S x/--session x/
+    --session=x 四形态全认（与 _record_session 同判据），
+    供默认会话注入判定；'-Sfoo' 连写不再漏判。"""
+    return any(a in ('--session', '-S')
+               or a.startswith('--session=')
+               or (a.startswith('-S') and len(a) > 2)
+               for a in (argv or ()))
+
+
 def _emit(seq: int, req_id, code: int, result: dict,
           elapsed_ms: int = None) -> None:
     out = {'seq': seq, 'exit': code, 'result': result}
@@ -205,8 +219,8 @@ def _exec_line(line: str, session: str) -> None:
     if cmd in _FORBIDDEN:
         _write_err(f'REPL 内不允许 {cmd}\n')
         return
-    if (session and '--session' not in argv
-            and '-S' not in argv and _accepts_session(cmd)):
+    if (session and not _has_session_flag(argv)
+            and _accepts_session(cmd)):
         argv = argv + ['--session', session]
     try:
         record_session = _record_session(argv, session)
@@ -395,8 +409,7 @@ def _serve(session: str = None, tty: bool = False) -> int:
             else:
                 # 默认会话注入：子命令未带 --session/-S 且支持该选项时补；
                 # 无 session 选项的命令（config-set/list/http-* 等）不注入
-                if (session and '--session' not in argv
-                        and '-S' not in argv
+                if (session and not _has_session_flag(argv)
                         and _accepts_session(cmd_name)):
                     argv = argv + ['--session', session]
                 _tm = None
@@ -404,67 +417,95 @@ def _serve(session: str = None, tty: bool = False) -> int:
                     _tm = json.loads(line).get('timeout_ms')
                 except Exception:
                     pass
-                _armed_alarm = False
-                _pre = _snap_state(_record_session(argv, session))
-                # 执行前快照——enabled() 未开时 {} 零开销
-                if _tm and hasattr(__import__('signal'), 'setitimer'):
-                    import signal as _sig
-                    _sig.setitimer(_sig.ITIMER_REAL,
-                                   float(_tm) / 1000.0)
-                    _armed_alarm = True
-                try:
+                if _tm is not None and not (
+                        isinstance(_tm, (int, float))
+                        and not isinstance(_tm, bool)
+                        and _tm > 0):
+                    # 畸形 timeout_ms（str/bool/非正数）——float(_tm)
+                    # 会炸主循环，按参数错误应答，serve 继续服务
+                    code, result = _invalid(
+                        f'timeout_ms 须为正数毫秒: {_tm!r}')
+                else:
+                    _armed_alarm = False
+                    _sig = None
+                    _pre = _snap_state(_record_session(argv, session))
+                    # 执行前快照——enabled() 未开时 {} 零开销
                     try:
-                        code, result = _invoke(argv)
-                    except _TimeoutInterrupt:
+                        if _tm and hasattr(__import__('signal'),
+                                           'setitimer'):
+                            import signal as _sig
+                            _sig.setitimer(_sig.ITIMER_REAL,
+                                           float(_tm) / 1000.0)
+                            _armed_alarm = True
+                    except Exception:
+                        _armed_alarm = False   # arm 失败按无超时跑
+                    try:
+                        try:
+                            code, result = _invoke(argv)
+                        except _TimeoutInterrupt:
+                            code, result = 1, {
+                                'status': 'error', 'code': 'TIMEOUT',
+                                'message': f'命令超时 {_tm}ms'}
+                    except KeyboardInterrupt:
                         code, result = 1, {
-                            'status': 'error', 'code': 'TIMEOUT',
-                            'message': f'命令超时 {_tm}ms'}
-                except KeyboardInterrupt:
-                    code, result = 1, {
-                        'status': 'error', 'code': 'INTERRUPTED',
-                        'message': '命令被中断'}
-                except Exception as e:
-                    code, result = 1, {
-                        'status': 'error', 'code': 'ERROR',
-                        'message': f'serve 执行异常: {e}'}
-                finally:
-                    if _armed_alarm:
-                        _sig.setitimer(_sig.ITIMER_REAL, 0)
+                            'status': 'error', 'code': 'INTERRUPTED',
+                            'message': '命令被中断'}
+                    except Exception as e:
+                        code, result = 1, {
+                            'status': 'error', 'code': 'ERROR',
+                            'message': f'serve 执行异常: {e}'}
+                    finally:
+                        # alarm 必须复位——残留 SIGALRM 会被下一条
+                        # 命令吃到（_TimeoutInterrupt 是 BaseException）
+                        if _armed_alarm and _sig is not None:
+                            try:
+                                _sig.setitimer(_sig.ITIMER_REAL, 0)
+                            except Exception:
+                                pass
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
         record_session = _record_session(argv, session)
         _pre = {}       # _serve 路径命令已执行完才到此处——
                         # 无执行前时机，pre_state 只能由 REPL 路径采集
-        is_unsure = (bool(argv) and argv[0] == 'decide'
-                     and len(argv) > 1
-                     and result.get('code') == 'AGENT_UNSURE')
-        if (code == 0 or is_unsure) and not _IN_SNAP:
-            from dp_cli.decide_train import record
-            from dp_cli.session import load_refs
-            if argv[0] == 'decide' and len(argv) > 1:
-                # 引擎建议只存 engine_ref（无执行证据不作 chosen_ref）；
-                # AGENT_UNSURE 标 unsure 供人工核验，detail JSON 解析
-                # 失败保留 ref=None，不污染输出
-                ref = None
-                if code == 0:
-                    ref = (result.get('data') or {}).get('ref')
+        try:
+            # result 非 dict（异常路径产物）时 .get 会炸主循环——先守卫
+            is_unsure = (bool(argv) and argv[0] == 'decide'
+                         and len(argv) > 1
+                         and isinstance(result, dict)
+                         and result.get('code') == 'AGENT_UNSURE')
+            if (code == 0 or is_unsure) and not _IN_SNAP:
+                from dp_cli.decide_train import record
+                from dp_cli.session import load_refs
+                if argv[0] == 'decide' and len(argv) > 1:
+                    # 引擎建议只存 engine_ref（无执行证据不作
+                    # chosen_ref）；AGENT_UNSURE 标 unsure 供人工核验，
+                    # detail JSON 解析失败保留 ref=None，不污染输出
+                    ref = None
+                    if code == 0:
+                        _d = result.get('data') \
+                            if isinstance(result, dict) else None
+                        ref = (_d or {}).get('ref')
+                    else:
+                        try:
+                            ref = json.loads(
+                                result.get('detail') or '').get('ref')
+                        except Exception:
+                            pass
+                    _ps = _snap_state(record_session)
+                    record(record_session, argv,
+                           load_refs(record_session) or {},
+                           goal=argv[1], engine_ref=ref, unsure=is_unsure,
+                           **({'post_state': _ps} if _ps else {}),
+                           **({'pre_state': _pre} if _pre else {}))
                 else:
-                    try:
-                        ref = json.loads(result.get('detail') or '').get('ref')
-                    except Exception:
-                        pass
-                _ps = _snap_state(record_session)
-                record(record_session, argv,
-                       load_refs(record_session) or {},
-                       goal=argv[1], engine_ref=ref, unsure=is_unsure,
-                       **({'post_state': _ps} if _ps else {}),
-                       **({'pre_state': _pre} if _pre else {}))
-            else:
-                _ps = _snap_state(record_session)
-                record(record_session, argv,
-                       load_refs(record_session) or {},
-                       **({'post_state': _ps} if _ps else {}),
-                       **({'pre_state': _pre} if _pre else {}))
+                    _ps = _snap_state(record_session)
+                    record(record_session, argv,
+                           load_refs(record_session) or {},
+                           **({'post_state': _ps} if _ps else {}),
+                           **({'pre_state': _pre} if _pre else {}))
+        except Exception as e:
+            # 录制是旁路增强——异常不炸 _serve 主循环（REPL 路径对称）
+            debug('decide-train 录制异常（已忽略）', e)
         _maybe_arm_netlog()
 
 

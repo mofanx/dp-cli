@@ -602,3 +602,133 @@ def test_serve_record_session_override(monkeypatch):
     assert refs == ['other', 'other2']             # 绑定 boot 不被查
     assert [a[0] for a, _ in rec] == ['other', 'other2']
     assert rec[1][1]['engine_ref'] == 2 and rec[1][1]['unsure'] is False
+
+
+# ── P1 修复定向测试 ─────────────────────────────────────────
+
+@pytest.mark.unit
+def test_serve_timeout_ms_malformed_no_crash(monkeypatch):
+    """P1-1：timeout_ms 畸形（str/bool/非正数）→ INVALID_ARGS 应答，
+    _serve 主循环不炸，后续命令照常执行。"""
+    _, lines, argv_log = _invoke_serve(
+        ['{"cmd": "snapshot", "timeout_ms": "abc"}',
+         '{"cmd": "snapshot", "timeout_ms": -5}',
+         '{"cmd": "snapshot", "timeout_ms": true}',
+         '{"cmd": "snapshot"}'], monkeypatch)
+    assert [l['exit'] for l in lines] == [2, 2, 2, 0]
+    assert all('timeout_ms' in l['result']['message']
+               for l in lines[:3])
+    assert len(argv_log) == 1                # 只有末条进了 _invoke
+
+
+@pytest.mark.unit
+def test_serve_timeout_arm_disarm_in_finally(monkeypatch):
+    """P1-2：合法 timeout_ms → arm 后 finally 复位 setitimer(0)。"""
+    import signal
+    if not hasattr(signal, 'setitimer'):
+        pytest.skip('no setitimer')
+    calls = []
+    monkeypatch.setattr(signal, 'setitimer',
+                        lambda which, val: calls.append(val))
+    _, lines, _ = _invoke_serve(
+        ['{"cmd": "snapshot", "timeout_ms": 500}'], monkeypatch)
+    assert calls == [0.5, 0.0]               # arm 0.5s → 复位 0
+    assert lines[0]['exit'] == 0
+
+
+@pytest.mark.unit
+def test_timeout_interrupt_is_base_exception():
+    """P1-2：_TimeoutInterrupt 必须 BaseException——Exception 会被
+    命令内裸 except 吞掉（timeout 失效）。"""
+    from dp_cli.commands.serve import _TimeoutInterrupt
+    assert issubclass(_TimeoutInterrupt, BaseException)
+    assert not issubclass(_TimeoutInterrupt, Exception)
+
+
+@pytest.mark.unit
+def test_timeout_interrupt_penetrates_except_exception(monkeypatch):
+    """P1-2：命令内 except Exception 吞不掉超时——TIMEOUT 应答。"""
+    import dp_cli.commands.serve as sv
+
+    def fake_invoke(argv):
+        try:
+            raise sv._TimeoutInterrupt()
+        except Exception:
+            return (0, {'status': 'ok', 'swallowed': True})
+
+    monkeypatch.setattr(sv, '_invoke', fake_invoke)
+    monkeypatch.setattr(sys, 'stdin',
+                        io.StringIO('{"cmd": "snapshot", '
+                                    '"timeout_ms": 500}\n'))
+    out = io.StringIO()
+    monkeypatch.setattr(sys, 'stdout', out)
+    sv._serve()
+    line = json.loads(out.getvalue().strip().splitlines()[0])
+    assert line['result']['code'] == 'TIMEOUT'
+    assert 'swallowed' not in line['result']
+
+
+@pytest.mark.unit
+def test_serve_has_session_flag_forms():
+    """P1-5：-Sfoo 连写也算已带 session 旗。"""
+    from dp_cli.commands.serve import _has_session_flag
+    for argv in (['-Sfoo'], ['-S', 'x'], ['--session', 'x'],
+                 ['--session=x'], ['--session']):
+        assert _has_session_flag(argv), argv
+    for argv in (['snapshot'], ['snapshot', '-v'], [], None,
+                 ['--sessionx']):
+        assert not _has_session_flag(argv), argv
+
+
+@pytest.mark.unit
+def test_serve_session_inject_S_joined(monkeypatch):
+    """P1-5：-Sfoo/--session=x 请求不再被追加默认 session
+    （双 session 旗缺陷）。"""
+    _, _, argv_log = _invoke_serve(
+        ['{"cmd": "snapshot -Smine"}',
+         '{"cmd": "snapshot --session=mine"}',
+         '{"cmd": "snapshot"}'],
+        monkeypatch, session='bound')
+    assert argv_log[0] == ['snapshot', '-Smine']
+    assert argv_log[1] == ['snapshot', '--session=mine']
+    assert argv_log[2] == ['snapshot', '--session', 'bound']
+
+
+@pytest.mark.unit
+def test_exec_line_session_inject_S_joined(monkeypatch):
+    """P1-5：REPL 路径同样认 -Sfoo 连写。"""
+    import dp_cli.commands.serve as sv
+    seen = []
+    monkeypatch.setattr(sv, '_invoke',
+                        lambda a: seen.append(list(a))
+                        or (0, {'status': 'ok'}))
+    sv._exec_line('snapshot -Smine', 'boot')
+    sv._exec_line('snapshot', 'boot')
+    assert seen[0] == ['snapshot', '-Smine']
+    assert seen[1] == ['snapshot', '--session', 'boot']
+
+
+@pytest.mark.unit
+def test_serve_record_block_fault_tolerant(monkeypatch):
+    """P1-9：result 非 dict 不炸 .get；record 抛异常 debug 记录、
+    主循环继续服务下一条。"""
+    monkeypatch.setattr('dp_cli.decide_train.record',
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            RuntimeError('boom')))
+    _, lines, _ = _invoke_serve(
+        ['{"cmd": "snapshot"}', '{"cmd": "snapshot"}'],
+        monkeypatch,
+        fake_results=[(0, 'not-a-dict'), (0, {'status': 'ok'})])
+    assert [l['exit'] for l in lines] == [0, 0]
+
+
+@pytest.mark.unit
+def test_serve_record_block_decide_nondict_result(monkeypatch):
+    """P1-9：decide 命令 result 非 dict——isinstance 守卫防
+    result.get 炸主循环。"""
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    _, lines, _ = _invoke_serve(
+        ['{"cmd": "decide 点登录"}', '{"cmd": "snapshot"}'],
+        monkeypatch,
+        fake_results=[(0, ['weird']), (0, {'status': 'ok'})])
+    assert [l['exit'] for l in lines] == [0, 0]

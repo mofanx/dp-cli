@@ -916,3 +916,212 @@ def test_idle_watcher_attached_live_port_beyond_extended(monkeypatch):
     monkeypatch.setattr(daemon, '_wake_acceptor', lambda s: wakes.append(s))
     daemon._idle_watcher(None, None, ev, 's')
     assert ev.flag is True and wakes == ['s']
+
+# ── meta sock_path 权威源（client/server 规则路径失联兜底）──────
+
+def _ep_sock_factory(calls, fail_eps=(), response=b''):
+    """记录 connect/connect_ex 端点、按 fail_eps 编程失败的
+    socket 桩工厂（sock_path 候选端点断言用）。"""
+    fail = frozenset(fail_eps)
+
+    def _factory(family, sock_type, *a, **k):
+        calls.append(('socket', family, sock_type))
+
+        class _S:
+            _resp = response
+
+            def settimeout(self, t):
+                pass
+
+            def setsockopt(self, *a):
+                pass
+
+            def connect(self, ep):
+                calls.append(('connect', ep))
+                if ep in fail:
+                    raise OSError('refused')
+
+            def connect_ex(self, ep):
+                calls.append(('connect_ex', ep))
+                return 111 if ep in fail else 0
+
+            def sendall(self, b):
+                calls.append(('sendall', len(b)))
+
+            def recv(self, n):
+                d, self._resp = self._resp, b''
+                return d
+
+            def close(self):
+                pass
+        return _S()
+    return _factory
+
+
+def test_send_recv_meta_sock_path_fallback(monkeypatch, tmp_path):
+    """sock_path 权威源：规则路径 connect 拒 → meta.sock_path 兜底连。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    authority = str(tmp_path / 'elsewhere.sock')
+    meta.write_text(json.dumps({'pid': 1, 'sock_path': authority}))
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _ep_sock_factory(calls, fail_eps={str(sock)},
+                         response=b'{"exit":0,"result":{"ok":1}}\n'))
+    r = daemon._send_recv('t', {'argv': ['snapshot']}, 5)
+    conns = [c[1] for c in calls if c[0] == 'connect']
+    assert conns == [str(sock), authority]       # 规则先试→meta 兜底
+    assert r['exit'] == 0
+
+
+def test_send_recv_rule_path_ok_skips_meta_fallback(
+        monkeypatch, tmp_path):
+    """规则路径一连即通 → 不触 meta.sock_path 兜底端点。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    authority = str(tmp_path / 'elsewhere.sock')
+    meta.write_text(json.dumps({'pid': 1, 'sock_path': authority}))
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _ep_sock_factory(calls,
+                         response=b'{"exit":0,"result":{"ok":1}}\n'))
+    r = daemon._send_recv('t', {'argv': ['snapshot']}, 5)
+    conns = [c[1] for c in calls if c[0] == 'connect']
+    assert conns == [str(sock)]                  # 规则先通→不触兜底
+    assert r['exit'] == 0
+
+
+def test_send_recv_legacy_meta_no_sock_path_rule_only(
+        monkeypatch, tmp_path):
+    """老 meta 无 sock_path 字段 → 仅规则路径一次 connect（向后兼容）。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    meta.write_text(json.dumps({'pid': 1}))      # 老 meta 无字段
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _ep_sock_factory(calls,
+                         response=b'{"exit":0,"result":{"ok":1}}\n'))
+    r = daemon._send_recv('t', {'argv': ['x']}, 5)
+    conns = [c[1] for c in calls if c[0] == 'connect']
+    assert conns == [str(sock)]
+    assert r['exit'] == 0
+
+
+def test_send_recv_meta_sock_path_same_as_rule_single_attempt(
+        monkeypatch, tmp_path):
+    """meta.sock_path 与规则一致 → 去重单端点，行为不变。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    meta.write_text(json.dumps({'pid': 1, 'sock_path': str(sock)}))
+    calls = []
+    monkeypatch.setattr(
+        daemon._socket, 'socket',
+        _ep_sock_factory(calls, fail_eps={str(sock)}))
+    r = daemon._send_recv('t', {'argv': ['x']}, 5)
+    conns = [c[1] for c in calls if c[0] == 'connect']
+    assert conns == [str(sock)]                  # 不重试同端点
+    assert r[0] == 'err' and r[2] is False       # 未送达语义不变
+
+
+def test_unix_alive_prefers_meta_sock_path(monkeypatch, tmp_path):
+    """探活优先 meta.sock_path：首候选即命中不触规则路径；
+    权威路径拒连时兜底规则路径。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    authority = str(tmp_path / 'elsewhere.sock')
+    meta.write_text(json.dumps({'pid': 1, 'sock_path': authority}))
+    calls = []
+    monkeypatch.setattr(daemon._socket, 'socket',
+                        _ep_sock_factory(calls))
+    assert daemon._unix_alive('t') is True
+    probes = [c[1] for c in calls if c[0] == 'connect_ex']
+    assert probes == [authority]                 # 权威路径优先命中
+    # 权威路径拒连 → 兜底规则路径
+    calls.clear()
+    monkeypatch.setattr(daemon._socket, 'socket',
+                        _ep_sock_factory(calls, fail_eps={authority}))
+    assert daemon._unix_alive('t') is True
+    probes = [c[1] for c in calls if c[0] == 'connect_ex']
+    assert probes == [authority, str(sock)]
+
+
+def test_daemon_ready_meta_sock_path_exists(monkeypatch, tmp_path):
+    """规则 sock 缺失但 meta.sock_path 指向的文件在 → 不误判死、
+    不清孤儿 meta（规则失联≠daemon 死）。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    authority = tmp_path / 'elsewhere.sock'
+    authority.write_text('')
+    meta.write_text(
+        json.dumps({'pid': 1, 'sock_path': str(authority)}))
+    monkeypatch.setattr(daemon, '_unix_alive', lambda s: True)
+    assert daemon._daemon_ready('t') is True
+    assert not sock.exists()                     # 规则路径本就缺
+    assert meta.exists() and authority.exists()  # 未误清
+
+
+def test_cleanup_stale_removes_meta_sock_path(
+        monkeypatch, tmp_path):
+    """死标记三件套扩展：meta.sock_path 权威路径文件连带回收，
+    防 TMPDIR 下残留死 sock。"""
+    import json
+    from dp_cli import daemon
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    sock.write_text('')
+    authority = tmp_path / 'elsewhere.sock'
+    authority.write_text('')
+    meta.write_text(
+        json.dumps({'pid': 1, 'sock_path': str(authority)}))
+    daemon._cleanup_stale('t')
+    assert not sock.exists() and not meta.exists()
+    assert not authority.exists()
+
+
+def test_run_daemon_meta_writes_sock_path(
+        monkeypatch, tmp_path, sock_dir):
+    """run_daemon bind 后 meta 落 sock_path 字段=实际 bind 路径。"""
+    import json, threading, time
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    monkeypatch.setattr(daemon, '_sock_path',
+                        lambda s: sock_dir / f'{s}.sock')
+    monkeypatch.setattr(daemon, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(daemon, '_WATCH_TICK', 0.02)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
+    t = threading.Thread(target=daemon.run_daemon, args=('t',),
+                         daemon=True)
+    t.start()
+    meta = tmp_path / 't.session'
+    for _ in range(150):
+        if meta.exists():
+            break
+        time.sleep(0.02)
+    m = json.loads(meta.read_text())
+    assert m['sock_path'] == str(sock_dir / 't.sock')
+    assert m['socket'] == m['sock_path']         # 兼容字段同值
+    monkeypatch.setattr(daemon, '_IDLE_TTL', 0)  # 触发 idle 自退
+    t.join(timeout=10)
+    assert not t.is_alive()

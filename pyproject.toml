@@ -46,6 +46,8 @@ test = [
     "pytest-cov>=4.1.0",
     "pytest-timeout>=2.1.0",
     "pytest-mock>=3.11.0",
+    # integration job 抖动重跑（--reruns 1）；unit job 不加旗控制面
+    "pytest-rerunfailures==16.7",
 ]
 
 [project.scripts]

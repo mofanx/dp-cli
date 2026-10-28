@@ -154,6 +154,40 @@ def _meta_path(session: str) -> Path:
     return _dir() / f'{session}.session'
 
 
+def _meta_sock_path(session: str):
+    """meta.sock_path——server 实际 bind 的权威 sock 路径。
+
+    深 HOME 退 TMPDIR 短前缀时，client/server 两侧 TMPDIR 不同
+    会让 _sock_path 规则算出的路径≠server 实际 bind 处而失联；
+    meta 落盘的 sock_path 字段是 client 侧唯一权威源。
+    老 meta 无此字段/读取失败 → None（回退规则路径，向后兼容）。"""
+    try:
+        meta = json.loads(
+            _meta_path(session).read_text(encoding='utf-8'))
+        sp = meta.get('sock_path')
+        return str(sp) if sp else None
+    except Exception:
+        return None
+
+
+def _sock_path_eff(session: str) -> Path:
+    """探活/清理用权威 sock 路径：meta.sock_path 优先（server 实际
+    bind 处），老 meta 无字段回退 _sock_path 规则路径。"""
+    mp = _meta_sock_path(session)
+    return Path(mp) if mp else _sock_path(session)
+
+
+def _unix_connect_eps(session: str):
+    """client connect 候选端点：_sock_path 规则路径优先尝试，
+    连不上时 meta.sock_path 兜底；meta 无字段/与规则一致→仅规则
+    路径（向后兼容、行为不变）。"""
+    eps = [str(_sock_path(session))]
+    mp = _meta_sock_path(session)
+    if mp and mp not in eps:
+        eps.append(mp)
+    return eps
+
+
 def _tcp_alive(session: str) -> bool:
     """TCP 探活：meta 端口 connect_ex（Windows 分流用）。"""
     try:
@@ -185,16 +219,29 @@ def _unix_alive(session: str) -> bool:
     """POSIX socket 探活：connect_ex .sock（对齐 _tcp_alive）。
 
     死 daemon 的 .sock 残留会让仅看 exists() 的调用方白等超时——
-    ECONNREFUSED/ENOENT 即判死。spawn 窗口（bind 后 meta 落盘前）
-    的误杀由 _spawn_fresh 的 mtime 兜底，见 _daemon_ready。"""
-    try:
-        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-        s.settimeout(0.5)
-        ok_c = s.connect_ex(str(_sock_path(session))) == 0
-        s.close()
-        return ok_c
-    except Exception:
-        return False
+    ECONNREFUSED/ENOENT 即判死。候选路径 meta.sock_path 权威源
+    优先、规则路径兜底（两侧 TMPDIR 不同时规则路径可能 ≠ 实际
+    bind 处）。spawn 窗口（bind 后 meta 落盘前）的误杀由
+    _spawn_fresh 的 mtime 兜底，见 _daemon_ready。"""
+    paths = []
+    mp = _meta_sock_path(session)
+    if mp:
+        paths.append(mp)
+    rule = str(_sock_path(session))
+    if rule not in paths:
+        paths.append(rule)
+    for p in paths:
+        try:
+            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            try:
+                if s.connect_ex(p) == 0:
+                    return True
+            finally:
+                s.close()
+        except OSError:
+            continue        # 单路径构造/连接异常不挡兜底路径
+    return False
 
 
 def _spawn_fresh(session: str) -> bool:
@@ -270,7 +317,13 @@ def _cleanup_stale(session: str) -> None:
     {session}.lock 刻意不清：flock 绑定打开文件描述，unlink 后新
     open 拿到的是新 inode——等待者会拿到"另一把锁"失去互斥。"""
     _READY_CACHE.pop(session, None)      # 探活缓存同步失效
-    for p in (_meta_path(session), _sock_path(session)):
+    paths = [_meta_path(session), _sock_path(session)]
+    mp = _meta_sock_path(session)        # 先读后删——meta.sock_path
+    if mp:                               # 权威路径一并清（可与规则
+        mp_p = Path(mp)                  # 路径不同处，防 TMPDIR 残留）
+        if mp_p not in paths:
+            paths.append(mp_p)
+    for p in paths:
         try:
             p.unlink()
         except OSError:
@@ -292,7 +345,7 @@ def _mark_fingerprint(session: str):
             return p.stat().st_mtime_ns
         except OSError:
             return None
-    return (_mt(_meta_path(session)), _mt(_sock_path(session)))
+    return (_mt(_meta_path(session)), _mt(_sock_path_eff(session)))
 
 
 def _daemon_ready(session: str) -> bool:
@@ -303,7 +356,9 @@ def _daemon_ready(session: str) -> bool:
     外部改/删即失效重查。POSIX spawn 窗口（sock 已 bind、
     meta 未落盘）由 _spawn_fresh 的 mtime 新鲜度判活防误清。"""
     if _HAS_UNIX_SOCK:
-        if not _sock_path(session).exists():
+        # 存在性判 meta.sock_path 权威路径（两侧 TMPDIR 不同时
+        # 规则路径缺失≠daemon 死，防误清活标记）
+        if not _sock_path_eff(session).exists():
             if _meta_path(session).exists():
                 # meta 只在 bind 后写——sock 不在=死标记孤儿 meta
                 _cleanup_stale(session)
@@ -392,16 +447,32 @@ def _send_recv(session: str, payload: dict, read_timeout: float):
     当成命令解析，重发安全。"""
     sent = False
     try:
-        ep = _connect_endpoint(session)
         if _HAS_UNIX_SOCK:
-            s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            # 规则路径先试，连不上读 meta.sock_path 兜底（client/
+            # server TMPDIR 不同时规则路径会失联）；每个候选端点
+            # 新建 socket——connect 失败后套接字状态未定义不可复用
+            s = None
+            last_e = None
+            for ep in _unix_connect_eps(session):
+                c = _socket.socket(_socket.AF_UNIX,
+                                   _socket.SOCK_STREAM)
+                c.settimeout(read_timeout)
+                try:
+                    c.connect(ep)
+                    s = c
+                    break
+                except OSError as e:
+                    last_e = e
+                    c.close()
+            if s is None:
+                raise last_e if last_e is not None \
+                    else OSError('无可用 unix 端点')
         else:
             s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        s.settimeout(read_timeout)
-        if not _HAS_UNIX_SOCK:
+            s.settimeout(read_timeout)
             s.setsockopt(_socket.IPPROTO_TCP,
                          _socket.TCP_NODELAY, 1)   # 单包协议免 Nagle
-        s.connect(ep)
+            s.connect(_connect_endpoint(session))
         s.sendall((json.dumps(payload, ensure_ascii=False) + '\n').encode())
         sent = True
         buf = b''
@@ -825,6 +896,10 @@ def run_daemon(session: str):
             pass
     meta_path.write_text(json.dumps({
         'pid': os.getpid(), 'socket': str(sock_path),
+        # sock_path=server 实际 bind 的权威路径——client 规则算出
+        # 的路径可能不一致（两侧 TMPDIR 不同/深 HOME 退短前缀），
+        # client 连不上规则路径时以本字段兜底
+        'sock_path': str(sock_path) if transport == 'unix' else None,
         'transport': transport, 'endpoint': endpoint,
         'port': srv.getsockname()[1] if transport == 'tcp' else None,
         'session': session, 'started_at': time.time(),
@@ -861,7 +936,7 @@ def run_daemon(session: str):
 
 def _status(session: str):
     meta_p = _meta_path(session)
-    sock_p = _sock_path(session)
+    sock_p = _sock_path_eff(session)   # 权威路径（meta.sock_path 优先）
     marker = sock_p.exists() if _HAS_UNIX_SOCK \
         else meta_p.exists()
     if not marker:
@@ -919,7 +994,7 @@ def register(cli):
     @session_option
     def daemon_stop(session):
         """停止 session daemon（socket 通知退出，或按元数据 kill）。"""
-        sock = _sock_path(session)
+        sock = _sock_path_eff(session)   # 权威路径（meta.sock_path 优先）
         meta_p = _meta_path(session)
         marker = sock.exists() if _HAS_UNIX_SOCK \
             else meta_p.exists()

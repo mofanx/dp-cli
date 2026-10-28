@@ -76,8 +76,10 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v1
 
+      # --reruns 1：浏览器/端口抖动失败自动重跑一次（仅集成面，
+      # unit job 不加保持确定性）
       - name: Run integration tests (headless)
-        run: pytest -m "integration" --timeout=120
+        run: pytest -m "integration" --timeout=120 --reruns 1
 
       # hostile 冒烟：事件断言页验证 click 变体真实触发
       # （file:// fixture 无外网依赖）

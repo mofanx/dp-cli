@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.17] - 2026-10-28
+
+### 修复
+- **daemon sun_path 生产侧兜底**：`_sock_path` 路径超 AF_UNIX 上限（Linux 108B/macOS 104B，阈值留余量 100B）时退 `TMPDIR/dpx-<sha1(session+目录)[:8]>.sock` 短前缀——深 HOME（长用户名/网络 home/深 TMPDIR 基建）下 bind/connect 不再抛 'AF_UNIX path too long'；纯函数按 session 可重建，client/server/stale 清理同决策，meta 文件不受限留原路径
+- **win/mac CI 首跑修复**：测试侧 AF_UNIX sun_path 短前缀 fixture（`sock_dir`）、Windows cp936/cp1252 locale 下输出与数据文件 UTF-8 显式化（`_say()` 字节直写、`open`/`read_text`/`write_text` 补 `encoding='utf-8'`）、`sync-skill.sh` BSD sed 兼容（`-i.bak`）、killpg/CTRL_BREAK_EVENT 平台分流与 skip
+- **daemon 测试就绪轮询**：真 socket 测试改轮询 meta 文件屏障——sock bind→listen 间隙 connect 会 ECONNREFUSED（macOS CI 首跑暴露）；生产 `_spawn_daemon` 本就走 `connect_ex` 探活免疫
+
+### CI/测试基建
+- **3os matrix**：ubuntu/macos/windows 跨平台实跑；HOME 隔离根因修复（`Path.home()` 惰性求值+`isolated_home` 双变量 fixture）；TCP 降级分支 mock `_HAS_UNIX_SOCK=False` 定向测试；`test_no_import_time_home_constants` AST 防回归
+
 ## [0.15.16] - 2026-10-27
 
 ### 修复（P2 台账清零——9 项真修复+6 项真机闭环+3 项 wontfix 论证）

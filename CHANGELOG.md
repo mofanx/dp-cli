@@ -2,6 +2,16 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.16] - 2026-10-27
+
+### 修复（P2 台账清零——9 项真修复+6 项真机闭环+3 项 wontfix 论证）
+- **daemon**：idle 6h TTL 自退、`_cleanup_stale` 三件套统一回收、READY_CACHE mtime 指纹防脏读、锁属主双源校验、连接闸防 fd 耗尽
+- **netlog**：`prune_armed` 按活跃 session 收编防内存泄漏、`_armed` tab_id 跟随重挂
+- **session/bridge/storage**：refs 原子写防撕裂、bridge registry stale 惰性清、cookie 导出 tmp+`os.replace` 原子写、HttpOnly `skipped_lines` 可观测
+- **serve**：JSONL 上限防磁盘爆、契约字段补齐
+- **decide/agent**：sig 属性哈希同源 skip、录制三断点闭合（`_record_decide_row` 公共化+engine_ref 不冒充 chosen+daemon 接入）
+- **wontfix**（论证入库）：stdio 无暴露面/CLI 串行无竞态/CDP 跨进程——非缺陷登记
+
 ## [0.15.15] - 2026-10-27
 
 ### 修复（模块级生产审查四波 21 项 P1）

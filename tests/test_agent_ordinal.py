@@ -54,3 +54,44 @@ def test_meta_ordinal_out_of_range_falls_through():
 def test_meta_ordinal_cn_number():
     assert _ordinal_n('x', '点第六位成员') == 6
     assert _ordinal_n('x', '第三位') == 3
+
+
+# ── 多步 goal 截首步（x34/x41 miss 归因修复）────────────────
+
+def test_first_step_multistep():
+    """先X再Y/X完再Y/X然后Y/then 截首步——reranker 只吃首步目标。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('先填手机号再点下一步') == '填手机号'
+    assert _first_step('填完验证码再登录') == '填完验证码'
+    assert _first_step('先选城市再提交') == '选城市'
+    assert _first_step('登录然后退出') == '登录'
+    assert _first_step('login then logout') == 'login'
+
+
+def test_first_step_no_false_cut():
+    """'再见/再次'词内'再'不误切；单步 goal 原样返回。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('点再见按钮') == '点再见按钮'
+    assert _first_step('再次确认') == '再次确认'
+    assert _first_step('点登录') == '点登录'
+    assert _first_step('先登录') == '先登录'
+
+
+def test_blocked_form_field_not_wall():
+    """候选含'验证码'输入框≠人机墙——表单字段不误判 blocked。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'textbox', 'name': '手机'},
+                      {'ref': 2, 'role': 'textbox', 'name': '验证码'}],
+          'state': {'title': 'Login', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st, '填完验证码再登录') is None
+
+
+def test_blocked_real_wall_still_hits():
+    """真人机验证特征（title/元素名）仍判 blocked。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'button', 'name': '安全验证'}],
+          'state': {'title': 'Please verify you are human', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '继续')
+    assert r and r['action'] == 'blocked'

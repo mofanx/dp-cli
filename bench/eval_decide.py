@@ -8,7 +8,7 @@ eval = bench/eval_cases.py（原 holdout 8 + 新造 30 disjoint 样本，
 import json, sys, time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from bench_engines import candidates, score_row
+from bench_engines import candidates, score_row, rich_name
 from eval_cases import EVAL_CASES
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else \
@@ -22,10 +22,11 @@ def main():
     from sentence_transformers import CrossEncoder
     m = CrossEncoder(MODEL, max_length=512)
     rows = []
-    from dp_cli.agent import _meta_decide
+    from dp_cli.agent import _meta_decide, _first_step
     for c in EVAL_CASES:
         # 系统级 eval——生产 decide 先走 _meta_decide 短路，eval 同步对齐
-        meta = _meta_decide({'options': c['options'],
+        meta = _meta_decide({'options': [{**o, 'name': rich_name(o)}
+                                         for o in c['options']],
                              'state': {'title': c['title'], 'url': c['url']},
                              'epoch': 'x', 'truncated': False}, c['goal'])
         if meta:
@@ -36,7 +37,7 @@ def main():
                          'topk': topk, 'conf': 1.0, 'lat': 0})
             continue
         cands = candidates(c)
-        pairs = [[c['goal'], t] for _, _, t in cands]
+        pairs = [[_first_step(c['goal']), t] for _, _, t in cands]
         t0 = time.time()
         sims = m.predict(pairs).tolist()
         lat = (time.time() - t0) * 1000

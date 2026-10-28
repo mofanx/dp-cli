@@ -274,16 +274,17 @@ def _engine_reranker(state, goal):
     if not opts:
         return {'_error': '无可选候选'}
     import math
+    q = _first_step(goal)                   # 多步 goal 截首步再打分
     texts = [f"{o['role']} {o['name']}" for o in opts]
     if m[0] == 'ort':                       # ONNX 直跑 session
         _, sess, tok = m
-        enc = tok([goal] * len(texts), texts, return_tensors='np',
+        enc = tok([q] * len(texts), texts, return_tensors='np',
                   padding=True, truncation=True, max_length=128)
         scores = sess.run(['logits'], {k: enc[k] for k in
                           ['input_ids', 'attention_mask',
                            'token_type_ids']})[0].ravel().tolist()
     else:
-        scores = m[1].predict([[goal, t] for t in texts])
+        scores = m[1].predict([[q, t] for t in texts])
     mx = max(float(s) for s in scores)
     probs = [math.exp(float(s) - mx) for s in scores]
     tot = sum(probs)
@@ -319,6 +320,28 @@ def _engine_reranker(state, goal):
 _ROLE_ACTION = {'textbox': 'type', 'combobox': 'select', 'searchbox': 'type',
                 'spinbutton': 'type', 'listbox': 'select'}
 
+
+def _first_step(goal: str) -> str:
+    """多步 goal 截首步——'先X再Y'/'X完再Y'/'X then Y' 只取第一步目标。
+
+    reranker 只吃 (goal, 候选文本) 相似度，多步 goal 后半步的
+    动作/目标词会拉偏打分（eval-120 x34/x41 miss 归因）：
+    '先填手机号再点下一步'→'填手机号'。词界启发式，无 NLP 依赖；
+    保守切分——形态不确定时返回原 goal 不截。
+    """
+    g = goal.strip()
+    # '先' 前缀剥掉——'先填A再点B'/'先填A' 统一走首步段切分
+    g2 = re.sub(r'^\s*先', '', g)
+    # '再/然后/接着/随后/之后' 作分步分隔符，首步段 ≥2 字才截
+    # （防'再见'类词内误切——前段不足 2 字不截）
+    m = re.match(r'^\s*(.+?)(?:再|然后|接着|随后|之后)', g2)
+    if m and len(m.group(1).strip('，,、 ')) >= 2:
+        return m.group(1).strip('，,、 ')
+    m = re.match(r'^\s*(.+?)\s+then\b', g, re.IGNORECASE)
+    if m and len(m.group(1).strip('，,、 ')) >= 2:
+        return m.group(1).strip('，,、 ')
+    return g
+
 # meta 决策=状态判断非语义排序——规则判定，不外包给概率模型
 # （实测：语义学习对 done/blocked/scroll 零增益，meta 桶 42.9% 纹丝不动）
 _DONE_GOAL = ('已完成', '完成', '确认', '验证', '成功', '检查', 'verify',
@@ -329,6 +352,9 @@ _DONE_STATE = ('成功', '完成', 'welcome', '欢迎', 'results', '结果',
 _BLOCKED_KW = ('验证码', '人机', '机器人', 'captcha', 'verify you are',
                'robot', '安全验证', '盾', 'please verify', 'suspended',
                '被封', '封号', '拦截', 'security check')
+# 表单字段含'验证码'≠拦截墙（登录页短信验证码输入框是正常可交互元素，
+# eval-120 x34/x41 误判归因）——候选名判拦截时剔除'验证码'，仅 title 判
+_BLOCKED_NAME_KW = tuple(k for k in _BLOCKED_KW if k != '验证码')
 _BACK_KW = ('返回', '上一页', '后退', 'back', 'previous',
             '回到上一', '上个页面', '回列表', '回到搜索')
 _WAIT_KW = ('等待', '加载', 'wait', 'load', 'settle', '稍等',
@@ -405,7 +431,8 @@ def _meta_decide(state, goal):
     title = (state['state'].get('title') or '').lower()
     g = goal.lower()
     names = ' '.join(o['name'].lower() for o in opts)
-    if any(k in names or k in title for k in _BLOCKED_KW):
+    if any(k in names for k in _BLOCKED_NAME_KW) or \
+            any(k in title for k in _BLOCKED_KW):
         return {'action': 'blocked', 'deterministic': True,
                 'reason': '验证码/人机特征命中'}
     if not opts:

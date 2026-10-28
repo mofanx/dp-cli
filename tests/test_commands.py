@@ -3782,7 +3782,6 @@ def test_daemon_socket_roundtrip(tmp_path, monkeypatch, sock_dir):
     import socket as sk
     import threading
     from dp_cli import daemon as dm
-    sp = sock_dir / 'test.sock'
     monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path', lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
@@ -3791,8 +3790,10 @@ def test_daemon_socket_roundtrip(tmp_path, monkeypatch, sock_dir):
     t = threading.Thread(target=dm.run_daemon, args=('test',), daemon=True)
     t.start()
     import time as _t
+    # 轮询 meta 而非 sock——meta 在 srv.listen() 后才落盘，
+    # sock 文件 bind 即出现、listen 前 connect 会 ECONNREFUSED（macOS 竞态）
     for _ in range(40):
-        if sp.exists():
+        if (tmp_path / 'test.session').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('test', {'argv': ['-V']}, 10)
@@ -3852,8 +3853,9 @@ def test_daemon_stop_reaches_handler(tmp_path, monkeypatch, sock_dir):
     t = threading.Thread(target=dm.run_daemon, args=('z',), daemon=True)
     t.start()
     import time as _t
+    # 同上：meta 在 listen 后落盘——sock exists 轮询会撞 ECONNREFUSED
     for _ in range(40):
-        if (sock_dir / 'z.sock').exists():
+        if (tmp_path / 'z.session').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('z', {'argv': ['daemon-stop']}, 10)
@@ -3971,8 +3973,9 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch, sock_dir):
     t = threading.Thread(target=dm.run_daemon, args=('ord',), daemon=True)
     t.start()
     import time as _t
+    # 同上：meta 在 listen 后落盘——sock exists 轮询会撞 ECONNREFUSED
     for _ in range(40):
-        if (sock_dir / 'ord.sock').exists():
+        if (tmp_path / 'ord.session').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('ord', {'argv': ['eval', '1']}, 10)
@@ -4437,8 +4440,9 @@ def test_daemon_unknown_command_error(tmp_path, monkeypatch, sock_dir):
     t = th.Thread(target=dm.run_daemon, args=('u',), daemon=True)
     t.start()
     import time as _t
+    # 同上：meta 在 listen 后落盘——sock exists 轮询会撞 ECONNREFUSED
     for _ in range(40):
-        if (sock_dir / 'u.sock').exists():
+        if (tmp_path / 'u.session').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('u', {'argv': ['nonexistcmd']}, 10)

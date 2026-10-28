@@ -11,7 +11,8 @@ def test_record_post_state_field(tmp_path, monkeypatch):
     dt.record('s', ['decide', '登录'], refs, unsure=True,
               post_state={'url': 'https://x/'})
     import json
-    rows = [json.loads(l) for l in (tmp_path / 'r.jsonl').read_text().splitlines()]
+    rows = [json.loads(l) for l in (tmp_path / 'r.jsonl')
+            .read_text(encoding='utf-8').splitlines()]
     assert rows[0]['post_state']['url'] == 'https://x/logged'
     # unsure 记录带 post_state 但 unsure 标记保留——不冒充标签
     assert rows[1]['unsure'] is True and rows[1]['post_state']['url'] == 'https://x/'
@@ -62,11 +63,14 @@ def test_promote_derived_default_rejected(tmp_path, monkeypatch):
                          'expected': 'https://x/home',
                          'result': {'status': 'ok',
                                     'data': {'result': 'https://x/home'}}}}}
-    f = tmp_path / 'in.json'; f.write_text(json.dumps([row]))
+    f = tmp_path / 'in.json'
+    f.write_text(json.dumps([row]), encoding='utf-8')
     merge([str(f)], str(tmp_path / 'out.json'))
-    assert json.loads((tmp_path / 'out.json').read_text()) == []
+    assert json.loads(
+        (tmp_path / 'out.json').read_text(encoding='utf-8')) == []
     merge([str(f)], str(tmp_path / 'out2.json'), allow_derived=True)
-    assert len(json.loads((tmp_path / 'out2.json').read_text())) == 1
+    assert len(json.loads(
+        (tmp_path / 'out2.json').read_text(encoding='utf-8'))) == 1
     # sig diff 行不提升（硬证据只剩 url）
     r = promote_recorded({'goal': 'g', 'chosen': 'click @e1', 'engine_ref': 1,
                           'state': {'refs': [{'ref': 1, 'role': 'b',
@@ -164,9 +168,9 @@ def test_decide_train_jsonl_trim(tmp_path, monkeypatch):
     # 直接造超水位文件再录一条触发 trim
     f.write_text(''.join(
         '{"ts":%d,"chosen":"x"}\n' % i
-        for i in range(dt._TRIM_HIGH + 10)))
+        for i in range(dt._TRIM_HIGH + 10)), encoding='utf-8')
     dt.record('s', ['click', '@e1'], refs)
-    lines = f.read_text().splitlines()
+    lines = f.read_text(encoding='utf-8').splitlines()
     assert len(lines) <= dt._MAX_LINES + 1
     assert not (tmp_path / 'r.jsonl.tmp').exists()
 
@@ -181,4 +185,4 @@ def test_decide_train_trim_below_high_water_untouched(tmp_path,
     refs = {'1': {'role': 'link', 'name': 'Sign in'}}
     dt.record('s', ['click', '@e1'], refs)
     dt.record('s', ['click', '@e1'], refs)
-    assert len(f.read_text().splitlines()) == 2
+    assert len(f.read_text(encoding='utf-8').splitlines()) == 2

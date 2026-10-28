@@ -40,6 +40,27 @@ def tmp_work_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def sock_dir(tmp_path: Path):
+    """AF_UNIX bind 安全的 socket 目录（sun_path 上限敏感）。
+
+    Linux sun_path=108B / macOS=104B——macOS runner 的 tmp_path 深度
+    （/var/folders/…/pytest-0/test_xxx0/）加叶名即超限，真实
+    bind 抛 'AF_UNIX path too long'（daemon 真机 socket 测试必修）。
+    深度安全（≤96B 含叶名）直接复用 tmp_path，否则退到
+    tempfile.gettempdir() 下的短前缀目录并负责回收。
+    """
+    import os as _os
+    import shutil
+    import tempfile
+    if len(_os.fsencode(str(tmp_path / 'x.sock'))) <= 96:
+        yield tmp_path
+        return
+    d = Path(tempfile.mkdtemp(prefix='dpx-t-'))
+    yield d
+    shutil.rmtree(d, ignore_errors=True)
+
+
+@pytest.fixture
 def isolated_home(tmp_path: Path, monkeypatch) -> Path:
     """将用户主目录指向临时目录，隔离对真实 HOME 的读写。
 

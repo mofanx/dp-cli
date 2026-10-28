@@ -3777,14 +3777,14 @@ def test_daemon_routes_only_when_enabled(runner, monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_daemon_socket_roundtrip(tmp_path, monkeypatch):
+def test_daemon_socket_roundtrip(tmp_path, monkeypatch, sock_dir):
     """真实 unix socket 往返：起 run_daemon 线程 → _send_recv → 关。"""
     import socket as sk
     import threading
     from dp_cli import daemon as dm
-    sp = tmp_path / 'test.sock'
+    sp = sock_dir / 'test.sock'
     monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
-    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_sock_path', lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
     monkeypatch.setattr(dm, '_IDLE_TTL', 99999)
 
@@ -3841,19 +3841,19 @@ def test_daemon_spawn_concurrent_once(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
-def test_daemon_stop_reaches_handler(tmp_path, monkeypatch):
+def test_daemon_stop_reaches_handler(tmp_path, monkeypatch, sock_dir):
     """daemon-stop 不被 _SKIP_CMDS 拦——handler 判定顺序（死代码修复）。"""
     import socket as sk
     import threading
     from dp_cli import daemon as dm
-    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_sock_path', lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
     monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     t = threading.Thread(target=dm.run_daemon, args=('z',), daemon=True)
     t.start()
     import time as _t
     for _ in range(40):
-        if (tmp_path / 'z.sock').exists():
+        if (sock_dir / 'z.sock').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('z', {'argv': ['daemon-stop']}, 10)
@@ -3952,13 +3952,13 @@ def test_mcp_without_sdk_actionable(runner, monkeypatch):
 
 
 @pytest.mark.unit
-def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
+def test_netlog_armed_before_invoke(tmp_path, monkeypatch, sock_dir):
     """daemon 路径：_maybe_arm_netlog 在 _invoke 前（首导航命令流量可捕获）。"""
     import threading
     import dp_cli.daemon as dm
     order = []
     monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
-    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
+    monkeypatch.setattr(dm, '_sock_path', lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path', lambda s: tmp_path / f'{s}.session')
 
     import dp_cli.commands.serve as sv
@@ -3972,7 +3972,7 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch):
     t.start()
     import time as _t
     for _ in range(40):
-        if (tmp_path / 'ord.sock').exists():
+        if (sock_dir / 'ord.sock').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('ord', {'argv': ['eval', '1']}, 10)
@@ -4422,14 +4422,14 @@ def test_daemon_skip_mcp_record(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
-def test_daemon_unknown_command_error(tmp_path, monkeypatch):
+def test_daemon_unknown_command_error(tmp_path, monkeypatch, sock_dir):
     """daemon 未知 argv 返回结构化错误而非挂起。"""
     import dp_cli.daemon as dm
     import socket as sk, threading as th, json as js
 
     monkeypatch.setattr(dm, '_dir', lambda: tmp_path)
     monkeypatch.setattr(dm, '_sock_path',
-                        lambda s: tmp_path / f'{s}.sock')
+                        lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(dm, '_meta_path',
                         lambda s: tmp_path / f'{s}.session')
     monkeypatch.setattr(dm, '_IDLE_TTL', 99999)
@@ -4438,7 +4438,7 @@ def test_daemon_unknown_command_error(tmp_path, monkeypatch):
     t.start()
     import time as _t
     for _ in range(40):
-        if (tmp_path / 'u.sock').exists():
+        if (sock_dir / 'u.sock').exists():
             break
         _t.sleep(0.1)
     r = dm._send_recv('u', {'argv': ['nonexistcmd']}, 10)

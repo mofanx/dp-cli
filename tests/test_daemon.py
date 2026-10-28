@@ -344,9 +344,13 @@ def test_idle_watcher_clean_exit_no_os_exit(monkeypatch):
     assert ev.flag is True and wakes == ['s']
 
 
-def test_run_daemon_idle_self_exit_e2e(monkeypatch, tmp_path):
+def test_run_daemon_idle_self_exit_e2e(monkeypatch, tmp_path, sock_dir):
     """P1-3 e2e：idle 超时→wake 连接→accept 返回看到 stop_ev→
-    finally 清理 sock/meta——真 socket 全链路。"""
+    finally 清理 sock/meta——真 socket 全链路。
+
+    sock_dir：深 tmp_path 下 AF_UNIX bind 抛 'path too long'（macOS
+    104B 上限）——此前 daemon 线程静默死亡后断言恰好全过（误绿），
+    短路径 fixture 让真实 bind 链路在 CI 上真正跑到。"""
     import threading, time
     from dp_cli import daemon
     if not daemon._HAS_UNIX_SOCK:
@@ -354,7 +358,7 @@ def test_run_daemon_idle_self_exit_e2e(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon, '_IDLE_TTL', 0)       # 立即超时
     monkeypatch.setattr(daemon, '_WATCH_TICK', 0.02)
     monkeypatch.setattr(daemon, '_sock_path',
-                        lambda s: tmp_path / f'{s}.sock')
+                        lambda s: sock_dir / f'{s}.sock')
     monkeypatch.setattr(daemon, '_meta_path',
                         lambda s: tmp_path / f'{s}.session')
     monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
@@ -363,7 +367,7 @@ def test_run_daemon_idle_self_exit_e2e(monkeypatch, tmp_path):
     t.start()
     t.join(timeout=10)
     assert not t.is_alive()                            # 正常退出非挂死
-    assert not (tmp_path / 't.sock').exists()          # finally 清理
+    assert not (sock_dir / 't.sock').exists()          # finally 清理
     assert not (tmp_path / 't.session').exists()
 
 

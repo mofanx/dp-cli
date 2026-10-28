@@ -397,7 +397,7 @@ def test_decide_train_record_and_export(tmp_path, monkeypatch):
     dt.record('s', ['click', '@e2'], refs)
     dt.record('s', ['ping'], refs)              # skip 集不落盘
     import json
-    lines = f.read_text().strip().split('\n')
+    lines = f.read_text(encoding='utf-8').strip().split('\n')
     assert len(lines) == 1
     d = json.loads(lines[0])
     assert d['chosen'] == 'click @e2' and len(d['state']['refs']) == 2
@@ -436,7 +436,7 @@ def test_unsure_no_empty_positive(tmp_path):
             {'query': '点登录', 'positive': 'button 登录',
              'negatives': ['link 首页'], 'src': 'command'}]
     f = tmp_path / 'p.json'
-    f.write_text(json.dumps(rows, ensure_ascii=False))
+    f.write_text(json.dumps(rows, ensure_ascii=False), encoding='utf-8')
     with pytest.raises(ValueError, match='--allow-unverified'):
         load_pairs(f)
     pairs = load_pairs(f, allow_unverified=True)
@@ -457,7 +457,7 @@ def test_export_pairs_unsure_record_kept_no_pair(tmp_path, monkeypatch):
             '2': {'role': 'button', 'name': '登录'}}
     dt.record('s', ['decide', '点登录'], refs,
               goal='点登录', engine_ref=2, unsure=True)
-    raw = f.read_text().strip().split('\n')
+    raw = f.read_text(encoding='utf-8').strip().split('\n')
     assert len(raw) == 1                          # 原始记录留存
     d = json.loads(raw[0])
     assert d['unsure'] is True and d['engine_ref'] == 2
@@ -478,9 +478,10 @@ def test_merge_train_rejects_unsure_src(tmp_path):
              'negatives': ['link 首页'], 'src': 'command'}]
     src = tmp_path / 'in.json'
     out = tmp_path / 'out.json'
-    src.write_text(json.dumps(rows, ensure_ascii=False))
+    src.write_text(json.dumps(rows, ensure_ascii=False),
+                   encoding='utf-8')
     merge([str(src)], str(out))
-    merged = json.loads(out.read_text())
+    merged = json.loads(out.read_text(encoding='utf-8'))
     assert merged == []
 
 

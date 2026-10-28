@@ -236,6 +236,10 @@ def test_ctrl_break_getattr_fallback(monkeypatch):
 
     monkeypatch.setattr(bridge_manager, 'IS_WINDOWS', True)
     monkeypatch.setattr(bridge_manager.os, 'name', 'posix')
+    # Windows signal 模块自带 CTRL_BREAK_EVENT——删掉模拟"常量缺失"
+    # 环境，getattr 才真实走兜底分支（同 test_bridge_kill_posix_getattr_guard）
+    if hasattr(signal, 'CTRL_BREAK_EVENT'):
+        monkeypatch.delattr(signal, 'CTRL_BREAK_EVENT', raising=False)
     # POSIX signal 本就无 CTRL_BREAK_EVENT——真实走 getattr 兜底
     assert not hasattr(signal, 'CTRL_BREAK_EVENT')
     kills = []
@@ -296,6 +300,9 @@ def test_pid_cmdline_is_bridge_unreadable_returns_false(monkeypatch):
     assert bridge_manager._pid_cmdline_is_bridge(999) is False
 
 
+@pytest.mark.skipif(os.name != 'posix',
+                    reason='os.killpg/signal.SIGKILL 仅 POSIX——'
+                           'Windows 走 CTRL_BREAK/taskkill 分支')
 def test_stop_bridge_non_bridge_cmdline_skips_killpg(monkeypatch):
     """pid 复用防护核心断言：cmdline 校验非 bridge → 不走 killpg，
     TERM/KILL 都退化为单进程 os.kill。"""
@@ -317,6 +324,9 @@ def test_stop_bridge_non_bridge_cmdline_skips_killpg(monkeypatch):
     assert (12345, signal.SIGKILL) in kill_calls
 
 
+@pytest.mark.skipif(os.name != 'posix',
+                    reason='os.killpg/signal.SIGKILL 仅 POSIX——'
+                           'Windows 走 CTRL_BREAK/taskkill 分支')
 def test_stop_bridge_bridge_cmdline_uses_killpg(monkeypatch):
     """cmdline 确认是 bridge → 正常走 killpg 杀整个进程组。"""
     import signal

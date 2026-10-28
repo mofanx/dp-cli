@@ -72,9 +72,9 @@ def test_local_pilot_has_proof_but_cannot_train():
 def test_malformed_row_fails_closed(tmp_path):
     assert not eligible(None) and not has_outcome_evidence(None)
     src, out = tmp_path / 'rows.json', tmp_path / 'out.json'
-    src.write_text(json.dumps([None, _row()]))
+    src.write_text(json.dumps([None, _row()]), encoding='utf-8')
     merge([str(src)], str(out))
-    assert json.loads(out.read_text()) == [_row()]
+    assert json.loads(out.read_text(encoding='utf-8')) == [_row()]
     with pytest.raises(ValueError, match='行号 \\[1\\]'):
         load_pairs(src)
 
@@ -82,14 +82,14 @@ def test_malformed_row_fails_closed(tmp_path):
 def test_train_requires_proof_by_default(tmp_path):
     valid = _row()
     src = tmp_path / 'rows.json'
-    src.write_text(json.dumps([valid]))
+    src.write_text(json.dumps([valid]), encoding='utf-8')
     assert load_pairs(src) == [(valid['query'], 'button Run', 1.0),
                                (valid['query'], 'button Cancel', 0.0)]
     for label in ('decide', 'pilot_local'):
         old = deepcopy(valid)
         old['src'] = label
         old.pop('evidence')
-        src.write_text(json.dumps([old]))
+        src.write_text(json.dumps([old]), encoding='utf-8')
         with pytest.raises(ValueError, match='--allow-unverified'):
             load_pairs(src)
         assert load_pairs(src, allow_unverified=True) == [
@@ -97,7 +97,7 @@ def test_train_requires_proof_by_default(tmp_path):
             (valid['query'], 'button Cancel', 0.0),
         ]
     old['src'] = 'unsure'
-    src.write_text(json.dumps([old]))
+    src.write_text(json.dumps([old]), encoding='utf-8')
     assert load_pairs(src, allow_unverified=True) == []
 
 
@@ -110,11 +110,11 @@ def test_merge_refuses_legacy_and_pilot_by_default(tmp_path):
     pilot['src'] = 'pilot_local'
     source = tmp_path / 'rows.json'
     out = tmp_path / 'merged.json'
-    source.write_text(json.dumps([old, pilot, valid]))
+    source.write_text(json.dumps([old, pilot, valid]), encoding='utf-8')
     merge([str(source)], str(out))
-    assert json.loads(out.read_text()) == [valid]
+    assert json.loads(out.read_text(encoding='utf-8')) == [valid]
     merge([str(source)], str(out), allow_bad_src=True)
-    assert len(json.loads(out.read_text())) == 3
+    assert len(json.loads(out.read_text(encoding='utf-8'))) == 3
 
 
 def test_ref_alias_is_valid_evidence():
@@ -128,6 +128,6 @@ def test_override_still_drops_eval_overlap(tmp_path):
     row = _row()
     row['query'] = EVAL_CASES[0]['goal']
     source, out = tmp_path / 'source.json', tmp_path / 'out.json'
-    source.write_text(json.dumps([row]))
+    source.write_text(json.dumps([row]), encoding='utf-8')
     merge([str(source)], str(out), allow_bad_src=True)
-    assert json.loads(out.read_text()) == []
+    assert json.loads(out.read_text(encoding='utf-8')) == []

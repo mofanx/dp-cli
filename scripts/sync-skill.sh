@@ -45,7 +45,11 @@ rsync -a --delete "$SRC/" "$DST/"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VER="$(sed -n 's/^version = "\(.*\)"/\1/p' "$REPO_ROOT/pyproject.toml" | head -1)"
 if [ -n "$VER" ] && [ -f "$DST/SKILL.md" ]; then
-    sed -i "s/^dp_cli_version:.*/dp_cli_version: $VER/" "$DST/SKILL.md"
+    # GNU sed 是 -i[SUFFIX]（后缀必须贴写），BSD sed 是 -i 独立参数——
+    # 裸 -i 在 macOS 下把脚本当备份后缀解析（"invalid command code"）。
+    # -i.bak 两系通吃，再删备份文件即可移植。
+    sed -i.bak "s/^dp_cli_version:.*/dp_cli_version: $VER/" "$DST/SKILL.md"
+    rm -f "$DST/SKILL.md.bak"
 fi
 if $DIFF "$SRC" "$DST" >/dev/null 2>&1; then
     echo "SYNCED & VERIFIED: $SRC -> $DST"

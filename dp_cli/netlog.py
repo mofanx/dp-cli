@@ -15,7 +15,9 @@ from pathlib import Path
 _MAX_LINES = 500      # ring 上限
 _TRIM_HIGH = 600      # 超过即截到 _MAX_LINES
 _lock = threading.Lock()
-_armed = set()        # session → 已挂载监听
+_armed = {}           # session → tab_id（监听挂在当时 tab 的 driver 上，
+                      # tab 关闭/切换后 WebSocket 死但标记不能沿用，
+                      # 每次 arm 比对当前 tab_id，变了就重挂）
 
 
 def _path(session: str) -> Path:
@@ -90,29 +92,46 @@ def _entry_fail(kw: dict) -> dict:
             'canceled': kw.get('canceled')}
 
 
-def arm_netlog(page, session: str) -> bool:
-    """给 page 挂 Network 事件采集（幂等，每 session 一次）。serve 循环内调用。"""
-    if session in _armed:
+def arm_netlog(page, session: str, force: bool = False) -> bool:
+    """给 page 挂 Network 事件采集（幂等，每 session+tab 一次）。
+
+    serve 循环内调用。`_armed` 记 session→tab_id：调用方每次传当前
+    latest_tab，tab 变了（旧 driver WebSocket 已死）自动重挂。
+    force=True 先摘除标记再挂——供回调被第三方覆盖后（如 har-dump
+    单槽 set_callback）的恢复路径使用。
+    """
+    tab_id = getattr(page, 'tab_id', None)
+    if force:
+        _armed.pop(session, None)
+    elif session in _armed and _armed[session] == tab_id:
         return True
+
+    def _safe(build):
+        def _cb(**kw):
+            try:
+                _append(session, build(kw))
+            except Exception:
+                # 写入路径异常——摘除标记让下次 _maybe_arm_netlog 重挂
+                _armed.pop(session, None)
+        return _cb
+
     try:
         page.run_cdp('Network.enable')
         drv = page.driver
         drv.set_callback(
-            'Network.requestWillBeSent',
-            lambda **kw: _append(session, _entry_req(kw)))
+            'Network.requestWillBeSent', _safe(_entry_req))
         drv.set_callback(
-            'Network.responseReceived',
-            lambda **kw: _append(session, _entry_resp(kw)))
+            'Network.responseReceived', _safe(_entry_resp))
         drv.set_callback(
-            'Network.loadingFailed',
-            lambda **kw: _append(session, _entry_fail(kw)))
+            'Network.loadingFailed', _safe(_entry_fail))
         try:
             _path(session).touch(exist_ok=True)
         except OSError:
             pass
-        _armed.add(session)
+        _armed[session] = tab_id
         return True
     except Exception:
+        _armed.pop(session, None)
         return False
 
 

@@ -484,6 +484,17 @@ def register(cli):
         try:
             page.run_cdp('Network.enable')
             driver = page.driver
+            _evs = ('Network.requestWillBeSent',
+                    'Network.responseReceived',
+                    'Network.loadingFinished',
+                    'Network.loadingFailed')
+            # set_callback 是单槽覆盖——serve/daemon 托管时 netlog 已
+            # 把回调挂在这 3 个事件上。先快照旧回调（DrissionPage
+            # driver.event_handlers 是唯一取值口），finally 逐事件
+            # 恢复而非置 None，否则 netlog 被动日志永久停写。
+            _handlers = getattr(driver, 'event_handlers', None)
+            _saved = ({ev: _handlers.get(ev) for ev in _evs}
+                      if isinstance(_handlers, dict) else None)
             driver.set_callback('Network.requestWillBeSent', _on_request)
             driver.set_callback('Network.responseReceived', _on_response)
             driver.set_callback('Network.loadingFinished', _on_finished)
@@ -493,11 +504,19 @@ def register(cli):
                 while perf_counter() < end:
                     _sleep(0.1)
             finally:
-                for ev in ('Network.requestWillBeSent',
-                           'Network.responseReceived',
-                           'Network.loadingFinished',
-                           'Network.loadingFailed'):
-                    driver.set_callback(ev, None)
+                if _saved is not None:
+                    for ev, cb in _saved.items():
+                        driver.set_callback(ev, cb)
+                else:
+                    for ev in _evs:
+                        driver.set_callback(ev, None)
+                    # 无 event_handlers 快照口（非常规 driver）——
+                    # netlog 回调已被清掉，强制重挂恢复被动日志
+                    try:
+                        from dp_cli.netlog import arm_netlog
+                        arm_netlog(page, session, force=True)
+                    except Exception:
+                        pass
 
             # 可选：逐条补抓响应体（仅对已完成的请求）
             if with_body:

@@ -31,11 +31,17 @@ _COOKIE_ATTRS = {'path', 'domain', 'expires', 'max-age', 'samesite',
                  'sameparty'}
 
 
-def _sniff_cookies(raw: str):
+def _sniff_cookies(raw: str, skipped: list = None):
     """嗅探 cookie 文本格式 → list[dict] | None（无法识别）。
 
     支持：JSON 列表 [{name,value,...}]、JSON 对象 {name:value}、
-    Netscape dump（7 列 tab 分隔）、Cookie 头串 "k=v; k=v"。
+    Netscape dump（7 列 tab 分隔；`#HttpOnly_` 前缀行是 curl 的
+    httpOnly 标记扩展——剥前缀正常解析并置 httpOnly=True）、
+    Cookie 头串 "k=v; k=v"。
+
+    :param skipped: 可选 list——传入时收集 Netscape 分支中字段数
+                    不足、无法解析的内容行（导入不丢+失败有痕，
+                    不再静默 continue）。
 
     已知取舍：头串分支按 _COOKIE_ATTRS 过滤属性名——真叫
     path/domain/expires 等的 cookie 名会被误判为属性丢弃（RFC 歧义，
@@ -64,10 +70,20 @@ def _sniff_cookies(raw: str):
         out = []
         for line in text.splitlines():
             line = line.strip()
-            if not line or line.startswith('#'):
+            if not line:
+                continue
+            raw_line = line
+            httponly = False
+            if line.startswith('#HttpOnly_'):
+                # curl 私有扩展：#HttpOnly_ 前缀标记 httpOnly cookie
+                httponly = True
+                line = line[len('#HttpOnly_'):]
+            elif line.startswith('#'):
                 continue
             parts = line.split('\t')
             if len(parts) < 7:
+                if skipped is not None:
+                    skipped.append(raw_line)
                 continue
             dom, _inc, path, secure, exp, name, value = parts[:7]
             ck = {'name': name, 'value': value}
@@ -77,6 +93,8 @@ def _sniff_cookies(raw: str):
                 ck['path'] = path
             if secure.upper() == 'TRUE':
                 ck['secure'] = True
+            if httponly:
+                ck['httpOnly'] = True
             try:
                 e = int(float(exp))
                 if e > 0:
@@ -348,7 +366,8 @@ def register(cli):
             error(f'读取 cookie 源失败: {source}', code='FILE_NOT_FOUND',
                   detail=str(e))
             return
-        cookies = _sniff_cookies(raw)
+        skipped = []
+        cookies = _sniff_cookies(raw, skipped)
         if cookies is None:
             error('无法识别 cookie 格式（支持 Netscape dump / JSON / '
                   'Cookie 头串）', code='INVALID_ARGS')
@@ -365,6 +384,8 @@ def register(cli):
             except Exception as e:
                 n_fail.append(f"{c.get('name')}: {e}")
         result = {'imported': n_ok}
+        if skipped:
+            result['skipped_lines'] = skipped
         if n_fail:
             result['failed'] = n_fail
         ok(result, msg=f'已导入 {n_ok} 个 cookie'

@@ -41,8 +41,21 @@ def test_page_methods_exist():
     for m in ('get', 'run_js', 'run_js_loaded', 'ele', 'eles',
               'listen', 'get_frame', 'get_screenshot', 'run_cdp', 'url',
               'title', 'cookies', 'download', 'wait', 'actions',
-              'latest_tab', 'tab_ids', 'browser', 'set'):
+              'latest_tab', 'tab_ids', 'browser', 'set', 'tab_id'):
         assert hasattr(ChromiumPage, m), f'ChromiumPage 缺 {m}'
+
+
+def test_driver_callback_api_exist():
+    """driver.set_callback + event_handlers 取值口——netlog 挂载与
+    har-dump 快照/恢复路径共同依赖（set_callback 是单槽覆盖语义）。"""
+    try:
+        from DrissionPage._base.driver import Driver
+    except ImportError:
+        pytest.skip('DrissionPage 未安装')
+    assert hasattr(Driver, 'set_callback')
+    import inspect
+    # event_handlers 是 set_callback 的实际存储/取值口（无独立 getter）
+    assert 'event_handlers' in inspect.getsource(Driver.set_callback)
 
 
 def test_browser_methods_exist():

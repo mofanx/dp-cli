@@ -462,10 +462,11 @@ def _maybe_arm_netlog() -> None:
     """
     try:
         from dp_cli.session import _PAGE_CACHE
-        from dp_cli.netlog import arm_netlog, _armed
+        from dp_cli.netlog import arm_netlog
+        # arm_netlog 内部比对 session→tab_id——latest_tab 换 tab
+        # （旧 driver WebSocket 已死）时自动重挂，无需在此预判
         for sess, page in list(_PAGE_CACHE.items()):
-            if sess not in _armed:
-                arm_netlog(page.latest_tab or page, sess)
+            arm_netlog(page.latest_tab or page, sess)
     except Exception:
         pass
 

@@ -1727,17 +1727,25 @@ def test_download_no_dl_mgr_graceful(runner, monkeypatch):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _EvtDriver:
-    """set_callback 注册时立即回放预置事件的假 driver。"""
+    """set_callback 注册时立即回放预置事件的假 driver。
+
+    event_handlers 与 callbacks 同一 dict——对齐 DrissionPage
+    Driver 真实语义（set_callback 写 event_handlers、falsy 即摘除），
+    har-dump 的快照/恢复路径走它。"""
 
     def __init__(self, events=None):
         self.callbacks = {}
+        self.event_handlers = self.callbacks
         self._events = events or {}
 
     def set_callback(self, event, cb):
-        self.callbacks[event] = cb
-        if cb and event in self._events:
-            for kw in self._events[event]:
-                cb(**kw)
+        if cb:
+            self.callbacks[event] = cb
+            if event in self._events:
+                for kw in self._events[event]:
+                    cb(**kw)
+        else:
+            self.callbacks.pop(event, None)
 
 
 class _HarPage:
@@ -1841,6 +1849,31 @@ def test_har_dump_url_filter(runner, monkeypatch):
         cli, ['har-dump', '--seconds', '0.05', '--filter', 'other'])
     assert result.exit_code == 0
     assert json.loads(result.output)['data']['entries'] == 0
+
+
+@pytest.mark.unit
+def test_har_dump_restores_netlog_callbacks(runner, monkeypatch):
+    """har-dump set_callback 是单槽覆盖：finally 恢复 netlog 已挂的
+    旧回调而非置 None（旧版会让 netlog 被动日志永久停写）。"""
+    import dp_cli.commands.network as net_mod
+    from dp_cli.main import cli
+
+    page = _HarPage(_HAR_EVENTS)
+    # 模拟 serve/daemon 托管时 netlog 已挂载的 3 个事件回调
+    netlog_cbs = {ev: (lambda **kw: None)
+                  for ev in ('Network.requestWillBeSent',
+                             'Network.responseReceived',
+                             'Network.loadingFailed')}
+    page.driver.event_handlers.update(netlog_cbs)
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    result = runner.invoke(cli, ['har-dump', '--seconds', '0.05'])
+    assert result.exit_code == 0, result.output
+    h = page.driver.event_handlers
+    # netlog 的 3 个旧回调原样回填
+    for ev, cb in netlog_cbs.items():
+        assert h[ev] is cb, ev
+    # har 自用 loadingFinished（netlog 不占用）恢复原状=摘除
+    assert 'Network.loadingFinished' not in h
 
 
 @pytest.mark.unit
@@ -3217,6 +3250,62 @@ def test_sniff_cookies_garbage():
 
 
 @pytest.mark.unit
+def test_sniff_cookies_httponly_prefix():
+    """curl 私有扩展 #HttpOnly_ 前缀行：剥前缀正常解析+置 httpOnly
+    （旧版按注释行整体静默丢弃）。"""
+    from dp_cli.commands.storage import _sniff_cookies
+    raw = ('# Netscape\n'
+           '#HttpOnly_.x.com\tTRUE\t/\tFALSE\t1700000000\tsid\tv1\n'
+           '.x.com\tTRUE\t/\tTRUE\t1700000000\tb\tv2\n')
+    r = _sniff_cookies(raw)
+    assert len(r) == 2
+    assert r[0]['name'] == 'sid' and r[0]['value'] == 'v1'
+    assert r[0]['httpOnly'] is True
+    assert r[0]['domain'] == '.x.com'
+    assert r[1]['name'] == 'b' and 'httpOnly' not in r[1]
+
+
+@pytest.mark.unit
+def test_sniff_cookies_malformed_line_reported():
+    """Netscape 分支字段不足的行不再静默 continue——记入 skipped。"""
+    from dp_cli.commands.storage import _sniff_cookies
+    skipped = []
+    r = _sniff_cookies('.x.com\tTRUE\t/\tTRUE\t1\ta\t1\nbad\tshort\n',
+                       skipped)
+    assert r[0]['name'] == 'a' and r[0]['secure'] is True
+    assert skipped == ['bad\tshort']
+
+
+@pytest.mark.unit
+def test_cookies_import_httponly_and_skipped(runner, monkeypatch,
+                                             tmp_path):
+    """cookies-import：#HttpOnly_ 行成功导入（httpOnly=True）+
+    解析失败行进 data.skipped_lines 而非静默丢。"""
+    import dp_cli.commands.storage as storage_mod
+    from dp_cli.main import cli
+
+    got = []
+
+    class _Set:
+        def cookies(self, c):
+            got.append(c)
+
+    class P:
+        set = _Set()
+
+    monkeypatch.setattr(storage_mod, '_get_page', lambda s: P())
+    f = tmp_path / 'c.txt'
+    f.write_text('#HttpOnly_.x.com\tTRUE\t/\tFALSE\t0\tsid\tv1\n'
+                 'broken\tline\n', encoding='utf-8')
+    r = runner.invoke(cli, ['cookies-import', str(f)])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['imported'] == 1
+    assert got[0]['name'] == 'sid' and got[0]['httpOnly'] is True
+    assert d['skipped_lines'] == ['broken\tline']
+
+
+@pytest.mark.unit
 def test_wrap_boundary_marks():
     from dp_cli.commands._utils import wrap_boundary
     w, n = wrap_boundary('evil content')
@@ -3297,6 +3386,74 @@ def test_netlog_ring_trims(tmp_path):
     nl._maybe_trim(log)
     lines = log.read_text().splitlines()
     assert len(lines) <= 500
+
+
+class _ArmPage:
+    """arm_netlog 用假 tab：tab_id + 记录 set_callback 的 driver。"""
+
+    def __init__(self, tab_id):
+        self.tab_id = tab_id
+        self.cbs = {}
+        self.calls = []
+
+        class _Drv:
+            def __init__(self, outer):
+                self._o = outer
+
+            def set_callback(self, ev, cb):
+                self._o.calls.append(ev)
+                self._o.cbs[ev] = cb
+
+        self.driver = _Drv(self)
+
+    def run_cdp(self, method, **kw):
+        return {}
+
+
+@pytest.mark.unit
+def test_arm_netlog_rearm_on_tab_change(tmp_path, monkeypatch):
+    """_armed 记 session→tab_id：latest_tab 换 tab（旧 driver WS 死）
+    后重挂，同 tab 幂等不重挂。"""
+    import dp_cli.netlog as nl
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'{s}.jsonl')
+    nl._armed.clear()
+    try:
+        p1, p2 = _ArmPage('t1'), _ArmPage('t2')
+        assert nl.arm_netlog(p1, 's') is True
+        assert len(p1.calls) == 3 and nl._armed['s'] == 't1'
+        # 同 tab 幂等：不重复注册
+        assert nl.arm_netlog(p1, 's') is True
+        assert len(p1.calls) == 3
+        # tab 变了 → 在新 driver 上重挂，_armed 跟到新 tab
+        assert nl.arm_netlog(p2, 's') is True
+        assert len(p2.calls) == 3 and nl._armed['s'] == 't2'
+    finally:
+        nl._armed.clear()
+
+
+@pytest.mark.unit
+def test_arm_netlog_disarm_on_write_failure(tmp_path, monkeypatch):
+    """回调写入路径异常 → 摘除 _armed，下次 _maybe_arm_netlog 可重挂。"""
+    import dp_cli.netlog as nl
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'{s}.jsonl')
+    nl._armed.clear()
+    try:
+        p = _ArmPage('t1')
+        assert nl.arm_netlog(p, 's') is True
+        assert nl._armed['s'] == 't1'
+
+        def boom(*a, **k):
+            raise RuntimeError('write failed')
+
+        monkeypatch.setattr(nl, '_append', boom)
+        p.cbs['Network.requestWillBeSent'](requestId='r', request={})
+        assert 's' not in nl._armed
+        # 摘除后同 tab 也能重挂
+        monkeypatch.setattr(nl, '_append', lambda *a, **k: None)
+        assert nl.arm_netlog(p, 's') is True
+        assert nl._armed['s'] == 't1'
+    finally:
+        nl._armed.clear()
 
 
 @pytest.mark.unit
@@ -4210,6 +4367,30 @@ def test_spawn_lock_eacces_contention(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         with dm._acquire_spawn_lock(missing, timeout=0.5):
             pass
+
+
+@pytest.mark.unit
+def test_spawn_lock_flock_nb_timeout(tmp_path, monkeypatch):
+    """POSIX _flock 对齐 _excl 超时语义：LOCK_NB+轮询到 deadline
+    抛 TimeoutError——旧版裸 LOCK_EX 阻塞无上限，锁持有者卡死会
+    拖死整个调用方（netlog _append 传 timeout=5 走这条路径）。"""
+    fcntl = pytest.importorskip('fcntl')
+    import dp_cli.daemon as dm
+    calls = []
+
+    def fake_flock(fd, flags):
+        calls.append(flags)
+        if flags & fcntl.LOCK_UN:
+            return
+        raise BlockingIOError(11, 'Resource temporarily unavailable')
+
+    monkeypatch.setattr(fcntl, 'flock', fake_flock)
+    with pytest.raises(TimeoutError):
+        with dm._acquire_spawn_lock(tmp_path / 's.lock', timeout=0.3):
+            pass
+    # 首调即 LOCK_EX|LOCK_NB 非阻塞获取；LOCK_UN 在 finally 兜底释放
+    assert calls[0] == fcntl.LOCK_EX | fcntl.LOCK_NB
+    assert calls[-1] == fcntl.LOCK_UN
 
 
 @pytest.mark.unit

@@ -349,9 +349,22 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
 
     @contextlib.contextmanager
     def _flock():
+        # LOCK_NB + 轮询到 deadline——裸 LOCK_EX 阻塞无上限，
+        # 锁持有者卡死会把整个调用方拖死（netlog _append 走这条
+        # 路径传 timeout=5）。对齐 _excl 分支的超时语义。
+        deadline = time.monotonic() + timeout
         f = path.open('w')
         try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            while True:
+                try:
+                    fcntl.flock(f.fileno(),
+                                fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(
+                            f'spawn lock 超时: {path}')
+                    time.sleep(0.05)
             yield
         finally:
             try:

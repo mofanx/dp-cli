@@ -549,10 +549,12 @@ def _handle_conn(conn, session):
             buf += chunk
         raw = buf.split(b'\n', 1)[0].strip()
         from dp_cli.commands.serve import (_parse_request, _accepts_session,
-                                           _FORBIDDEN, _GLOBAL_FLAGS)
+                                           _FORBIDDEN, _GLOBAL_FLAGS,
+                                           _record_session, _snap_state)
         from dp_cli.commands.batch import _invoke, _invalid
         argv, req_id, err = _parse_request(
             raw.decode('utf-8', errors='replace')) if raw else (None, None, '空行')
+        _rec = None         # (session, argv, result, code, pre_state)
         if err:
             code, result = _invalid(err)
         else:
@@ -573,11 +575,23 @@ def _handle_conn(conn, session):
                     _maybe_arm_netlog()
                 except Exception:
                     pass
+                _rs = _record_session(argv, session)
+                _pre = _snap_state(_rs)   # 执行前快照——未开录制 {} 零开销
                 code, result = _invoke(argv)
+                _rec = (_rs, argv, result, code, _pre)
         out = {'exit': code, 'result': result}
         if req_id is not None:
             out['id'] = req_id
         conn.sendall((json.dumps(out, ensure_ascii=False) + '\n').encode())
+        if _rec is not None:
+            # decide-train 录制旁路（响应已发出，不占应答延迟）——
+            # 同 serve 渠道判据；异常吞掉不炸串行主循环
+            try:
+                from dp_cli.decide_train import _record_decide_row
+                _record_decide_row(_rec[0], _rec[1], _rec[2],
+                                   code=_rec[3], pre_state=_rec[4])
+            except Exception as e:
+                debug('decide-train 录制异常（已忽略）', e)
         if argv and argv[0] == 'daemon-stop':
             raise SystemExit(0)
     except SystemExit:

@@ -25,7 +25,7 @@ from pathlib import Path
 
 import click
 
-from dp_cli.output import error, _write_out, _write_err, debug
+from dp_cli.output import error, _write_out, _write_err
 from dp_cli.commands.batch import _invoke, _invalid
 
 _FORBIDDEN = {'batch', 'exec', 'serve', 'sh'}
@@ -227,35 +227,11 @@ def _exec_line(line: str, session: str) -> None:
         _pre = _snap_state(record_session)   # 未开录制时 {} 零开销
         code, result = _invoke(argv)
         _write_out(json.dumps(result, ensure_ascii=False))
-        is_unsure = (cmd == 'decide' and len(argv) > 1
-                     and result.get('code') == 'AGENT_UNSURE')
-        if (code == 0 or is_unsure) and not _IN_SNAP:
-            from dp_cli.decide_train import record
-            from dp_cli.session import load_refs
-            if cmd == 'decide' and len(argv) > 1:
-                # 引擎建议只存 engine_ref，无执行证据不当 chosen_ref；
-                # AGENT_UNSURE 标 unsure 供人工核验，detail JSON 解析
-                # 失败保留 ref=None；refs 只读本 session 落盘数据
-                ref = None
-                if code == 0:
-                    ref = (result.get('data') or {}).get('ref')
-                else:
-                    try:
-                        ref = json.loads(result.get('detail') or '').get('ref')
-                    except Exception:
-                        pass
-                _ps = _snap_state(record_session)
-                record(record_session, argv,
-                       load_refs(record_session) or {},
-                       goal=argv[1], engine_ref=ref, unsure=is_unsure,
-                       **({'post_state': _ps} if _ps else {}),
-                       **({'pre_state': _pre} if _pre else {}))
-            else:
-                _ps = _snap_state(record_session)
-                record(record_session, argv,
-                       load_refs(record_session) or {},
-                       **({'post_state': _ps} if _ps else {}),
-                       **({'pre_state': _pre} if _pre else {}))
+        # 公共录制入口（decide-train）——判据/字段与 JSONL、
+        # daemon 渠道一致；异常内部自吞不炸 REPL
+        from dp_cli.decide_train import _record_decide_row
+        _record_decide_row(record_session, argv, result,
+                           code=code, pre_state=_pre)
         _refresh_refs(cmd, record_session)
     except KeyboardInterrupt:
         _write_err('（已中断）\n')
@@ -394,6 +370,8 @@ def _serve(session: str = None, tty: bool = False) -> int:
         import time as _t
         _t0 = _t.monotonic()
 
+        _pre = {}   # 执行前快照占位——err/ping/forbidden/畸形
+                    # timeout 路径无执行时机，保持 {} 不录
         argv, req_id, err = _parse_request(line)
         if err:
             code, result = _invalid(err)
@@ -465,47 +443,11 @@ def _serve(session: str = None, tty: bool = False) -> int:
         _emit(seq, req_id, code, result,
               int((_t.monotonic() - _t0) * 1000))
         record_session = _record_session(argv, session)
-        _pre = {}       # _serve 路径命令已执行完才到此处——
-                        # 无执行前时机，pre_state 只能由 REPL 路径采集
-        try:
-            # result 非 dict（异常路径产物）时 .get 会炸主循环——先守卫
-            is_unsure = (bool(argv) and argv[0] == 'decide'
-                         and len(argv) > 1
-                         and isinstance(result, dict)
-                         and result.get('code') == 'AGENT_UNSURE')
-            if (code == 0 or is_unsure) and not _IN_SNAP:
-                from dp_cli.decide_train import record
-                from dp_cli.session import load_refs
-                if argv[0] == 'decide' and len(argv) > 1:
-                    # 引擎建议只存 engine_ref（无执行证据不作
-                    # chosen_ref）；AGENT_UNSURE 标 unsure 供人工核验，
-                    # detail JSON 解析失败保留 ref=None，不污染输出
-                    ref = None
-                    if code == 0:
-                        _d = result.get('data') \
-                            if isinstance(result, dict) else None
-                        ref = (_d or {}).get('ref')
-                    else:
-                        try:
-                            ref = json.loads(
-                                result.get('detail') or '').get('ref')
-                        except Exception:
-                            pass
-                    _ps = _snap_state(record_session)
-                    record(record_session, argv,
-                           load_refs(record_session) or {},
-                           goal=argv[1], engine_ref=ref, unsure=is_unsure,
-                           **({'post_state': _ps} if _ps else {}),
-                           **({'pre_state': _pre} if _pre else {}))
-                else:
-                    _ps = _snap_state(record_session)
-                    record(record_session, argv,
-                           load_refs(record_session) or {},
-                           **({'post_state': _ps} if _ps else {}),
-                           **({'pre_state': _pre} if _pre else {}))
-        except Exception as e:
-            # 录制是旁路增强——异常不炸 _serve 主循环（REPL 路径对称）
-            debug('decide-train 录制异常（已忽略）', e)
+        # _pre 复用 _invoke 前（上方 else 分支）已采的快照——
+        # 不再后置清零，JSONL 渠道录制行携带 pre_state
+        from dp_cli.decide_train import _record_decide_row
+        _record_decide_row(record_session, argv, result,
+                           code=code, pre_state=_pre)
         _maybe_arm_netlog()
 
 

@@ -3,6 +3,7 @@
 Proofs are auditable receipts, not a substitute for reviewing whether the
 assertion actually expresses the user's goal.
 """
+import re
 from urllib.parse import urlsplit
 
 
@@ -94,7 +95,11 @@ def promote_recorded(row):
     else:
         return None        # 只有 url diff 是硬状态证据——
                            # sig 等包装字段不提升（保持原料）
-    if not isinstance(argv[1], str) or not argv[1].startswith('@e'):
+    # 双形态 ref——CLI 帮助允许 `click ref:5` 与 `click @e5`；提取
+    # 数字与提升 ref 比对，防 argv 目标与 chosen 正例错配
+    m = re.fullmatch(r'(?:@e|ref:)(\d+)',
+                     argv[1] if isinstance(argv[1], str) else '')
+    if not m or int(m.group(1)) != ref:
         return None
     chosen = next((o for o in refs if o.get('ref') == ref), None)
     if not chosen:

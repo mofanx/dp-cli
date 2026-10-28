@@ -75,6 +75,62 @@ def record(session: str, argv: list, refs: dict,
         pass          # 采集失败不阻塞主链路（录制非关键路径）
 
 
+def _record_decide_row(session: str, argv: list, result: dict,
+                       code: int = 0, pre_state: dict = None) -> None:
+    """三渠道公共录制入口——serve JSONL/REPL/daemon 共用同一判据。
+
+    enabled() 总闸：未开 DPX_RECORD_DECIDE 时连 load_refs 文件 IO
+    都不发生（daemon 热路径零额外成本）。code==0 或 decide 命令
+    AGENT_UNSURE 才录——失败/异常路径不录；decide 拆
+    goal/engine_ref/unsure；post_state 由 serve._snap_state
+    采执行后快照（惰性 import 防环）。一切异常吞掉走
+    debug——录制是旁路增强，绝不炸调用方主循环。
+    """
+    try:
+        if not enabled() or not argv:
+            return
+        from dp_cli.commands import serve as _sv     # 惰性——防 import 环
+        if _sv._IN_SNAP:                # _snap_state 内嵌 eval 不录
+            return
+        is_unsure = (argv[0] == 'decide' and len(argv) > 1
+                     and isinstance(result, dict)
+                     and result.get('code') == 'AGENT_UNSURE')
+        if not (code == 0 or is_unsure):
+            return
+        from dp_cli.session import load_refs
+        kw = {}
+        _ps = _sv._snap_state(session)                # 执行后快照
+        if _ps:
+            kw['post_state'] = _ps
+        if pre_state:
+            kw['pre_state'] = pre_state               # 执行前快照
+        if argv[0] == 'decide' and len(argv) > 1:
+            # 引擎建议只存 engine_ref（无执行证据不作 chosen_ref）；
+            # AGENT_UNSURE 标 unsure 供人工核验，detail JSON 解析
+            # 失败保留 ref=None，不污染输出
+            ref = None
+            if code == 0:
+                _d = result.get('data') if isinstance(result, dict) \
+                    else None
+                ref = (_d or {}).get('ref')
+            else:
+                try:
+                    ref = json.loads(
+                        result.get('detail') or '').get('ref')
+                except Exception:
+                    pass
+            record(session, argv, load_refs(session) or {},
+                   goal=argv[1], engine_ref=ref, unsure=is_unsure, **kw)
+        else:
+            record(session, argv, load_refs(session) or {}, **kw)
+    except Exception as e:
+        try:
+            from dp_cli.output import debug
+            debug('decide-train 录制异常（已忽略）', e)
+        except Exception:
+            pass
+
+
 def _render(o: dict) -> str:
     return f"{o['role']} {o['name']}".strip()
 
@@ -131,7 +187,9 @@ def export_pairs(path: Path = None) -> list:
             continue
         if d.get('goal'):           # decide 路径：goal=推理分布 query
             query = d['goal']
-            pos_ref = d.get('chosen_ref')
+            # 生产录制只写 engine_ref（serve/daemon 渠道无人工确认）——
+            # chosen_ref（人工覆盖）优先，engine_ref（引擎建议）兜底
+            pos_ref = d.get('chosen_ref') or d.get('engine_ref')
             src = 'decide'          # 弱标注——引擎 pick 非用户确认
         else:
             m = re.search(r'@e(\d+)', chosen)

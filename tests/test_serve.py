@@ -485,8 +485,14 @@ def test_merge_train_rejects_unsure_src(tmp_path):
 
 
 def _stub_record_and_refs(monkeypatch):
-    """mock record 收集调用 + mock load_refs 记录被查询的 session。"""
+    """mock record 收集调用 + mock load_refs 记录被查询的 session。
+
+    env 必开——_record_decide_row 有 enabled() 总闸（未开时连
+    load_refs IO 都不发生）；_snap_state 置 {} 防其内部 _invoke
+    吃掉 fake_results 序列。"""
     rec, refs = [], []
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    monkeypatch.setattr(serve_mod, '_snap_state', lambda s: {})
     monkeypatch.setattr('dp_cli.decide_train.record',
                         lambda *a, **k: rec.append((a, k)))
     monkeypatch.setattr('dp_cli.session.load_refs',
@@ -712,6 +718,8 @@ def test_exec_line_session_inject_S_joined(monkeypatch):
 def test_serve_record_block_fault_tolerant(monkeypatch):
     """P1-9：result 非 dict 不炸 .get；record 抛异常 debug 记录、
     主循环继续服务下一条。"""
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    monkeypatch.setattr(serve_mod, '_snap_state', lambda s: {})
     monkeypatch.setattr('dp_cli.decide_train.record',
                         lambda *a, **k: (_ for _ in ()).throw(
                             RuntimeError('boom')))
@@ -732,3 +740,43 @@ def test_serve_record_block_decide_nondict_result(monkeypatch):
         monkeypatch,
         fake_results=[(0, ['weird']), (0, {'status': 'ok'})])
     assert [l['exit'] for l in lines] == [0, 0]
+
+
+@pytest.mark.unit
+def test_serve_jsonl_record_carries_pre_state(monkeypatch):
+    """断点1：JSONL 渠道录制行带 pre_state——_invoke 前已采的
+    执行前快照不再被录制块处 _pre={} 丢弃（此前 serve 录制行
+    永缺 pre_state，promote_recorded 要求 pre+post 永不提升）。"""
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    monkeypatch.setattr(serve_mod, '_snap_state',
+                        lambda s: {'url': 'https://x/before'})
+    _invoke_serve(['{"cmd": "click @e1"}',
+                   '{"cmd": "decide 点登录"}'], monkeypatch,
+                  fake_results=[(0, {'status': 'ok'}),
+                                (0, {'status': 'ok',
+                                     'data': {'ref': 1}})])
+    assert len(rec) == 2
+    assert rec[0][1]['pre_state'] == {'url': 'https://x/before'}
+    assert rec[0][1]['post_state'] == {'url': 'https://x/before'}
+    assert rec[1][1]['pre_state'] == {'url': 'https://x/before'}
+    assert rec[1][1]['engine_ref'] == 1
+
+
+@pytest.mark.unit
+def test_serve_pre_state_untouched_on_blocked_paths(monkeypatch):
+    """断点1 边界：err/forbidden/畸形 timeout 路径不采执行前快照
+    ——_pre 保持 {} 且不向录制传 stale 上一命令快照。"""
+    rec, _ = _stub_record_and_refs(monkeypatch)
+    snaps = []
+    monkeypatch.setattr(serve_mod, '_snap_state',
+                        lambda s: snaps.append(s) or {'url': 'https://x/'})
+    _invoke_serve(['{"cmd": "serve"}',          # _FORBIDDEN → code=2
+                   'not-json',                  # parse err → code=2
+                   '{"cmd": "snapshot", "timeout_ms": "x"}',
+                   '{"cmd": "click @e1"}'], monkeypatch,
+                  fake_results=[(0, {'status': 'ok'})])
+    # 前三条无执行时机——_snap_state 只为末条真命令采集（pre+post 各一）
+    assert len(snaps) == 2
+    assert len(rec) == 1
+    assert rec[0][0][1][0] == 'click'
+    assert rec[0][1]['pre_state'] == {'url': 'https://x/'}

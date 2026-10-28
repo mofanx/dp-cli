@@ -167,7 +167,7 @@ def _unix_alive(session: str) -> bool:
 def _spawn_fresh(session: str) -> bool:
     """spawn 窗口兜底（POSIX）：.sock 已 bind 但 meta 未落盘
     （listen→meta write 间隙）且探活刚被拒绝——sock mtime 在
-    _SPAWN_WAIT 内视为活，防 _clean_stale 误删新 daemon 标记。"""
+    _SPAWN_WAIT 内视为活，防 _cleanup_stale 误删新 daemon 标记。"""
     if _meta_path(session).exists():
         return False                       # meta 在则探活已裁决
     try:
@@ -177,33 +177,65 @@ def _spawn_fresh(session: str) -> bool:
         return False
 
 
+def _read_cmdline(pid: int):
+    """读进程 cmdline：/proc/<pid>/cmdline → ps -o command= 回退。
+
+    返回值三态语义：str（含空串）= pid 确有进程在跑且 cmdline 可读；
+    None = 进程不存在或 cmdline 不可考（Windows 无 /proc 与 ps）。
+    与 _pid_is_daemon/_pid_cmdline_is_bridge 的 False-on-unreadable
+    判据不同——调用方需要区分"确认外来进程"与"读不出"。
+    """
+    try:
+        p = Path(f'/proc/{pid}/cmdline')
+        if p.is_file():
+            return p.read_bytes().replace(b'\x00', b' ') \
+                .decode('utf-8', 'replace')
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(['ps', '-p', str(pid), '-o', 'command='],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            return r.stdout or ''
+    except Exception:
+        pass
+    return None
+
+
 def _pid_is_daemon(pid: int) -> bool:
     """kill 前 pid 身份校验（POSIX）：cmdline 须含 'dp_cli.daemon'——
     meta 残留 pid 被 OS 复用时防误杀无关进程（bridge_manager
     ._pid_cmdline_is_bridge 同款）。/proc 读不到退化 ps；都读不到
     返回 False（宁可不杀只清标记）。Windows 不调用本函数——
     taskkill 分支保持原样。"""
-    cmdline = ''
-    try:
-        p = Path(f'/proc/{pid}/cmdline')
-        if p.is_file():
-            cmdline = p.read_bytes().replace(b'\x00', b' ') \
-                .decode('utf-8', 'replace')
-    except Exception:
-        pass
-    if not cmdline:
-        try:
-            r = subprocess.run(['ps', '-p', str(pid), '-o', 'command='],
-                               capture_output=True, text=True, timeout=5)
-            if r.returncode == 0:
-                cmdline = r.stdout or ''
-        except Exception:
-            pass
-    return 'dp_cli.daemon' in cmdline
+    return 'dp_cli.daemon' in (_read_cmdline(pid) or '')
 
 
-def _clean_stale(session: str) -> None:
-    """stale 标记清理——meta/sock 残留删干净防超时。"""
+def _lock_pid_occupied(pid: int) -> bool:
+    """stale 锁属主占用判定（_acquire_spawn_lock._excl 回收闸）。
+
+    _pid_alive 单源有假死面——POSIX 跨 uid 进程 os.kill(pid,0) 抛
+    PermissionError→False、Windows tasklist 失败兜底也 False，
+    直接 unlink 等于偷活锁破坏互斥（双 spawn/双授权框坏状态）。
+    真回收前用 cmdline 存在性复核：/proc 或 ps 任一能读到该 pid
+    进程信息即"占用中"（含 pid 复用外来进程——记录 pid 确有进程
+    在跑，无法证实属主已死）→ 保守不回收，由等待方超时兜底；
+    两源皆死才确认属主已死可安全回收。"""
+    if _pid_alive(pid):
+        return True
+    return _read_cmdline(pid) is not None
+
+
+def _cleanup_stale(session: str) -> None:
+    """stale 标记统一清理——{session}.sock + {session}.session(meta)
+    + _READY_CACHE 就绪缓存项三件套一次清干净，防残留死标记让下条
+    命令白等探活超时。所有 stale 判定路径（_daemon_ready/_status/
+    daemon-start/spawn 前/daemon-stop）统一走本函数——不对称清理
+    （只清 sock 漏 meta）会留孤儿 meta，误导 _version_probe/
+    _connect_endpoint 读到死 pid/死端口。
+
+    {session}.lock 刻意不清：flock 绑定打开文件描述，unlink 后新
+    open 拿到的是新 inode——等待者会拿到"另一把锁"失去互斥。"""
     _READY_CACHE.pop(session, None)      # 探活缓存同步失效
     for p in (_meta_path(session), _sock_path(session)):
         try:
@@ -212,23 +244,44 @@ def _clean_stale(session: str) -> None:
             pass
 
 
-_READY_CACHE = {}   # session → (ts, alive)——Windows 探活 2s TTL
+_clean_stale = _cleanup_stale   # 兼容别名（旧调用点/外部引用）
+
+
+_READY_CACHE = {}   # session → (ts, alive, 标记指纹)——探活 2s TTL
+
+
+def _mark_fingerprint(session: str):
+    """就绪缓存指纹：(meta, sock) mtime_ns 对——标记文件被外部
+    改/删后指纹即变，命中判据含指纹防按名缓存脏读（session 文件
+    被改写/删除后仍返回旧探活结果的缺陷）。缺失项记 None。"""
+    def _mt(p):
+        try:
+            return p.stat().st_mtime_ns
+        except OSError:
+            return None
+    return (_mt(_meta_path(session)), _mt(_sock_path(session)))
 
 
 def _daemon_ready(session: str) -> bool:
     """daemon 就绪标记+探活——标记文件存在只是前提，connect_ex/
     meta pid 任一存活才算活；死标记自动清理（防每条命令先吃超时）。
     探活 2s TTL 缓存（双平台统一）：try_daemon 一次调用链探两次，
-    TTL 复用省一倍 connect_ex；POSIX spawn 窗口（sock 已 bind、
+    TTL 复用省一倍 connect_ex；缓存命中须指纹一致——标记文件
+    外部改/删即失效重查。POSIX spawn 窗口（sock 已 bind、
     meta 未落盘）由 _spawn_fresh 的 mtime 新鲜度判活防误清。"""
     if _HAS_UNIX_SOCK:
         if not _sock_path(session).exists():
+            if _meta_path(session).exists():
+                # meta 只在 bind 后写——sock 不在=死标记孤儿 meta
+                _cleanup_stale(session)
             return False
     elif not _meta_path(session).exists():
         return False
     now = time.monotonic()
+    fp = _mark_fingerprint(session)
     hit = _READY_CACHE.get(session)
-    if hit and now - hit[0] < 2.0:
+    if (isinstance(hit, tuple) and len(hit) >= 3
+            and now - hit[0] < 2.0 and hit[2] == fp):
         return hit[1]
     if _HAS_UNIX_SOCK:
         ok_ = (_unix_alive(session) or _meta_pid_alive(session)
@@ -236,8 +289,8 @@ def _daemon_ready(session: str) -> bool:
     else:
         ok_ = _tcp_alive(session) or _meta_pid_alive(session)
     if not ok_:
-        _clean_stale(session)          # 死标记回收
-    _READY_CACHE[session] = (now, ok_)
+        _cleanup_stale(session)          # 死标记回收
+    _READY_CACHE[session] = (now, ok_, fp)
     return ok_
 
 
@@ -413,7 +466,10 @@ def _acquire_spawn_lock(path: Path, timeout: float = 10.0):
                     fresh = False
                 alive = fresh
             else:
-                alive = _pid_alive(lp)
+                # 属主判定加 cmdline 存在性复核——_pid_alive 假死
+                # （跨 uid EPERM/tasklist 失败）或 pid 复用外来进程
+                # 占用时无法证实属主已死，保守不回收防偷活锁
+                alive = _lock_pid_occupied(lp)
             if not alive:
                 try:
                     path.unlink()
@@ -666,11 +722,7 @@ def run_daemon(session: str):
     _DIR.mkdir(parents=True, exist_ok=True)
     sock_path = _sock_path(session)
     meta_path = _meta_path(session)
-    for p in (sock_path, meta_path):
-        try:
-            p.unlink()
-        except OSError:
-            pass
+    _cleanup_stale(session)      # 统一清理：sock+meta+缓存三件套
     if _HAS_UNIX_SOCK:
         srv = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
         srv.bind(str(sock_path))
@@ -719,11 +771,7 @@ def run_daemon(session: str):
                 pass
     finally:
         srv.close()
-        for p in (sock_path, meta_path):
-            try:
-                p.unlink()
-            except OSError:
-                pass
+        _cleanup_stale(session)  # 退出统一清理三件套
     return 0
 
 
@@ -742,13 +790,17 @@ def _status(session: str):
         pass
     pid = meta.get('pid')
     if _HAS_UNIX_SOCK:
-        alive = _pid_alive(int(pid)) if pid else False
+        # 对齐 _daemon_ready 探活三重——sock 可达/pid 活/spawn 窗口
+        # （meta 未落盘+sock 新鲜）任一即活，防误判杀新 daemon
+        alive = (_unix_alive(session)
+                 or (_pid_alive(int(pid)) if pid else False)
+                 or _spawn_fresh(session))
     else:
         # TCP 平台：端口可连或 pid 存活任一即活
         alive = _tcp_alive(session) or \
             (_pid_alive(int(pid)) if pid else False)
-        if not alive:
-            _clean_stale(session)
+    if not alive:
+        _cleanup_stale(session)      # 双平台死标记统一回收
     ok({'running': alive, 'session': session, 'pid': pid,
         'socket': str(sock_p), 'started_at': meta.get('started_at'),
         'version': meta.get('version'),
@@ -761,7 +813,10 @@ def register(cli):
     @session_option
     def daemon_start(session):
         """启动 session 常驻 daemon（后续 dpx 命令走 socket 免启动税）。"""
-        if _sock_path(session).exists():
+        # 探活判据不凭标记文件存在——死 sock/meta 残留会误报
+        # "已在运行"把用户卡死在只能手动 rm；_daemon_ready 内部
+        # 已做探活+stale 回收（spawn 窗口同样豁免）
+        if _daemon_ready(session):
             ok({'session': session}, msg='daemon 已在运行')
             return
         if _spawn_daemon(session):
@@ -790,7 +845,7 @@ def register(cli):
         _READY_CACHE.pop(session, None)
         r = _send_recv(session, {'argv': ['daemon-stop']}, 10)
         if isinstance(r, dict):
-            _clean_stale(session)
+            _cleanup_stale(session)
             ok({'stopped': True}, msg='daemon 已停止')
             return
         try:
@@ -806,14 +861,14 @@ def register(cli):
                 os.kill(int(pid), 15)
             else:
                 # pid 缺失/复用/cmdline 不可考——只清标记不杀
-                _clean_stale(session)
+                _cleanup_stale(session)
                 ok({'stopped': True, 'pid': pid},
                    msg='meta pid 非 dp_cli.daemon（疑复用），已清理标记')
                 return
-            _clean_stale(session)
+            _cleanup_stale(session)
             ok({'stopped': True, 'pid': pid}, msg='daemon 已 SIGTERM')
         except Exception:
-            _clean_stale(session)
+            _cleanup_stale(session)
             ok({'stopped': True}, msg='清理了失效标记')
 
 

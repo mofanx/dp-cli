@@ -402,3 +402,66 @@ def test_start_bridge_success_registers_wait_thread(monkeypatch, tmp_path):
     pid, port = bridge_manager.start_bridge(tmp_path, ready_timeout=5)
     assert (pid, port) == (4242, 4567)
     assert proc.wait in started_targets
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2：bridge registry 无 TTL——读侧惰性清理
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_registry_iter_entries_lazy_prune_dead_pid(tmp_path, monkeypatch):
+    """P2：stale bridge 条目堆积——iter_entries 读侧过滤死 pid/
+    残缺项并惰性 unlink 回写清理；活 pid 保留。"""
+    import json
+    from dp_cli import bridge_registry as reg
+    monkeypatch.setattr(reg, '_bridges_dir', lambda: tmp_path)
+    reg.register_bridge('/p/a', pid=99999991, port=40111, real_port=1)
+    reg.register_bridge('/p/b', pid=99999992, port=40222, real_port=2)
+    (tmp_path / 'orphan.json').write_text(
+        json.dumps({'port': 9}), encoding='utf-8')      # 无 pid 残缺项
+    # mock _pid_alive：a 死 b 活
+    monkeypatch.setattr(reg, '_pid_alive',
+                        lambda p: int(p) != 99999991)
+    # cmdline 不可考 → 活 pid 保守保留
+    monkeypatch.setattr('dp_cli.daemon._read_cmdline', lambda p: None)
+    entries = reg.iter_entries()
+    assert [e.get('pid') for e in entries] == [99999992]
+    assert not reg._entry_path('/p/a').exists()         # 死件惰性清除
+    assert not (tmp_path / 'orphan.json').exists()
+    assert reg._entry_path('/p/b').exists()
+
+
+def test_registry_iter_entries_prunes_pid_reuse(tmp_path, monkeypatch):
+    """P2：pid 复用——pid 活但 cmdline 可读且确认非 dp_cli bridge
+    → 按 stale 清；cmdline 读不出的活 pid 保守保留。"""
+    import os
+    if os.name != 'posix':
+        pytest.skip('POSIX cmdline 分支')
+    from dp_cli import bridge_registry as reg
+    import dp_cli.daemon as dm
+    monkeypatch.setattr(reg, '_bridges_dir', lambda: tmp_path)
+    reg.register_bridge('/p/c', pid=8888, port=1, real_port=1)
+    reg.register_bridge('/p/d', pid=8889, port=2, real_port=2)
+    monkeypatch.setattr(reg, '_pid_alive', lambda p: True)
+    monkeypatch.setattr(dm, '_read_cmdline',
+                        lambda p: ('/usr/sbin/sshd -D' if p == 8888
+                                   else None))         # d: 读不出→保留
+    entries = reg.iter_entries()
+    assert [e.get('pid') for e in entries] == [8889]
+    assert not reg._entry_path('/p/c').exists()         # 复用 stale 已清
+    assert reg._entry_path('/p/d').exists()
+
+
+def test_registry_iter_entries_probe_failure_conservative(
+        tmp_path, monkeypatch):
+    """P2：探活本身异常（is_bridge_alive 抛错）→ _pid_alive
+    保守 True 不误清活条目。"""
+    from dp_cli import bridge_registry as reg
+    monkeypatch.setattr(reg, '_bridges_dir', lambda: tmp_path)
+    reg.register_bridge('/p/e', pid=7777, port=1, real_port=1)
+    monkeypatch.setattr(
+        'dp_cli.bridge_manager.is_bridge_alive',
+        lambda p: (_ for _ in ()).throw(RuntimeError('x')))
+    monkeypatch.setattr('dp_cli.daemon._read_cmdline', lambda p: None)
+    entries = reg.iter_entries()
+    assert [e.get('pid') for e in entries] == [7777]
+    assert reg._entry_path('/p/e').exists()

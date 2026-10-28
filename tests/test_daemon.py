@@ -430,3 +430,174 @@ def test_handle_conn_record_fault_tolerant(monkeypatch):
     daemon._handle_conn(c, 't')
     assert json.loads(c.sent.split(b'\n')[0])['exit'] == 0
     assert refs_calls == [] and rec == []
+
+
+# ── P2：stale-marker / 状态残留族 ──────────────────────────
+
+def test_cleanup_stale_removes_sock_meta_cache(monkeypatch, tmp_path):
+    """P2-1：_cleanup_stale 三件套——sock+meta 双文件 unlink +
+    _READY_CACHE 就绪缓存项同步失效。"""
+    import json
+    from dp_cli import daemon
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    sock.write_text('')
+    meta.write_text(json.dumps({'pid': 1}))
+    daemon._READY_CACHE['t'] = (0, True, None)
+    daemon._cleanup_stale('t')
+    assert not sock.exists() and not meta.exists()
+    assert 't' not in daemon._READY_CACHE
+
+
+def test_daemon_ready_orphan_meta_cleaned(monkeypatch, tmp_path):
+    """P2-1：POSIX sock 缺失但 meta 残留——孤儿 meta 顺手回收
+    （meta 只在 bind 后落盘，sock 不在=死标记）。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    meta.write_text(json.dumps({'pid': 12345}))
+    assert daemon._daemon_ready('t') is False
+    assert not meta.exists()                    # 孤儿 meta 被清
+
+
+def test_daemon_ready_cache_fingerprint_invalidation(
+        monkeypatch, tmp_path):
+    """P2-2：_READY_CACHE 脏读防护——标记文件 mtime 指纹入缓存，
+    外部改/删 session 标记文件即令缓存失效重查。"""
+    import json, os
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    sock.write_text('')
+    meta.write_text(json.dumps({'pid': 1}))
+    calls = []
+    monkeypatch.setattr(daemon, '_unix_alive',
+                        lambda s: calls.append(1) or True)
+    assert daemon._daemon_ready('t') is True
+    assert daemon._daemon_ready('t') is True
+    assert len(calls) == 1                      # TTL 内指纹一致 → 命中
+    # 外部改写 meta → mtime_ns 变 → 指纹不符 → 重查
+    st = meta.stat()
+    os.utime(meta, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))
+    assert daemon._daemon_ready('t') is True
+    assert len(calls) == 2
+    # 外部删除 meta → 指纹 (None, sock_ns) ≠ 缓存 → 重查
+    meta.unlink()
+    assert daemon._daemon_ready('t') is True
+    assert len(calls) == 3
+
+
+def test_status_posix_dead_marker_cleanup(monkeypatch, tmp_path, capsys):
+    """P2-1：_status POSIX 分支死标记统一回收（原只 TCP 分支清）；
+    spawn 窗口（meta 无+sock 新）由 _spawn_fresh 豁免不误清。"""
+    import json
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    sock, meta = _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    sock.write_text('')
+    meta.write_text(json.dumps({'pid': 99999}))
+    monkeypatch.setattr(daemon, '_unix_alive', lambda s: False)
+    monkeypatch.setattr(daemon, '_pid_alive', lambda p: False)
+    daemon._status('t')
+    assert not sock.exists() and not meta.exists()
+    out = json.loads(capsys.readouterr().out)
+    assert out['data']['running'] is False
+    # spawn 窗口豁免：meta 无+sock 新鲜 → 不判死不清 sock
+    sock.write_text('')
+    daemon._status('t')
+    out2 = json.loads(capsys.readouterr().out)
+    assert out2['data']['running'] is True
+    assert sock.exists()
+
+
+def test_daemon_start_stale_marker_respawns(monkeypatch, tmp_path):
+    """P2-1：daemon-start 不再凭 sock.exists() 判活——stale 标记
+    走 _daemon_ready 探活+回收后 spawn；活 daemon 才报已在运行。"""
+    import click
+    from click.testing import CliRunner
+    from dp_cli import daemon
+    _bind_tmp_marks(monkeypatch, daemon, tmp_path)
+    grp = click.Group()
+    daemon.register(grp)
+    spawns = []
+    monkeypatch.setattr(daemon, '_spawn_daemon',
+                        lambda s: spawns.append(s) or True)
+    # 死标记 → _daemon_ready False → 走 spawn 不误报已在运行
+    monkeypatch.setattr(daemon, '_daemon_ready', lambda s: False)
+    r = CliRunner().invoke(grp, ['daemon-start', '-S', 't'])
+    assert r.exit_code == 0, r.output
+    assert spawns == ['t'] and '已启动' in r.output
+    # 活 daemon → 已在运行，不重复 spawn
+    spawns.clear()
+    monkeypatch.setattr(daemon, '_daemon_ready', lambda s: True)
+    r = CliRunner().invoke(grp, ['daemon-start', '-S', 't'])
+    assert '已在运行' in r.output and spawns == []
+
+
+def _force_excl_lock(monkeypatch):
+    """强制 _acquire_spawn_lock 走 Windows O_EXCL 降级分支。"""
+    import builtins
+    real_import = builtins.__import__
+
+    def no_fcntl(name, *a, **k):
+        if name == 'fcntl':
+            raise ImportError('No module named fcntl')
+        return real_import(name, *a, **k)
+    monkeypatch.setattr(builtins, '__import__', no_fcntl)
+
+
+def test_spawn_lock_excl_owner_cmdline_rescue(monkeypatch, tmp_path):
+    """P2-4：_excl stale 属主双源核验——_pid_alive 假死（跨 uid
+    EPERM/tasklist 失败）但 cmdline 能读到该 pid → 不确认不回收，
+    等满超时也不偷活锁。"""
+    import os, time
+    from dp_cli import daemon
+    _force_excl_lock(monkeypatch)
+    lp = tmp_path / 's.lock'
+    lp.write_text('4321')
+    os.utime(str(lp), (time.time() - 10, time.time() - 10))
+    monkeypatch.setattr(daemon, '_pid_alive', lambda p: False)
+    monkeypatch.setattr(daemon, '_read_cmdline',
+                        lambda p: 'python dpx snapshot')   # pid 确有进程
+    with pytest.raises(TimeoutError):
+        with daemon._acquire_spawn_lock(lp, timeout=0.3):
+            pass
+    assert lp.exists()                          # 未被误回收
+    assert lp.read_text() == '4321'
+
+
+def test_spawn_lock_excl_foreign_pid_no_steal(monkeypatch, tmp_path):
+    """P2-4：记录 pid 存活但 cmdline 非属主形态（pid 复用外来
+    进程）→ 保守不偷锁——误回收破坏互斥的代价大于等待超时。"""
+    import os, time
+    from dp_cli import daemon
+    _force_excl_lock(monkeypatch)
+    lp = tmp_path / 's.lock'
+    lp.write_text('4321')
+    os.utime(str(lp), (time.time() - 10, time.time() - 10))
+    monkeypatch.setattr(daemon, '_pid_alive', lambda p: True)
+    monkeypatch.setattr(daemon, '_read_cmdline',
+                        lambda p: '/usr/sbin/sshd -D')     # 非 daemon 属主
+    with pytest.raises(TimeoutError):
+        with daemon._acquire_spawn_lock(lp, timeout=0.3):
+            pass
+    assert lp.exists()
+
+
+def test_spawn_lock_excl_confirmed_dead_reclaims(monkeypatch, tmp_path):
+    """P2-4：pid 无+ cmdline 读不出（两源皆死）→ 确认属主已死，
+    stale 锁回收正常获取。"""
+    import os, time
+    from dp_cli import daemon
+    _force_excl_lock(monkeypatch)
+    lp = tmp_path / 's.lock'
+    lp.write_text('4321')
+    os.utime(str(lp), (time.time() - 10, time.time() - 10))
+    monkeypatch.setattr(daemon, '_pid_alive', lambda p: False)
+    monkeypatch.setattr(daemon, '_read_cmdline', lambda p: None)
+    with daemon._acquire_spawn_lock(lp, timeout=1):
+        pass
+    assert not lp.exists()                      # 获取+释放后无残留

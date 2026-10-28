@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """存储管理命令: cookie-* / localstorage-* / sessionstorage-*"""
 import json
+import os
 from pathlib import Path
 
 import click
@@ -328,7 +329,10 @@ def register(cli):
                     ]))
                 content = '\n'.join(lines) + '\n'
             if output:
-                Path(output).write_text(content, encoding='utf-8')
+                p = Path(output)
+                tmp = p.with_name(p.name + '.tmp')
+                tmp.write_text(content, encoding='utf-8')
+                os.replace(tmp, p)
                 ok({'saved_to': output, 'count': len(items)})
             else:
                 ok({'content': content, 'count': len(items)})

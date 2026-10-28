@@ -8,11 +8,11 @@
 
 | 文件 | 缺陷 | 建议修法 | 严重度理由 |
 |---|---|---|---|
-| `daemon.py` meta 文件族（:207/:790 回收点） | daemon 异常退出后 `.meta.json`/`.sock` 残留，下次 spawn 需 stale 回收路径；部分分支只清 sock 不清 meta | 启动侧统一 `_cleanup_stale()`：meta pid `_pid_alive` 双源核验后再判定，跨平台一致 | P2——已有回收主路径，残留只在异常 kill 场景 |
-| `daemon.py:215` `_READY_CACHE` | session 就绪缓存按名存——session 文件被外部改/删后缓存脏读 | 就绪缓存加 mtime/inode 指纹，变更即失效 | P2——概率低，改会话文件需显式操作 |
+| `daemon.py` meta 文件族（:207/:790 回收点） | daemon 异常退出后 `.meta.json`/`.sock` 残留，下次 spawn 需 stale 回收路径；部分分支只清 sock 不清 meta | 启动侧统一 `_cleanup_stale()`：meta pid `_pid_alive` 双源核验后再判定，跨平台一致 | P2——已有回收主路径，残留只在异常 kill 场景 ✅已修(commit待) |
+| `daemon.py:215` `_READY_CACHE` | session 就绪缓存按名存——session 文件被外部改/删后缓存脏读 | 就绪缓存加 mtime/inode 指纹，变更即失效 | P2——概率低，改会话文件需显式操作 ✅已修(commit待) |
 | `serve.py` 会话路由 | `record_session` 变量在分支间传递，错误会话名路径下有执行残留态可能 | 请求入口统一会话校验前置，非法名 fast-fail | P1 已修主线；残留为边角分支 |
 | `netlog.py:18` `_armed` | session→tab_id 跟随已修；残留：session 删除后 `_armed` 键泄漏（长驻进程内存） | `_armed` 定期按活跃 session 集收编 | P2——内存微漏，重启即清 |
-| `bridge_manager.py` registry | bridge registry json 已原子写；残留：stale bridge 条目无 TTL 清理 | registry 读侧过滤 `_pid_alive==False` 条目惰性清 | P2——文件会涨但不影响正确性 |
+| `bridge_manager.py` registry | bridge registry json 已原子写；残留：stale bridge 条目无 TTL 清理 | registry 读侧过滤 `_pid_alive==False` 条目惰性清 | P2——文件会涨但不影响正确性 ✅已修(commit待) |
 
 ## 二、竞态/并发（~8 条）
 
@@ -20,7 +20,7 @@
 |---|---|---|---|
 | `tab` 命令族 | tab select/close 与 navigate 并发时 refs 缓存失效时序窗口 | 导航类操作已清缓存（契约内）；窗口期并发双命令属使用侧风险 | P2——CLI 串行使用模型下几乎不触发 |
 | `netlog._append` | 跨进程文件锁已修；残留：同 session 多 serve 实例写竞争边界 | 锁粒度已够；append+trim 同临界区已闭环 | 记录项——主路径已修 |
-| `daemon._acquire_spawn_lock`（daemon.py:352-361 LOCK_NB 已修，残留为 stale 锁属主） | flock→LOCK_NB 轮询已修；残留：Windows O_EXCL 路径 stale 锁回收依赖 `_pid_alive`，pid 复用边缘 | cmdline 校验同款套到锁文件属主判定 | P2——pid 复用低概率 |
+| `daemon._acquire_spawn_lock`（daemon.py:352-361 LOCK_NB 已修，残留为 stale 锁属主） | flock→LOCK_NB 轮询已修；残留：Windows O_EXCL 路径 stale 锁回收依赖 `_pid_alive`，pid 复用边缘 | cmdline 校验同款套到锁文件属主判定 | P2——pid 复用低概率 ✅已修(commit待) |
 | `session.py` refs 缓存（设计边界已文档化） | DOM 内变更不清缓存是设计边界；残留：eval 侧手动 DOM 改动（JS remove）不触发失效 | 文档化边界；或 eval 后可选 sig 校验 | P2——设计取舍，文档已述 |
 | `storage.py` cookie 读写 | cookie 文件读改写非原子（多进程并发写丢行） | 同 session 原子写模式套 cookie 文件 | P2——CLI 并发写同 cookie 文件场景少见 |
 

@@ -264,12 +264,55 @@ def _note_session(entry: dict, session_name: str | None) -> None:
         debug('更新 bridge 注册项 sessions 失败（忽略）', e)
 
 
+def _pid_alive(pid) -> bool:
+    """读侧惰性清理用 pid 探活——延迟 import 防环（registry 被
+    session 反向引用）；探测异常保守 True（不误清活条目）。"""
+    try:
+        from dp_cli.bridge_manager import is_bridge_alive
+        return is_bridge_alive(int(pid))
+    except Exception:
+        return True
+
+
+def _entry_stale(entry: dict) -> bool:
+    """注册项 stale 判据（读侧惰性清）：无 pid 残缺项 / pid 死 →
+    stale；POSIX 上加 cmdline 复核——pid 活但 cmdline 可读且确认
+    非 dp_cli bridge 进程 → pid 复用 stale；读不出保守保留
+    （Windows 无可靠 cmdline 探针，只看 pid 存活，交给
+    find_bridge 的端口/healthz 闸兜底）。"""
+    pid = entry.get('pid')
+    if not pid:
+        return True
+    if not _pid_alive(pid):
+        return True
+    if os.name == 'posix':
+        try:
+            from dp_cli.daemon import _read_cmdline
+            cmd = _read_cmdline(int(pid))
+        except Exception:
+            cmd = None
+        if cmd is not None and not ('dp_cli' in cmd
+                                    and 'bridge' in cmd):
+            return True                  # 确认外来复用 → stale
+    return False
+
+
 def iter_entries() -> list[dict]:
-    """全部注册项（含 stale），供 `dpx bridge list/stop` 用。"""
+    """全部注册项，供 `dpx bridge list/stop` 用。
+
+    惰性 stale 清理：注册项无 TTL——bridge 异常退出后死 pid 条目
+    会永久堆积，读侧顺手过滤+unlink 回收；探测失败保守保留。"""
     out = []
     for f in sorted(_bridges_dir().glob('*.json')):
         data = _read_json(f)
-        if data is not None:
-            data['_file'] = f.name
-            out.append(data)
+        if data is None:
+            continue
+        if _entry_stale(data):
+            try:
+                f.unlink()
+            except OSError as e:
+                debug(f'清理 stale bridge 注册项 {f.name} 失败', e)
+            continue
+        data['_file'] = f.name
+        out.append(data)
     return out

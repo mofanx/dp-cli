@@ -97,6 +97,31 @@ def test_blocked_real_wall_still_hits():
     assert r and r['action'] == 'blocked'
 
 
+def test_blocked_content_words_not_wall():
+    """资讯站候选名/标题含'机器人/拦截/无人机/盾'类内容词不判 blocked
+    ——P2 backlog：cnblogs'人形机器人'标题致全页短路、ithome 11 goals
+    零 reranker 产出、连 hard_case 采集都被掐掉。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'link', 'name': '人形机器人最新进展'},
+                      {'ref': 2, 'role': 'link', 'name': '无人机拦截系统'},
+                      {'ref': 3, 'role': 'link', 'name': '矛盾文学奖揭晓'}],
+          'state': {'title': '科技资讯 - 首页', 'url': 'https://news/x'},
+          'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st, '点开第一条新闻') is not None or \
+        _meta_decide(st, '点开第一条新闻').get('action') != 'blocked'
+
+
+def test_blocked_captcha_element_still_hits():
+    """候选名为真挑战控件（人机验证/安全验证）仍判 blocked。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'checkbox', 'name': '人机验证'},
+                      {'ref': 2, 'role': 'button', 'name': '继续'}],
+          'state': {'title': 'Checkout', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '继续')
+    assert r and r['action'] == 'blocked'
+
+
 # ── 词界/元素覆盖/序数选项/action 重判（eval-120 n08/c10/m26/m12 归因）──
 
 def test_kw_hit_ascii_word_boundary():

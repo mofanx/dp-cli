@@ -1,0 +1,4956 @@
+[
+ {
+  "goal": "点击 Sign in 登录",
+  "url": "https://github.com/",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "Sign in",
+    "role": "link",
+    "score": 0.0275
+   },
+   {
+    "ref": 7,
+    "name": "Sign up for GitHub",
+    "role": "button",
+    "score": 0.0101
+   },
+   {
+    "ref": 44,
+    "name": "Sign up for GitHub",
+    "role": "button",
+    "score": 0.0101
+   }
+  ],
+  "conf": 0.0275,
+  "engine_ref": 4
+ },
+ {
+  "goal": "注册 GitHub 账号",
+  "url": "https://github.com/",
+  "candidates": [
+   {
+    "ref": 47,
+    "name": "GitHub",
+    "role": "link",
+    "score": 0.0274
+   },
+   {
+    "ref": 7,
+    "name": "Sign up for GitHub",
+    "role": "button",
+    "score": 0.0102
+   },
+   {
+    "ref": 44,
+    "name": "Sign up for GitHub",
+    "role": "button",
+    "score": 0.0102
+   }
+  ],
+  "conf": 0.0274,
+  "engine_ref": 47
+ },
+ {
+  "goal": "切换到密码登录",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "密码登录",
+    "role": "button",
+    "score": 0.0649
+   },
+   {
+    "ref": 4,
+    "name": "验证码登录",
+    "role": "button",
+    "score": 0.0252
+   },
+   {
+    "ref": 12,
+    "name": "忘记密码",
+    "role": "button",
+    "score": 0.0245
+   }
+  ],
+  "conf": 0.0649,
+  "engine_ref": 5
+ },
+ {
+  "goal": "获取短信验证码",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "获取短信验证码",
+    "role": "button",
+    "score": 0.0651
+   },
+   {
+    "ref": 4,
+    "name": "验证码登录",
+    "role": "button",
+    "score": 0.0246
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.024
+   }
+  ],
+  "conf": 0.0651,
+  "engine_ref": 10
+ },
+ {
+  "goal": "输入手机号",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "开通机构号",
+    "role": "link",
+    "score": 0.0252
+   },
+   {
+    "ref": 25,
+    "name": "注册机构号 ·",
+    "role": "link",
+    "score": 0.0251
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.0251
+   }
+  ],
+  "conf": 0.0252,
+  "engine_ref": 6
+ },
+ {
+  "goal": "点登录按钮",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "密码登录",
+    "role": "button",
+    "score": 0.0624
+   },
+   {
+    "ref": 4,
+    "name": "验证码登录",
+    "role": "button",
+    "score": 0.0618
+   },
+   {
+    "ref": 13,
+    "name": "登录/注册",
+    "role": "button",
+    "score": 0.0235
+   }
+  ],
+  "conf": 0.0624,
+  "engine_ref": 5
+ },
+ {
+  "goal": "查看知乎协议",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 17,
+    "name": "《知乎协议》",
+    "role": "link",
+    "score": 0.065
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.0241
+   },
+   {
+    "ref": 23,
+    "name": "联系我们 ·",
+    "role": "link",
+    "score": 0.024
+   }
+  ],
+  "conf": 0.065,
+  "engine_ref": 17
+ },
+ {
+  "goal": "打开无障碍模式",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "无障碍模式",
+    "role": "button",
+    "score": 0.0651
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.0242
+   },
+   {
+    "ref": 11,
+    "name": "",
+    "role": "button",
+    "score": 0.0241
+   }
+  ],
+  "conf": 0.0651,
+  "engine_ref": 3
+ },
+ {
+  "goal": "选择国家区号",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "开通机构号",
+    "role": "link",
+    "score": 0.0256
+   },
+   {
+    "ref": 25,
+    "name": "注册机构号 ·",
+    "role": "link",
+    "score": 0.0251
+   },
+   {
+    "ref": 31,
+    "name": "京网文[2025]0422-132 号 ·",
+    "role": "link",
+    "score": 0.0251
+   }
+  ],
+  "conf": 0.0256,
+  "engine_ref": 6
+ },
+ {
+  "goal": "在搜索框输入内容",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "LOL小绿毛资讯",
+    "role": "textbox",
+    "score": 0.0165
+   },
+   {
+    "ref": 27,
+    "name": "知识",
+    "role": "link",
+    "score": 0.0165
+   },
+   {
+    "ref": 10,
+    "name": "",
+    "role": "link",
+    "score": 0.0165
+   }
+  ],
+  "conf": 0.0165,
+  "engine_ref": 9
+ },
+ {
+  "goal": "点频道栏的番剧入口",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "番剧",
+    "role": "link",
+    "score": 0.0412
+   },
+   {
+    "ref": 14,
+    "name": "番剧",
+    "role": "link",
+    "score": 0.0412
+   },
+   {
+    "ref": 17,
+    "name": "电视剧",
+    "role": "link",
+    "score": 0.0361
+   }
+  ],
+  "conf": 0.0412,
+  "engine_ref": 2
+ },
+ {
+  "goal": "看热门视频",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": "热门",
+    "role": "link",
+    "score": 0.0432
+   },
+   {
+    "ref": 3,
+    "name": "直播",
+    "role": "link",
+    "score": 0.0161
+   },
+   {
+    "ref": 32,
+    "name": "直播",
+    "role": "link",
+    "score": 0.0161
+   }
+  ],
+  "conf": 0.0432,
+  "engine_ref": 13
+ },
+ {
+  "goal": "打开直播分区",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "直播",
+    "role": "link",
+    "score": 0.0421
+   },
+   {
+    "ref": 32,
+    "name": "直播",
+    "role": "link",
+    "score": 0.0421
+   },
+   {
+    "ref": 59,
+    "name": "直播中 越捡鸡蛋我越美，咋打不服这一块",
+    "role": "link",
+    "score": 0.0156
+   }
+  ],
+  "conf": 0.0421,
+  "engine_ref": 3
+ },
+ {
+  "goal": "进入会员购",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "会员购",
+    "role": "link",
+    "score": 0.0433
+   },
+   {
+    "ref": 10,
+    "name": "",
+    "role": "link",
+    "score": 0.016
+   },
+   {
+    "ref": 27,
+    "name": "知识",
+    "role": "link",
+    "score": 0.016
+   }
+  ],
+  "conf": 0.0433,
+  "engine_ref": 5
+ },
+ {
+  "goal": "点下载客户端",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "下载客户端",
+    "role": "link",
+    "score": 0.0433
+   },
+   {
+    "ref": 10,
+    "name": "",
+    "role": "link",
+    "score": 0.016
+   },
+   {
+    "ref": 13,
+    "name": "热门",
+    "role": "link",
+    "score": 0.016
+   }
+  ],
+  "conf": 0.0433,
+  "engine_ref": 8
+ },
+ {
+  "goal": "查看我的动态",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "动态",
+    "role": "link",
+    "score": 0.0433
+   },
+   {
+    "ref": 13,
+    "name": "热门",
+    "role": "link",
+    "score": 0.016
+   },
+   {
+    "ref": 10,
+    "name": "",
+    "role": "link",
+    "score": 0.016
+   }
+  ],
+  "conf": 0.0433,
+  "engine_ref": 12
+ },
+ {
+  "goal": "找纪录片频道",
+  "url": "https://www.bilibili.com/",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "纪录片",
+    "role": "link",
+    "score": 0.0433
+   },
+   {
+    "ref": 15,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0161
+   },
+   {
+    "ref": 2,
+    "name": "番剧",
+    "role": "link",
+    "score": 0.016
+   }
+  ],
+  "conf": 0.0433,
+  "engine_ref": 19
+ },
+ {
+  "goal": "点搜索按钮提交搜索",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0154
+   },
+   {
+    "ref": 16,
+    "name": "请输入搜索文字",
+    "role": "combobox",
+    "score": 0.0058
+   },
+   {
+    "ref": 168,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0154,
+  "engine_ref": 15
+ },
+ {
+  "goal": "在搜索框输入关键词",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "请输入搜索文字",
+    "role": "combobox",
+    "score": 0.0149
+   },
+   {
+    "ref": 15,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0078
+   },
+   {
+    "ref": 168,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0149,
+  "engine_ref": 16
+ },
+ {
+  "goal": "去登录",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "亲，请登录",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 100,
+    "name": "立即登录",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 15,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 2
+ },
+ {
+  "goal": "免费注册新账号",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "免费注册",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 98,
+    "name": "注册",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 2,
+    "name": "亲，请登录",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 3
+ },
+ {
+  "goal": "打开购物车",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": " 购物车",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 60,
+    "name": "汽车",
+    "role": "link",
+    "score": 0.0148
+   },
+   {
+    "ref": 132,
+    "name": "商品",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 8
+ },
+ {
+  "goal": "看我的收藏夹",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": " 收藏夹",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 102,
+    "name": " 收藏夹",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 6,
+    "name": "已买到的宝贝",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 9
+ },
+ {
+  "goal": "进入我的淘宝",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "我的淘宝",
+    "role": "link",
+    "score": 0.0152
+   },
+   {
+    "ref": 159,
+    "name": "手机淘宝",
+    "role": "link",
+    "score": 0.0149
+   },
+   {
+    "ref": 127,
+    "name": "淘宝网",
+    "role": "link",
+    "score": 0.0082
+   }
+  ],
+  "conf": 0.0152,
+  "engine_ref": 7
+ },
+ {
+  "goal": "找帮助中心",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "帮助中心",
+    "role": "link",
+    "score": 0.0154
+   },
+   {
+    "ref": 23,
+    "name": "领券中心",
+    "role": "link",
+    "score": 0.0069
+   },
+   {
+    "ref": 84,
+    "name": "领券中心",
+    "role": "link",
+    "score": 0.0069
+   }
+  ],
+  "conf": 0.0154,
+  "engine_ref": 12
+ },
+ {
+  "goal": "切换企业版",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "切换企业版",
+    "role": "link",
+    "score": 0.0154
+   },
+   {
+    "ref": 41,
+    "name": "商业",
+    "role": "link",
+    "score": 0.0058
+   },
+   {
+    "ref": 140,
+    "name": "企业品牌",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0154,
+  "engine_ref": 5
+ },
+ {
+  "goal": "查看已买到的宝贝",
+  "url": "https://www.taobao.com/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "已买到的宝贝",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 101,
+    "name": " 已买到",
+    "role": "link",
+    "score": 0.0152
+   },
+   {
+    "ref": 132,
+    "name": "商品",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 6
+ },
+ {
+  "goal": "搜索微博内容",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "搜索微博",
+    "role": "textbox",
+    "score": 0.038
+   },
+   {
+    "ref": 8,
+    "name": " 微博热搜",
+    "role": "link",
+    "score": 0.0378
+   },
+   {
+    "ref": 2,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0142
+   }
+  ],
+  "conf": 0.038,
+  "engine_ref": 1
+ },
+ {
+  "goal": "点搜索按钮",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0388
+   },
+   {
+    "ref": 11,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0145
+   },
+   {
+    "ref": 12,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0145
+   }
+  ],
+  "conf": 0.0388,
+  "engine_ref": 2
+ },
+ {
+  "goal": "登录或注册",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "登录/注册",
+    "role": "button",
+    "score": 0.0389
+   },
+   {
+    "ref": 9,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0144
+   },
+   {
+    "ref": 10,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0144
+   }
+  ],
+  "conf": 0.0389,
+  "engine_ref": 3
+ },
+ {
+  "goal": "看微博热搜",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": " 微博热搜",
+    "role": "link",
+    "score": 0.0379
+   },
+   {
+    "ref": 1,
+    "name": "搜索微博",
+    "role": "textbox",
+    "score": 0.0379
+   },
+   {
+    "ref": 11,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0142
+   }
+  ],
+  "conf": 0.0379,
+  "engine_ref": 8
+ },
+ {
+  "goal": "点热门榜单",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": " 热门榜单",
+    "role": "link",
+    "score": 0.0363
+   },
+   {
+    "ref": 7,
+    "name": " 热门榜单",
+    "role": "link",
+    "score": 0.0363
+   },
+   {
+    "ref": 4,
+    "name": " 热门推荐",
+    "role": "link",
+    "score": 0.0351
+   }
+  ],
+  "conf": 0.0363,
+  "engine_ref": 6
+ },
+ {
+  "goal": "看文娱板块",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": " 文娱",
+    "role": "link",
+    "score": 0.0377
+   },
+   {
+    "ref": 14,
+    "name": " 文娱",
+    "role": "link",
+    "score": 0.0377
+   },
+   {
+    "ref": 58,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0141
+   }
+  ],
+  "conf": 0.0377,
+  "engine_ref": 13
+ },
+ {
+  "goal": "进入我的主页",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0173
+   },
+   {
+    "ref": 10,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0173
+   },
+   {
+    "ref": 29,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0147
+   }
+  ],
+  "conf": 0.0173,
+  "engine_ref": 9
+ },
+ {
+  "goal": "搜索电影或书籍",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 40,
+    "name": "书影音",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 95,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 167,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 40
+ },
+ {
+  "goal": "点搜索按钮",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.009
+   },
+   {
+    "ref": 246,
+    "name": "电子",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 32,
+    "name": "",
+    "role": "link",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 12
+ },
+ {
+  "goal": "进入豆瓣电影",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "豆瓣电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 95,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 167,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 3
+ },
+ {
+  "goal": "打开豆瓣小组",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "豆瓣小组",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 37,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 78,
+    "name": "豆瓣零食拉踩小组",
+    "role": "link",
+    "score": 0.0088
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 6
+ },
+ {
+  "goal": "去话题广场",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "去话题广场",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 294,
+    "name": "要去什麼地方",
+    "role": "link",
+    "score": 0.0034
+   },
+   {
+    "ref": 295,
+    "name": "要去什麼地方",
+    "role": "link",
+    "score": 0.0034
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 15
+ },
+ {
+  "goal": "下载豆瓣App",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": "下载豆瓣 App",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 1,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.0089
+   },
+   {
+    "ref": 7,
+    "name": "豆瓣阅读",
+    "role": "link",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 13
+ },
+ {
+  "goal": "找豆瓣阅读入口",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "豆瓣阅读",
+    "role": "link",
+    "score": 0.0089
+   },
+   {
+    "ref": 2,
+    "name": "豆瓣读书",
+    "role": "link",
+    "score": 0.0089
+   },
+   {
+    "ref": 1,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.0089
+   }
+  ],
+  "conf": 0.0089,
+  "engine_ref": 7
+ },
+ {
+  "goal": "在搜索框输入 Python 教程",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 28,
+    "name": "使用百度前必读",
+    "role": "link",
+    "score": 0.0314
+   },
+   {
+    "ref": 10,
+    "name": "百度搭子",
+    "role": "link",
+    "score": 0.0313
+   },
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0313
+   }
+  ],
+  "conf": 0.0314,
+  "engine_ref": 28
+ },
+ {
+  "goal": "点击百度一下按钮",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 26,
+    "name": "关于百度",
+    "role": "link",
+    "score": 0.0701
+   },
+   {
+    "ref": 13,
+    "name": "点击一下，了解更多",
+    "role": "link",
+    "score": 0.0317
+   },
+   {
+    "ref": 10,
+    "name": "百度搭子",
+    "role": "link",
+    "score": 0.0309
+   }
+  ],
+  "conf": 0.0701,
+  "engine_ref": 26
+ },
+ {
+  "goal": "打开地图",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "地图",
+    "role": "link",
+    "score": 0.0805
+   },
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0298
+   },
+   {
+    "ref": 10,
+    "name": "百度搭子",
+    "role": "link",
+    "score": 0.0298
+   }
+  ],
+  "conf": 0.0805,
+  "engine_ref": 3
+ },
+ {
+  "goal": "点击新闻标签",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "新闻",
+    "role": "link",
+    "score": 0.0805
+   },
+   {
+    "ref": 13,
+    "name": "点击一下，了解更多",
+    "role": "link",
+    "score": 0.0301
+   },
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0297
+   }
+  ],
+  "conf": 0.0805,
+  "engine_ref": 1
+ },
+ {
+  "goal": "在搜索框输入天气预报",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0744
+   },
+   {
+    "ref": 15,
+    "name": "搜狗输入法",
+    "role": "link",
+    "score": 0.0491
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.049
+   }
+  ],
+  "conf": 0.0744,
+  "engine_ref": 14
+ },
+ {
+  "goal": "点击搜狗搜索按钮",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.1226
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0463
+   },
+   {
+    "ref": 17,
+    "name": "网址导航",
+    "role": "link",
+    "score": 0.0463
+   }
+  ],
+  "conf": 0.1226,
+  "engine_ref": 14
+ },
+ {
+  "goal": "点击微信标签",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "微信",
+    "role": "link",
+    "score": 0.1248
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0463
+   },
+   {
+    "ref": 9,
+    "name": "百科",
+    "role": "link",
+    "score": 0.0462
+   }
+  ],
+  "conf": 0.1248,
+  "engine_ref": 1
+ },
+ {
+  "goal": "点击下一页",
+  "url": "https://www.sogou.com/antispider/?m=1&antip=web_sh2&from=%2Fwebsearch%2Fsogou.jsp%3Fquery%3Dpython&suuid=3e649931-a845-4995-9a58-76f1f1277c94",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "返回首页>>",
+    "role": "link",
+    "score": 0.2118
+   },
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.0989
+   },
+   {
+    "ref": 6,
+    "name": "关于搜狗",
+    "role": "link",
+    "score": 0.0985
+   }
+  ],
+  "conf": 0.2118,
+  "engine_ref": 2
+ },
+ {
+  "goal": "在搜索框输入 weather forecast",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 17,
+    "name": "输入搜索词",
+    "role": "combobox",
+    "score": 0.0195
+   },
+   {
+    "ref": 18,
+    "name": "搜索网页",
+    "role": "button",
+    "score": 0.0167
+   },
+   {
+    "ref": 58,
+    "name": "帮助",
+    "role": "link",
+    "score": 0.0167
+   }
+  ],
+  "conf": 0.0195,
+  "engine_ref": 17
+ },
+ {
+  "goal": "点击搜索按钮",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "搜索网页",
+    "role": "button",
+    "score": 0.0169
+   },
+   {
+    "ref": 17,
+    "name": "输入搜索词",
+    "role": "combobox",
+    "score": 0.0167
+   },
+   {
+    "ref": 58,
+    "name": "帮助",
+    "role": "link",
+    "score": 0.0167
+   }
+  ],
+  "conf": 0.0169,
+  "engine_ref": 18
+ },
+ {
+  "goal": "打开图片标签",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "图片",
+    "role": "link",
+    "score": 0.0428
+   },
+   {
+    "ref": 1,
+    "name": "图片",
+    "role": "menuitem",
+    "score": 0.0376
+   },
+   {
+    "ref": 29,
+    "name": "下一个图像",
+    "role": "button",
+    "score": 0.0201
+   }
+  ],
+  "conf": 0.0428,
+  "engine_ref": 2
+ },
+ {
+  "goal": "点击下一页",
+  "url": "https://www.bing.com/search?q=python+tutorial&rdr=1&rdrig=D79D47207C74414186DFC4120A472006",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "返回到必应搜索",
+    "role": "link",
+    "score": 0.0279
+   },
+   {
+    "ref": 1,
+    "name": "跳至内容",
+    "role": "button",
+    "score": 0.0279
+   },
+   {
+    "ref": 9,
+    "name": "全部",
+    "role": "link",
+    "score": 0.0278
+   }
+  ],
+  "conf": 0.0279,
+  "engine_ref": 3
+ },
+ {
+  "goal": "在搜索框输入 linux",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0288
+   },
+   {
+    "ref": 28,
+    "name": "实用在线工具",
+    "role": "link",
+    "score": 0.0286
+   },
+   {
+    "ref": 9,
+    "name": "工具",
+    "role": "link",
+    "score": 0.0286
+   }
+  ],
+  "conf": 0.0288,
+  "engine_ref": 11
+ },
+ {
+  "goal": "点击开源软件栏目",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "软件",
+    "role": "link",
+    "score": 0.0734
+   },
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0275
+   },
+   {
+    "ref": 33,
+    "name": "开源软件推进联盟",
+    "role": "link",
+    "score": 0.0274
+   }
+  ],
+  "conf": 0.0734,
+  "engine_ref": 3
+ },
+ {
+  "goal": "点击资讯频道",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "DevFM DevFM 当天资讯听着看",
+    "role": "button",
+    "score": 0.0289
+   },
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0288
+   },
+   {
+    "ref": 30,
+    "name": "投递新闻",
+    "role": "link",
+    "score": 0.0287
+   }
+  ],
+  "conf": 0.0289,
+  "engine_ref": 16
+ },
+ {
+  "goal": "点击登录",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "登录",
+    "role": "link",
+    "score": 0.074
+   },
+   {
+    "ref": 23,
+    "name": "关于我们",
+    "role": "link",
+    "score": 0.0273
+   },
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0273
+   }
+  ],
+  "conf": 0.074,
+  "engine_ref": 12
+ },
+ {
+  "goal": "click the Questions tab",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0158
+   },
+   {
+    "ref": 137,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0158
+   },
+   {
+    "ref": 121,
+    "name": "Hot Network Questions",
+    "role": "link",
+    "score": 0.0059
+   }
+  ],
+  "conf": 0.0158,
+  "engine_ref": 10
+ },
+ {
+  "goal": "click the Log in button",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "Log in",
+    "role": "link",
+    "score": 0.0153
+   },
+   {
+    "ref": 60,
+    "name": "",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 87,
+    "name": "",
+    "role": "link",
+    "score": 0.0056
+   }
+  ],
+  "conf": 0.0153,
+  "engine_ref": 7
+ },
+ {
+  "goal": "在搜索框输入天气预报",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0315
+   },
+   {
+    "ref": 10,
+    "name": "百度搭子",
+    "role": "link",
+    "score": 0.0314
+   },
+   {
+    "ref": 28,
+    "name": "使用百度前必读",
+    "role": "link",
+    "score": 0.0314
+   }
+  ],
+  "conf": 0.0315,
+  "engine_ref": 14
+ },
+ {
+  "goal": "点击贴吧入口",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "贴吧",
+    "role": "link",
+    "score": 0.0802
+   },
+   {
+    "ref": 13,
+    "name": "点击一下，了解更多",
+    "role": "link",
+    "score": 0.0305
+   },
+   {
+    "ref": 26,
+    "name": "关于百度",
+    "role": "link",
+    "score": 0.0299
+   }
+  ],
+  "conf": 0.0802,
+  "engine_ref": 4
+ },
+ {
+  "goal": "点击登录链接",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "登录",
+    "role": "link",
+    "score": 0.0803
+   },
+   {
+    "ref": 13,
+    "name": "点击一下，了解更多",
+    "role": "link",
+    "score": 0.0312
+   },
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0297
+   }
+  ],
+  "conf": 0.0803,
+  "engine_ref": 12
+ },
+ {
+  "goal": "打开网盘",
+  "url": "https://www.baidu.com/",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "网盘",
+    "role": "link",
+    "score": 0.0804
+   },
+   {
+    "ref": 14,
+    "name": "百度热搜",
+    "role": "link",
+    "score": 0.0298
+   },
+   {
+    "ref": 28,
+    "name": "使用百度前必读",
+    "role": "link",
+    "score": 0.0298
+   }
+  ],
+  "conf": 0.0804,
+  "engine_ref": 7
+ },
+ {
+  "goal": "在搜索框输入今日新闻",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0511
+   },
+   {
+    "ref": 15,
+    "name": "搜狗输入法",
+    "role": "link",
+    "score": 0.0502
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0502
+   }
+  ],
+  "conf": 0.0511,
+  "engine_ref": 14
+ },
+ {
+  "goal": "打开图片搜索频道",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "图片",
+    "role": "link",
+    "score": 0.1241
+   },
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0515
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.046
+   }
+  ],
+  "conf": 0.1241,
+  "engine_ref": 3
+ },
+ {
+  "goal": "进入搜狗百科",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "百科",
+    "role": "link",
+    "score": 0.1242
+   },
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0464
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0463
+   }
+  ],
+  "conf": 0.1242,
+  "engine_ref": 9
+ },
+ {
+  "goal": "点击问问频道",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "问问",
+    "role": "link",
+    "score": 0.1249
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0465
+   },
+   {
+    "ref": 20,
+    "name": "意见反馈及投诉",
+    "role": "link",
+    "score": 0.0464
+   }
+  ],
+  "conf": 0.1249,
+  "engine_ref": 8
+ },
+ {
+  "goal": "在输入框搜索今日汇率",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "输入搜索词",
+    "role": "combobox",
+    "score": 0.0164
+   },
+   {
+    "ref": 19,
+    "name": "语音搜索",
+    "role": "button",
+    "score": 0.0163
+   },
+   {
+    "ref": 20,
+    "name": "使用图像搜索",
+    "role": "button",
+    "score": 0.0162
+   }
+  ],
+  "conf": 0.0164,
+  "engine_ref": 18
+ },
+ {
+  "goal": "打开视频标签页",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "视频",
+    "role": "link",
+    "score": 0.0425
+   },
+   {
+    "ref": 3,
+    "name": "视频",
+    "role": "menuitem",
+    "score": 0.0176
+   },
+   {
+    "ref": 17,
+    "name": "设置和快速链接",
+    "role": "button",
+    "score": 0.0157
+   }
+  ],
+  "conf": 0.0425,
+  "engine_ref": 4
+ },
+ {
+  "goal": "进入 MSN",
+  "url": "https://www.bing.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "登录 登录",
+    "role": "link",
+    "score": 0.0162
+   },
+   {
+    "ref": 19,
+    "name": "语音搜索",
+    "role": "button",
+    "score": 0.0162
+   },
+   {
+    "ref": 16,
+    "name": "手机版",
+    "role": "button",
+    "score": 0.0162
+   }
+  ],
+  "conf": 0.0162,
+  "engine_ref": 14
+ },
+ {
+  "goal": "打开搜索结果里的文章",
+  "url": "https://www.bing.com/search?q=%E4%BB%8A%E6%97%A5%E6%B1%87%E7%8E%87&rdr=1&rdrig=2B24A23DB35142AAB1AB745EC82A51D0",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.032
+   },
+   {
+    "ref": 3,
+    "name": "返回到必应搜索",
+    "role": "link",
+    "score": 0.028
+   },
+   {
+    "ref": 5,
+    "name": "在此处输入你的搜索 — 输入时会显示搜索建议",
+    "role": "searchbox",
+    "score": 0.0279
+   }
+  ],
+  "conf": 0.032,
+  "engine_ref": 4
+ },
+ {
+  "goal": "点击相关搜索的建议词",
+  "url": "https://www.bing.com/search?q=%E4%BB%8A%E6%97%A5%E6%B1%87%E7%8E%87&rdr=1&rdrig=2B24A23DB35142AAB1AB745EC82A51D0",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "在此处输入你的搜索 — 输入时会显示搜索建议",
+    "role": "searchbox",
+    "score": 0.0631
+   },
+   {
+    "ref": 4,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0276
+   },
+   {
+    "ref": 3,
+    "name": "返回到必应搜索",
+    "role": "link",
+    "score": 0.0271
+   }
+  ],
+  "conf": 0.0631,
+  "engine_ref": 5
+ },
+ {
+  "goal": "点击搜索结果里的文章标题",
+  "url": "https://so.csdn.net/so/search?q=python",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 55,
+    "name": "世间真理",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 53,
+    "name": "逆风飞翔的小叔",
+    "role": "link",
+    "score": 0.0085
+   }
+  ],
+  "conf": 0.0085,
+  "engine_ref": 14
+ },
+ {
+  "goal": "切换到视频结果标签",
+  "url": "https://so.csdn.net/so/search?q=python",
+  "candidates": [
+   {
+    "ref": 53,
+    "name": "逆风飞翔的小叔",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 67,
+    "name": "逆风飞翔的小叔",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 14,
+    "name": "",
+    "role": "link",
+    "score": 0.0085
+   }
+  ],
+  "conf": 0.0085,
+  "engine_ref": 53
+ },
+ {
+  "goal": "点击按时间排序",
+  "url": "https://so.csdn.net/so/search?q=python",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": "",
+    "role": "button",
+    "score": 0.0085
+   },
+   {
+    "ref": 14,
+    "name": "",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 103,
+    "name": "招贤纳士",
+    "role": "link",
+    "score": 0.0085
+   }
+  ],
+  "conf": 0.0085,
+  "engine_ref": 13
+ },
+ {
+  "goal": "打开提问标签页",
+  "url": "https://so.csdn.net/so/search?q=python",
+  "candidates": [
+   {
+    "ref": 83,
+    "name": "快速提问",
+    "role": "link",
+    "score": 0.015
+   },
+   {
+    "ref": 102,
+    "name": "招贤纳士",
+    "role": "link",
+    "score": 0.0085
+   },
+   {
+    "ref": 12,
+    "name": "",
+    "role": "button",
+    "score": 0.0085
+   }
+  ],
+  "conf": 0.015,
+  "engine_ref": 83
+ },
+ {
+  "goal": "点击待回答问题里的标题",
+  "url": "https://q.cnblogs.com/",
+  "candidates": [
+   {
+    "ref": 30,
+    "name": "待解决",
+    "role": "link",
+    "score": 0.0143
+   },
+   {
+    "ref": 153,
+    "name": "提问",
+    "role": "link",
+    "score": 0.0119
+   },
+   {
+    "ref": 17,
+    "name": "提问",
+    "role": "link",
+    "score": 0.0119
+   }
+  ],
+  "conf": 0.0143,
+  "engine_ref": 30
+ },
+ {
+  "goal": "点击高分标签",
+  "url": "https://q.cnblogs.com/",
+  "candidates": [
+   {
+    "ref": 31,
+    "name": "高分",
+    "role": "link",
+    "score": 0.0144
+   },
+   {
+    "ref": 29,
+    "name": "博问标签",
+    "role": "link",
+    "score": 0.0132
+   },
+   {
+    "ref": 185,
+    "name": "Top",
+    "role": "link",
+    "score": 0.0053
+   }
+  ],
+  "conf": 0.0144,
+  "engine_ref": 31
+ },
+ {
+  "goal": "打开博问首页",
+  "url": "https://q.cnblogs.com/",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "博问",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 1,
+    "name": "首页",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 28,
+    "name": "我的博问",
+    "role": "link",
+    "score": 0.0139
+   }
+  ],
+  "conf": 0.0139,
+  "engine_ref": 18
+ },
+ {
+  "goal": "按时间排序问题",
+  "url": "https://q.cnblogs.com/",
+  "candidates": [
+   {
+    "ref": 179,
+    "name": "发现问题",
+    "role": "link",
+    "score": 0.0102
+   },
+   {
+    "ref": 10,
+    "name": "随便看看",
+    "role": "link",
+    "score": 0.0055
+   },
+   {
+    "ref": 26,
+    "name": "问题列表",
+    "role": "link",
+    "score": 0.0054
+   }
+  ],
+  "conf": 0.0102,
+  "engine_ref": 179
+ },
+ {
+  "goal": "进入开源硬件栏目",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0287
+   },
+   {
+    "ref": 33,
+    "name": "开源软件推进联盟",
+    "role": "link",
+    "score": 0.0286
+   },
+   {
+    "ref": 25,
+    "name": "帮助中心",
+    "role": "link",
+    "score": 0.0286
+   }
+  ],
+  "conf": 0.0287,
+  "engine_ref": 11
+ },
+ {
+  "goal": "打开问答社区",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 34,
+    "name": "社区规范",
+    "role": "link",
+    "score": 0.0287
+   },
+   {
+    "ref": 23,
+    "name": "关于我们",
+    "role": "link",
+    "score": 0.0287
+   },
+   {
+    "ref": 7,
+    "name": "专区",
+    "role": "link",
+    "score": 0.0287
+   }
+  ],
+  "conf": 0.0287,
+  "engine_ref": 34
+ },
+ {
+  "goal": "点击动弹频道",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "动弹",
+    "role": "link",
+    "score": 0.0739
+   },
+   {
+    "ref": 16,
+    "name": "DevFM DevFM 当天资讯听着看",
+    "role": "button",
+    "score": 0.0273
+   },
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0273
+   }
+  ],
+  "conf": 0.0739,
+  "engine_ref": 6
+ },
+ {
+  "goal": "进入翻译资讯",
+  "url": "https://www.oschina.net/",
+  "candidates": [
+   {
+    "ref": 30,
+    "name": "投递新闻",
+    "role": "link",
+    "score": 0.0305
+   },
+   {
+    "ref": 11,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0288
+   },
+   {
+    "ref": 23,
+    "name": "关于我们",
+    "role": "link",
+    "score": 0.0287
+   }
+  ],
+  "conf": 0.0305,
+  "engine_ref": 30
+ },
+ {
+  "goal": "点击搜索结果里的文章",
+  "url": "https://www.oschina.net/search/?scope=news&q=linux",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "搜索资讯、博客、软件……",
+    "role": "textbox",
+    "score": 0.0288
+   },
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.0287
+   },
+   {
+    "ref": 19,
+    "name": "哔哩哔哩网站",
+    "role": "link",
+    "score": 0.0286
+   }
+  ],
+  "conf": 0.0288,
+  "engine_ref": 16
+ },
+ {
+  "goal": "打开问答标签页",
+  "url": "https://www.oschina.net/search/?scope=news&q=linux",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.0146
+   },
+   {
+    "ref": 49,
+    "name": "",
+    "role": "link",
+    "score": 0.0146
+   },
+   {
+    "ref": 18,
+    "name": "",
+    "role": "button",
+    "score": 0.0146
+   }
+  ],
+  "conf": 0.0146,
+  "engine_ref": 1
+ },
+ {
+  "goal": "open the comments link of a story",
+  "url": "https://news.ycombinator.com/newest",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3346
+   },
+   {
+    "ref": 2,
+    "name": "Hacker News",
+    "role": "link",
+    "score": 0.3327
+   },
+   {
+    "ref": 3,
+    "name": "reload",
+    "role": "link",
+    "score": 0.3327
+   }
+  ],
+  "conf": 0.3346,
+  "engine_ref": 1
+ },
+ {
+  "goal": "click a story title link",
+  "url": "https://news.ycombinator.com/newest",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3339
+   },
+   {
+    "ref": 2,
+    "name": "Hacker News",
+    "role": "link",
+    "score": 0.333
+   },
+   {
+    "ref": 3,
+    "name": "reload",
+    "role": "link",
+    "score": 0.333
+   }
+  ],
+  "conf": 0.3339,
+  "engine_ref": 1
+ },
+ {
+  "goal": "open the submitter profile",
+  "url": "https://news.ycombinator.com/newest",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3337
+   },
+   {
+    "ref": 3,
+    "name": "reload",
+    "role": "link",
+    "score": 0.3332
+   },
+   {
+    "ref": 2,
+    "name": "Hacker News",
+    "role": "link",
+    "score": 0.3332
+   }
+  ],
+  "conf": 0.3337,
+  "engine_ref": 1
+ },
+ {
+  "goal": "open the comments of a question",
+  "url": "https://news.ycombinator.com/ask",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3338
+   },
+   {
+    "ref": 2,
+    "name": "Hacker News",
+    "role": "link",
+    "score": 0.3331
+   },
+   {
+    "ref": 3,
+    "name": "reload",
+    "role": "link",
+    "score": 0.3331
+   }
+  ],
+  "conf": 0.3338,
+  "engine_ref": 1
+ },
+ {
+  "goal": "click a question title",
+  "url": "https://news.ycombinator.com/ask",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3338
+   },
+   {
+    "ref": 3,
+    "name": "reload",
+    "role": "link",
+    "score": 0.3331
+   },
+   {
+    "ref": 2,
+    "name": "Hacker News",
+    "role": "link",
+    "score": 0.3331
+   }
+  ],
+  "conf": 0.3338,
+  "engine_ref": 1
+ },
+ {
+  "goal": "open the page for a highly voted question",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 33,
+    "name": "show questions tagged 'hazard'",
+    "role": "link",
+    "score": 0.0057
+   },
+   {
+    "ref": 10,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 143,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0056
+   }
+  ],
+  "conf": 0.0057,
+  "engine_ref": 33
+ },
+ {
+  "goal": "click the tag under a question",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 32,
+    "name": "show questions tagged 'solution'",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 39,
+    "name": "show questions tagged 'jupyter'",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 10,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0056
+   }
+  ],
+  "conf": 0.0056,
+  "engine_ref": 32
+ },
+ {
+  "goal": "open the Unanswered filter",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 27,
+    "name": "Unanswered",
+    "role": "link",
+    "score": 0.0151
+   },
+   {
+    "ref": 29,
+    "name": "Filter",
+    "role": "button",
+    "score": 0.0058
+   },
+   {
+    "ref": 92,
+    "name": "",
+    "role": "link",
+    "score": 0.0056
+   }
+  ],
+  "conf": 0.0151,
+  "engine_ref": 27
+ },
+ {
+  "goal": "click the user card of an asker",
+  "url": "https://stackoverflow.com/questions",
+  "candidates": [
+   {
+    "ref": 17,
+    "name": "Users",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 63,
+    "name": "user2419119",
+    "role": "link",
+    "score": 0.0056
+   },
+   {
+    "ref": 65,
+    "name": "",
+    "role": "link",
+    "score": 0.0056
+   }
+  ],
+  "conf": 0.0056,
+  "engine_ref": 17
+ },
+ {
+  "goal": "open a bountied question",
+  "url": "https://stackoverflow.com/questions?tab=bountied",
+  "candidates": [
+   {
+    "ref": 23,
+    "name": "Ask Question",
+    "role": "link",
+    "score": 0.0058
+   },
+   {
+    "ref": 137,
+    "name": "more hot questions",
+    "role": "link",
+    "score": 0.0058
+   },
+   {
+    "ref": 10,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0058
+   }
+  ],
+  "conf": 0.0058,
+  "engine_ref": 23
+ },
+ {
+  "goal": "click the tag badge under a question",
+  "url": "https://stackoverflow.com/questions?tab=bountied",
+  "candidates": [
+   {
+    "ref": 33,
+    "name": "show questions tagged 'hazard'",
+    "role": "link",
+    "score": 0.0067
+   },
+   {
+    "ref": 10,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0057
+   },
+   {
+    "ref": 140,
+    "name": "Questions",
+    "role": "link",
+    "score": 0.0057
+   }
+  ],
+  "conf": 0.0067,
+  "engine_ref": 33
+ },
+ {
+  "goal": "点击登录按钮",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "密码登录",
+    "role": "button",
+    "score": 0.063
+   },
+   {
+    "ref": 4,
+    "name": "验证码登录",
+    "role": "button",
+    "score": 0.0521
+   },
+   {
+    "ref": 13,
+    "name": "登录/注册",
+    "role": "button",
+    "score": 0.0235
+   }
+  ],
+  "conf": 0.063,
+  "engine_ref": 5
+ },
+ {
+  "goal": "忘记密码",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "忘记密码",
+    "role": "button",
+    "score": 0.065
+   },
+   {
+    "ref": 5,
+    "name": "密码登录",
+    "role": "button",
+    "score": 0.0243
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.0241
+   }
+  ],
+  "conf": 0.065,
+  "engine_ref": 12
+ },
+ {
+  "goal": "输入短信验证码",
+  "url": "https://www.zhihu.com/signin?next=%2F",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "获取短信验证码",
+    "role": "button",
+    "score": 0.065
+   },
+   {
+    "ref": 4,
+    "name": "验证码登录",
+    "role": "button",
+    "score": 0.0246
+   },
+   {
+    "ref": 1,
+    "name": "欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+    "role": "link",
+    "score": 0.0241
+   }
+  ],
+  "conf": 0.065,
+  "engine_ref": 10
+ },
+ {
+  "goal": "登录微博账号",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "搜索微博",
+    "role": "textbox",
+    "score": 0.0186
+   },
+   {
+    "ref": 8,
+    "name": " 微博热搜",
+    "role": "link",
+    "score": 0.0129
+   },
+   {
+    "ref": 3,
+    "name": "登录/注册",
+    "role": "button",
+    "score": 0.0126
+   }
+  ],
+  "conf": 0.0186,
+  "engine_ref": 1
+ },
+ {
+  "goal": "搜索微博",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "搜索微博",
+    "role": "textbox",
+    "score": 0.0329
+   },
+   {
+    "ref": 8,
+    "name": " 微博热搜",
+    "role": "link",
+    "score": 0.0329
+   },
+   {
+    "ref": 2,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0125
+   }
+  ],
+  "conf": 0.0329,
+  "engine_ref": 1
+ },
+ {
+  "goal": "查看微博热搜",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": " 微博热搜",
+    "role": "link",
+    "score": 0.0328
+   },
+   {
+    "ref": 1,
+    "name": "搜索微博",
+    "role": "textbox",
+    "score": 0.0327
+   },
+   {
+    "ref": 11,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0123
+   }
+  ],
+  "conf": 0.0328,
+  "engine_ref": 8
+ },
+ {
+  "goal": "打开我的主页",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0169
+   },
+   {
+    "ref": 9,
+    "name": " 我的",
+    "role": "link",
+    "score": 0.0169
+   },
+   {
+    "ref": 28,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0126
+   }
+  ],
+  "conf": 0.0169,
+  "engine_ref": 10
+ },
+ {
+  "goal": "查看科技类热搜",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 11,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0128
+   },
+   {
+    "ref": 12,
+    "name": " 热搜",
+    "role": "link",
+    "score": 0.0128
+   },
+   {
+    "ref": 17,
+    "name": " 科技",
+    "role": "link",
+    "score": 0.0128
+   }
+  ],
+  "conf": 0.0128,
+  "engine_ref": 11
+ },
+ {
+  "goal": "切换扫码登录",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "登录/注册",
+    "role": "button",
+    "score": 0.0132
+   },
+   {
+    "ref": 28,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0127
+   },
+   {
+    "ref": 34,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0127
+   }
+  ],
+  "conf": 0.0132,
+  "engine_ref": 3
+ },
+ {
+  "goal": "看文娱新闻",
+  "url": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": " 文娱",
+    "role": "link",
+    "score": 0.025
+   },
+   {
+    "ref": 14,
+    "name": " 文娱",
+    "role": "link",
+    "score": 0.025
+   },
+   {
+    "ref": 28,
+    "name": " 关注",
+    "role": "button",
+    "score": 0.0124
+   }
+  ],
+  "conf": 0.025,
+  "engine_ref": 13
+ },
+ {
+  "goal": "搜索手机",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.5
+   },
+   {
+    "ref": 2,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.5
+   }
+  ],
+  "conf": 0.5,
+  "engine_ref": 1
+ },
+ {
+  "goal": "打开购物车",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3343
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3331
+   },
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.3326
+   }
+  ],
+  "conf": 0.3343,
+  "engine_ref": 1
+ },
+ {
+  "goal": "查看我的订单",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3352
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3328
+   },
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.3319
+   }
+  ],
+  "conf": 0.3352,
+  "engine_ref": 1
+ },
+ {
+  "goal": "登录账号",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.3357
+   },
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3324
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3319
+   }
+  ],
+  "conf": 0.3357,
+  "engine_ref": 3
+ },
+ {
+  "goal": "免费注册新用户",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.4183
+   },
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.2914
+   },
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.2903
+   }
+  ],
+  "conf": 0.4183,
+  "engine_ref": 2
+ },
+ {
+  "goal": "进入电脑数码分类",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3339
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3331
+   },
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.333
+   }
+  ],
+  "conf": 0.3339,
+  "engine_ref": 1
+ },
+ {
+  "goal": "切换企业版",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.3357
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3322
+   },
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3321
+   }
+  ],
+  "conf": 0.3357,
+  "engine_ref": 3
+ },
+ {
+  "goal": "打开网站导航",
+  "url": "https://www.jd.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "",
+    "role": "link",
+    "score": 0.3339
+   },
+   {
+    "ref": 2,
+    "name": "刷新",
+    "role": "button",
+    "score": 0.3331
+   },
+   {
+    "ref": 3,
+    "name": "切换账号",
+    "role": "button",
+    "score": 0.3331
+   }
+  ],
+  "conf": 0.3339,
+  "engine_ref": 1
+ },
+ {
+  "goal": "搜索电影流浪地球",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 95,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 167,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 97,
+    "name": "选电影",
+    "role": "link",
+    "score": 0.0087
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 95
+ },
+ {
+  "goal": "打开豆瓣电影频道",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "豆瓣电影",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 95,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0087
+   },
+   {
+    "ref": 167,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0087
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 3
+ },
+ {
+  "goal": "进入豆瓣小组",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "豆瓣小组",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 37,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0088
+   },
+   {
+    "ref": 1,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.0088
+   }
+  ],
+  "conf": 0.0088,
+  "engine_ref": 6
+ },
+ {
+  "goal": "登录豆瓣",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 7,
+    "name": "豆瓣阅读",
+    "role": "link",
+    "score": 0.0035
+   },
+   {
+    "ref": 4,
+    "name": "豆瓣音乐",
+    "role": "link",
+    "score": 0.0034
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 1
+ },
+ {
+  "goal": "打开豆瓣FM",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "豆瓣FM",
+    "role": "link",
+    "score": 0.0089
+   },
+   {
+    "ref": 226,
+    "name": "豆瓣FM",
+    "role": "link",
+    "score": 0.0089
+   },
+   {
+    "ref": 228,
+    "name": "豆瓣FM",
+    "role": "link",
+    "score": 0.0089
+   }
+  ],
+  "conf": 0.0089,
+  "engine_ref": 8
+ },
+ {
+  "goal": "去话题广场逛逛",
+  "url": "https://www.douban.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "去话题广场",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 294,
+    "name": "要去什麼地方",
+    "role": "link",
+    "score": 0.0034
+   },
+   {
+    "ref": 295,
+    "name": "要去什麼地方",
+    "role": "link",
+    "score": 0.0034
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 15
+ },
+ {
+  "goal": "切换到社会类热搜",
+  "url": "https://s.weibo.com/top/summary",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "社会",
+    "role": "link",
+    "score": 0.0329
+   },
+   {
+    "ref": 10,
+    "name": "热搜",
+    "role": "link",
+    "score": 0.0327
+   },
+   {
+    "ref": 3,
+    "name": "推荐",
+    "role": "link",
+    "score": 0.0122
+   }
+  ],
+  "conf": 0.0329,
+  "engine_ref": 12
+ },
+ {
+  "goal": "发微博",
+  "url": "https://s.weibo.com/top/summary",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "发微博",
+    "role": "button",
+    "score": 0.0323
+   },
+   {
+    "ref": 70,
+    "name": "关于微博",
+    "role": "link",
+    "score": 0.0323
+   },
+   {
+    "ref": 71,
+    "name": "微博帮助",
+    "role": "link",
+    "score": 0.0321
+   }
+  ],
+  "conf": 0.0323,
+  "engine_ref": 8
+ },
+ {
+  "goal": "打开体育频道",
+  "url": "https://s.weibo.com/top/summary",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "体育",
+    "role": "link",
+    "score": 0.0336
+   },
+   {
+    "ref": 10,
+    "name": "热搜",
+    "role": "link",
+    "score": 0.0124
+   },
+   {
+    "ref": 41,
+    "name": "披荆斩棘赛前预热直播",
+    "role": "link",
+    "score": 0.0124
+   }
+  ],
+  "conf": 0.0336,
+  "engine_ref": 15
+ },
+ {
+  "goal": "进入豆瓣电影频道",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "电影",
+    "role": "link",
+    "score": 0.0184
+   },
+   {
+    "ref": 7,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.0183
+   },
+   {
+    "ref": 137,
+    "name": "关于豆瓣",
+    "role": "link",
+    "score": 0.0072
+   }
+  ],
+  "conf": 0.0184,
+  "engine_ref": 9
+ },
+ {
+  "goal": "看热门小组推荐",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 20,
+    "name": "热门小组",
+    "role": "link",
+    "score": 0.0157
+   },
+   {
+    "ref": 13,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0157
+   },
+   {
+    "ref": 54,
+    "name": "韩系彩妆我们喜欢你小组",
+    "role": "link",
+    "score": 0.0157
+   }
+  ],
+  "conf": 0.0157,
+  "engine_ref": 20
+ },
+ {
+  "goal": "登录豆瓣账号",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "豆瓣",
+    "role": "link",
+    "score": 0.0188
+   },
+   {
+    "ref": 137,
+    "name": "关于豆瓣",
+    "role": "link",
+    "score": 0.0071
+   },
+   {
+    "ref": 1,
+    "name": "登录/注册",
+    "role": "link",
+    "score": 0.007
+   }
+  ],
+  "conf": 0.0188,
+  "engine_ref": 7
+ },
+ {
+  "goal": "浏览24小时话题趋势",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "时间",
+    "role": "link",
+    "score": 0.0071
+   },
+   {
+    "ref": 14,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0071
+   },
+   {
+    "ref": 19,
+    "name": "讨论精选",
+    "role": "link",
+    "score": 0.0071
+   }
+  ],
+  "conf": 0.0071,
+  "engine_ref": 16
+ },
+ {
+  "goal": "点关闭广告",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0071
+   },
+   {
+    "ref": 11,
+    "name": "播客",
+    "role": "link",
+    "score": 0.0071
+   },
+   {
+    "ref": 95,
+    "name": "人文",
+    "role": "link",
+    "score": 0.0071
+   }
+  ],
+  "conf": 0.0071,
+  "engine_ref": 14
+ },
+ {
+  "goal": "搜索今日油价",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.1118
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.047
+   },
+   {
+    "ref": 1,
+    "name": "微信",
+    "role": "link",
+    "score": 0.0469
+   }
+  ],
+  "conf": 0.1118,
+  "engine_ref": 14
+ },
+ {
+  "goal": "点搜索按钮",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.1245
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0463
+   },
+   {
+    "ref": 17,
+    "name": "网址导航",
+    "role": "link",
+    "score": 0.0462
+   }
+  ],
+  "conf": 0.1245,
+  "engine_ref": 14
+ },
+ {
+  "goal": "打开图片频道",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "图片",
+    "role": "link",
+    "score": 0.1249
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0463
+   },
+   {
+    "ref": 1,
+    "name": "微信",
+    "role": "link",
+    "score": 0.0461
+   }
+  ],
+  "conf": 0.1249,
+  "engine_ref": 3
+ },
+ {
+  "goal": "点页面底部的免责声明",
+  "url": "https://www.sogou.com/",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "免责声明",
+    "role": "link",
+    "score": 0.1249
+   },
+   {
+    "ref": 12,
+    "name": "无障碍",
+    "role": "link",
+    "score": 0.0462
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0462
+   }
+  ],
+  "conf": 0.1249,
+  "engine_ref": 19
+ },
+ {
+  "goal": "切换到图片结果",
+  "url": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "图片",
+    "role": "link",
+    "score": 0.014
+   },
+   {
+    "ref": 119,
+    "name": "详情",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 19,
+    "name": "全部结果",
+    "role": "link",
+    "score": 0.0058
+   }
+  ],
+  "conf": 0.014,
+  "engine_ref": 6
+ },
+ {
+  "goal": "在搜索框重新搜肯德基",
+  "url": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "搜索",
+    "role": "link",
+    "score": 0.0054
+   },
+   {
+    "ref": 18,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0054
+   },
+   {
+    "ref": 9,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0053
+   }
+  ],
+  "conf": 0.0054,
+  "engine_ref": 2
+ },
+ {
+  "goal": "点搜索按钮",
+  "url": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.014
+   },
+   {
+    "ref": 2,
+    "name": "搜索",
+    "role": "link",
+    "score": 0.014
+   },
+   {
+    "ref": 9,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0052
+   }
+  ],
+  "conf": 0.014,
+  "engine_ref": 18
+ },
+ {
+  "goal": "打开全部结果",
+  "url": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "全部结果",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 20,
+    "name": "全部",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 119,
+    "name": "详情",
+    "role": "link",
+    "score": 0.0139
+   }
+  ],
+  "conf": 0.0139,
+  "engine_ref": 19
+ },
+ {
+  "goal": "切到推荐页",
+  "url": "https://www.douyin.com/jingxuan",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "推荐",
+    "role": "link",
+    "score": 0.0803
+   },
+   {
+    "ref": 7,
+    "name": "朋友",
+    "role": "link",
+    "score": 0.03
+   },
+   {
+    "ref": 8,
+    "name": "我的",
+    "role": "link",
+    "score": 0.0299
+   }
+  ],
+  "conf": 0.0803,
+  "engine_ref": 4
+ },
+ {
+  "goal": "搜索美食视频",
+  "url": "https://www.douyin.com/jingxuan",
+  "candidates": [
+   {
+    "ref": 22,
+    "name": "美食",
+    "role": "tab",
+    "score": 0.0802
+   },
+   {
+    "ref": 15,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0318
+   },
+   {
+    "ref": 14,
+    "name": "搜索你感兴趣的内容",
+    "role": "textbox",
+    "score": 0.0299
+   }
+  ],
+  "conf": 0.0802,
+  "engine_ref": 22
+ },
+ {
+  "goal": "打开直播频道",
+  "url": "https://www.douyin.com/jingxuan",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "直播",
+    "role": "link",
+    "score": 0.0804
+   },
+   {
+    "ref": 11,
+    "name": "放映厅",
+    "role": "link",
+    "score": 0.03
+   },
+   {
+    "ref": 6,
+    "name": "关注",
+    "role": "link",
+    "score": 0.0298
+   }
+  ],
+  "conf": 0.0804,
+  "engine_ref": 10
+ },
+ {
+  "goal": "点搜索按钮而不是链接",
+  "url": "https://www.douyin.com/jingxuan",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0802
+   },
+   {
+    "ref": 14,
+    "name": "搜索你感兴趣的内容",
+    "role": "textbox",
+    "score": 0.0301
+   },
+   {
+    "ref": 3,
+    "name": "精选",
+    "role": "link",
+    "score": 0.0298
+   }
+  ],
+  "conf": 0.0802,
+  "engine_ref": 15
+ },
+ {
+  "goal": "切到游戏这个tab",
+  "url": "https://www.douyin.com/jingxuan",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "游戏",
+    "role": "tab",
+    "score": 0.0759
+   },
+   {
+    "ref": 28,
+    "name": "亲子",
+    "role": "tab",
+    "score": 0.0742
+   },
+   {
+    "ref": 16,
+    "name": "全部",
+    "role": "tab",
+    "score": 0.0322
+   }
+  ],
+  "conf": 0.0759,
+  "engine_ref": 18
+ },
+ {
+  "goal": "点图片",
+  "url": "https://cn.bing.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "图片",
+    "role": "link",
+    "score": 0.0504
+   },
+   {
+    "ref": 1,
+    "name": "图片",
+    "role": "menuitem",
+    "score": 0.0504
+   },
+   {
+    "ref": 37,
+    "name": "下一个图像",
+    "role": "button",
+    "score": 0.0503
+   }
+  ],
+  "conf": 0.0504,
+  "engine_ref": 2
+ },
+ {
+  "goal": "点地图那个菜单项",
+  "url": "https://cn.bing.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "地图",
+    "role": "link",
+    "score": 0.0539
+   },
+   {
+    "ref": 7,
+    "name": "地图",
+    "role": "menuitem",
+    "score": 0.0525
+   },
+   {
+    "ref": 35,
+    "name": "薄雾邂逅千年时光",
+    "role": "link",
+    "score": 0.0199
+   }
+  ],
+  "conf": 0.0539,
+  "engine_ref": 8
+ },
+ {
+  "goal": "搜索人工智能最新进展",
+  "url": "https://cn.bing.com/",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "Search",
+    "role": "button",
+    "score": 0.0214
+   },
+   {
+    "ref": 20,
+    "name": "必应上的热点",
+    "role": "link",
+    "score": 0.0214
+   },
+   {
+    "ref": 46,
+    "name": "帮助",
+    "role": "link",
+    "score": 0.0213
+   }
+  ],
+  "conf": 0.0214,
+  "engine_ref": 19
+ },
+ {
+  "goal": "打开学术搜索",
+  "url": "https://cn.bing.com/",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "学术",
+    "role": "link",
+    "score": 0.054
+   },
+   {
+    "ref": 19,
+    "name": "Search",
+    "role": "button",
+    "score": 0.0492
+   },
+   {
+    "ref": 9,
+    "name": "学术",
+    "role": "menuitem",
+    "score": 0.0212
+   }
+  ],
+  "conf": 0.054,
+  "engine_ref": 10
+ },
+ {
+  "goal": "点设置按钮",
+  "url": "https://cn.bing.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "设置和快速链接",
+    "role": "button",
+    "score": 0.0474
+   },
+   {
+    "ref": 28,
+    "name": "",
+    "role": "link",
+    "score": 0.0208
+   },
+   {
+    "ref": 46,
+    "name": "帮助",
+    "role": "link",
+    "score": 0.0208
+   }
+  ],
+  "conf": 0.0474,
+  "engine_ref": 15
+ },
+ {
+  "goal": "切到视频结果",
+  "url": "https://cn.bing.com/search?q=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD&rdr=1&rdrig=FCC38AF388FC4E3C9366CEFA006C09B0",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "视频",
+    "role": "link",
+    "score": 0.0803
+   },
+   {
+    "ref": 1,
+    "name": "跳至内容",
+    "role": "button",
+    "score": 0.0304
+   },
+   {
+    "ref": 3,
+    "name": "返回到必应搜索",
+    "role": "link",
+    "score": 0.0298
+   }
+  ],
+  "conf": 0.0803,
+  "engine_ref": 10
+ },
+ {
+  "goal": "点百度百科那条",
+  "url": "https://cn.bing.com/search?q=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD&rdr=1&rdrig=FCC38AF388FC4E3C9366CEFA006C09B0",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "人工智能（智能科学与技术专业术语）_百度百科",
+    "role": "link",
+    "score": 0.0313
+   },
+   {
+    "ref": 5,
+    "name": "在此处输入你的搜索 — 输入时会显示搜索建议",
+    "role": "searchbox",
+    "score": 0.0313
+   },
+   {
+    "ref": 24,
+    "name": "人工智能（博士、硕士层次专业）_百度百科",
+    "role": "link",
+    "score": 0.0313
+   }
+  ],
+  "conf": 0.0313,
+  "engine_ref": 16
+ },
+ {
+  "goal": "重新搜机器学习",
+  "url": "https://cn.bing.com/search?q=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD&rdr=1&rdrig=FCC38AF388FC4E3C9366CEFA006C09B0",
+  "candidates": [
+   {
+    "ref": 3,
+    "name": "返回到必应搜索",
+    "role": "link",
+    "score": 0.0315
+   },
+   {
+    "ref": 4,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0314
+   },
+   {
+    "ref": 11,
+    "name": "学术",
+    "role": "link",
+    "score": 0.0314
+   }
+  ],
+  "conf": 0.0315,
+  "engine_ref": 3
+ },
+ {
+  "goal": "点地图标签",
+  "url": "https://cn.bing.com/search?q=%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD&rdr=1&rdrig=FCC38AF388FC4E3C9366CEFA006C09B0",
+  "candidates": [
+   {
+    "ref": 13,
+    "name": "地图",
+    "role": "link",
+    "score": 0.0805
+   },
+   {
+    "ref": 32,
+    "name": "此处",
+    "role": "link",
+    "score": 0.0298
+   },
+   {
+    "ref": 1,
+    "name": "跳至内容",
+    "role": "button",
+    "score": 0.0297
+   }
+  ],
+  "conf": 0.0805,
+  "engine_ref": 13
+ },
+ {
+  "goal": "切换到科技频道",
+  "url": "https://www.toutiao.com/?wid=1793266124476",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "科技频道",
+    "role": "button",
+    "score": 0.0234
+   },
+   {
+    "ref": 14,
+    "name": "推荐频道",
+    "role": "button",
+    "score": 0.0183
+   },
+   {
+    "ref": 79,
+    "name": "换一换",
+    "role": "button",
+    "score": 0.0175
+   }
+  ],
+  "conf": 0.0234,
+  "engine_ref": 19
+ },
+ {
+  "goal": "点搜索按钮",
+  "url": "https://www.toutiao.com/?wid=1793266124476",
+  "candidates": [
+   {
+    "ref": 12,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0234
+   },
+   {
+    "ref": 11,
+    "name": "搜索",
+    "role": "textbox",
+    "score": 0.0232
+   },
+   {
+    "ref": 63,
+    "name": "齐鲁壹点",
+    "role": "link",
+    "score": 0.0087
+   }
+  ],
+  "conf": 0.0234,
+  "engine_ref": 12
+ },
+ {
+  "goal": "搜一下今天的新闻",
+  "url": "https://www.toutiao.com/?wid=1793266124476",
+  "candidates": [
+   {
+    "ref": 49,
+    "name": "看看新闻",
+    "role": "link",
+    "score": 0.0228
+   },
+   {
+    "ref": 54,
+    "name": "闪电新闻",
+    "role": "link",
+    "score": 0.0228
+   },
+   {
+    "ref": 58,
+    "name": "极目新闻",
+    "role": "link",
+    "score": 0.0227
+   }
+  ],
+  "conf": 0.0228,
+  "engine_ref": 49
+ },
+ {
+  "goal": "打开视频频道",
+  "url": "https://www.toutiao.com/?wid=1793266124476",
+  "candidates": [
+   {
+    "ref": 17,
+    "name": "视频频道",
+    "role": "button",
+    "score": 0.0228
+   },
+   {
+    "ref": 14,
+    "name": "推荐频道",
+    "role": "button",
+    "score": 0.0225
+   },
+   {
+    "ref": 13,
+    "name": "关注频道",
+    "role": "button",
+    "score": 0.0221
+   }
+  ],
+  "conf": 0.0228,
+  "engine_ref": 17
+ },
+ {
+  "goal": "点登录链接",
+  "url": "https://www.toutiao.com/?wid=1793266124476",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "登录",
+    "role": "link",
+    "score": 0.0235
+   },
+   {
+    "ref": 75,
+    "name": "立即登录",
+    "role": "link",
+    "score": 0.0234
+   },
+   {
+    "ref": 106,
+    "name": "友情链接",
+    "role": "link",
+    "score": 0.0098
+   }
+  ],
+  "conf": 0.0235,
+  "engine_ref": 9
+ },
+ {
+  "goal": "看西藏安置点那条视频",
+  "url": "https://www.thepaper.cn/",
+  "candidates": [
+   {
+    "ref": 10,
+    "name": "视频丨西藏巴青县多个安置点物资及服务齐全 保障群众温暖过冬",
+    "role": "link",
+    "score": 0.038
+   },
+   {
+    "ref": 24,
+    "name": "锋线视频",
+    "role": "link",
+    "score": 0.0145
+   },
+   {
+    "ref": 11,
+    "name": "热播日剧抹黑中国遭痛批，日本右翼新伎俩包藏哪些祸心？",
+    "role": "link",
+    "score": 0.0143
+   }
+  ],
+  "conf": 0.038,
+  "engine_ref": 10
+ },
+ {
+  "goal": "点学习笔记那篇",
+  "url": "https://www.thepaper.cn/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "学习笔记丨“持之以恒推进全面从严治党”",
+    "role": "link",
+    "score": 0.0213
+   },
+   {
+    "ref": 3,
+    "name": "",
+    "role": "textbox",
+    "score": 0.0144
+   },
+   {
+    "ref": 46,
+    "name": "开始答题",
+    "role": "button",
+    "score": 0.0144
+   }
+  ],
+  "conf": 0.0213,
+  "engine_ref": 6
+ },
+ {
+  "goal": "进入大国外交栏目",
+  "url": "https://www.thepaper.cn/",
+  "candidates": [
+   {
+    "ref": 18,
+    "name": "推荐 菲媒称中国航母“突入菲律宾心脏”，国防部答澎湃：“有关方不要自己给自己加戏” 菲媒称中国航母“突入菲律宾心脏”，国防部答澎湃：“有关方不要自己给自己加戏”",
+    "role": "link",
+    "score": 0.0149
+   },
+   {
+    "ref": 13,
+    "name": "外交部：日本国内始终存在一股势力，企图通过文化产品丑化抹黑中国",
+    "role": "link",
+    "score": 0.0148
+   },
+   {
+    "ref": 7,
+    "name": "矢志不渝为人民丨阳光之下",
+    "role": "link",
+    "score": 0.0148
+   }
+  ],
+  "conf": 0.0149,
+  "engine_ref": 18
+ },
+ {
+  "goal": "打开手机频道",
+  "url": "https://www.ithome.com/",
+  "candidates": [
+   {
+    "ref": 17,
+    "name": "手机",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 296,
+    "name": "传闻称三星家电撤出香港市场，官方确认集中发展电视、影音、显示器及手机",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 261,
+    "name": "腾讯 WorkBuddy 手机远程控制电脑功能上线，实时显示屏幕内容",
+    "role": "link",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 17
+ },
+ {
+  "goal": "点测评栏目",
+  "url": "https://www.ithome.com/",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "测评",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 73,
+    "name": "要知",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 147,
+    "name": "新芯航途 X7 Ultra 大模型芯片亮相：700 TOPS 算力，量产模型实测 99.99% 对齐",
+    "role": "link",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 19
+ },
+ {
+  "goal": "点投稿链接",
+  "url": "https://www.ithome.com/",
+  "candidates": [
+   {
+    "ref": 7,
+    "name": "投稿",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 73,
+    "name": "要知",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 63,
+    "name": "",
+    "role": "button",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 7
+ },
+ {
+  "goal": "进入IT圈",
+  "url": "https://www.ithome.com/",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "IT圈",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 10,
+    "name": "收藏IT之家",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 73,
+    "name": "要知",
+    "role": "link",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 4
+ },
+ {
+  "goal": "点登录",
+  "url": "https://www.ithome.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "登录",
+    "role": "link",
+    "score": 0.009
+   },
+   {
+    "ref": 73,
+    "name": "要知",
+    "role": "link",
+    "score": 0.0033
+   },
+   {
+    "ref": 63,
+    "name": "",
+    "role": "button",
+    "score": 0.0033
+   }
+  ],
+  "conf": 0.009,
+  "engine_ref": 15
+ },
+ {
+  "goal": "看那篇Apple Watch体验",
+  "url": "https://sspai.com/",
+  "candidates": [
+   {
+    "ref": 8,
+    "name": "Apple Watch Series 12 体验 更懂你，也更懂你心 Apple Watch Series 12 体验",
+    "role": "link",
+    "score": 0.0262
+   },
+   {
+    "ref": 50,
+    "name": "如题，经过多天的开心等待终于盼来了我派的膜，坐下来开开心心的拆箱，想着这么大的盒子，外面还包了大泡泡纸，应该很结实吧？打开盒子，膜体也还有一层单独的防护的泡泡纸。但是！拿出膜以后，碎的？！这可不是很好了，心瞬间凉了半截…感觉包装似乎并没有为",
+    "role": "link",
+    "score": 0.0126
+   },
+   {
+    "ref": 55,
+    "name": "今年对 Apple 真的是有点失望😞",
+    "role": "link",
+    "score": 0.0125
+   }
+  ],
+  "conf": 0.0262,
+  "engine_ref": 8
+ },
+ {
+  "goal": "点编辑部的新玩意",
+  "url": "https://sspai.com/",
+  "candidates": [
+   {
+    "ref": 27,
+    "name": "少数派编辑部",
+    "role": "link",
+    "score": 0.0301
+   },
+   {
+    "ref": 28,
+    "name": "少数派编辑部",
+    "role": "link",
+    "score": 0.0301
+   },
+   {
+    "ref": 42,
+    "name": "少数派编辑部",
+    "role": "link",
+    "score": 0.0301
+   }
+  ],
+  "conf": 0.0301,
+  "engine_ref": 27
+ },
+ {
+  "goal": "买iPhone配件",
+  "url": "https://sspai.com/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "iPhone 精选配件 点击购买",
+    "role": "link",
+    "score": 0.0336
+   },
+   {
+    "ref": 21,
+    "name": " 推荐",
+    "role": "button",
+    "score": 0.0125
+   },
+   {
+    "ref": 9,
+    "name": "派早报：Apple 推出触控款 MacBook Pro、华为发布多款新品等 周四 29",
+    "role": "link",
+    "score": 0.0124
+   }
+  ],
+  "conf": 0.0336,
+  "engine_ref": 14
+ },
+ {
+  "goal": "看派早报",
+  "url": "https://sspai.com/",
+  "candidates": [
+   {
+    "ref": 71,
+    "name": "派早报：Apple 发布 M6 版 iMac 和 MacBook Pro 等 少数派编辑部 少数派编辑部 昨天 08:37 派早报 派早报 派早报：Apple 发布 M6 版 iMac 和 MacBook Pro 等",
+    "role": "link",
+    "score": 0.0322
+   },
+   {
+    "ref": 41,
+    "name": "派早报：Apple 推出触控款 MacBook Pro、华为发布多款新品等 少数派编辑部 少数派编辑部 08:26 派早报 派早报 派早报：Apple 推出触控款 MacBook Pro、华为发布多款新品等",
+    "role": "link",
+    "score": 0.0321
+   },
+   {
+    "ref": 9,
+    "name": "派早报：Apple 推出触控款 MacBook Pro、华为发布多款新品等 周四 29",
+    "role": "link",
+    "score": 0.0318
+   }
+  ],
+  "conf": 0.0322,
+  "engine_ref": 71
+ },
+ {
+  "goal": "读输入法那篇文章",
+  "url": "https://sspai.com/",
+  "candidates": [
+   {
+    "ref": 69,
+    "name": "随便好啦",
+    "role": "link",
+    "score": 0.0127
+   },
+   {
+    "ref": 70,
+    "name": "随便好啦",
+    "role": "link",
+    "score": 0.0127
+   },
+   {
+    "ref": 5,
+    "name": "基于 Rime 引擎、支持双拼纠错的 iOS 输入法",
+    "role": "link",
+    "score": 0.0127
+   }
+  ],
+  "conf": 0.0127,
+  "engine_ref": 69
+ },
+ {
+  "goal": "切到前端板块",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "前端",
+    "role": "link",
+    "score": 0.0228
+   },
+   {
+    "ref": 21,
+    "name": "前端",
+    "role": "link",
+    "score": 0.0228
+   },
+   {
+    "ref": 26,
+    "name": "前端",
+    "role": "link",
+    "score": 0.0228
+   }
+  ],
+  "conf": 0.0228,
+  "engine_ref": 6
+ },
+ {
+  "goal": "看那篇Cursor转Codex的文章",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "Cursor 转 Codex 大半个月，聊聊我的真实感受",
+    "role": "link",
+    "score": 0.0162
+   },
+   {
+    "ref": 63,
+    "name": "不是恰饭，也不是踩一捧一。只是记录一个 Codex 老用户切换到 WorkBuddy 的真实一周，以及过程中踩到的坑和省下的钱。 一、为什么换：被逼无奈的\"搬家\" 很早就听说腾讯出了智能体编程工具 W",
+    "role": "link",
+    "score": 0.0101
+   },
+   {
+    "ref": 17,
+    "name": "Cursor 让我第一次强烈感受到 AI 编程的震撼，Codex 则让我第一次真正感觉到，AI 不只是编程助手，而是一个真正的超级Agent，Codex 明显更接近下一阶段的形态。",
+    "role": "link",
+    "score": 0.01
+   }
+  ],
+  "conf": 0.0162,
+  "engine_ref": 16
+ },
+ {
+  "goal": "点排行榜",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "排行榜",
+    "role": "link",
+    "score": 0.0262
+   },
+   {
+    "ref": 54,
+    "name": "微信运动每天晚上 10 点推送排行榜，技术上到底有多难？",
+    "role": "link",
+    "score": 0.0244
+   },
+   {
+    "ref": 55,
+    "name": "每天晚上十点多，微信会推一条微信运动的消息，报一下今天的步数，顺便叫你看看排行榜。大家可能注意到过一个细节：推送时间并不是统一的。根据我的体感上来看，大概时间在10点整后的1分钟上下浮动。 这条消息看",
+    "role": "link",
+    "score": 0.0138
+   }
+  ],
+  "conf": 0.0262,
+  "engine_ref": 5
+ },
+ {
+  "goal": "看最新文章",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 14,
+    "name": "最新",
+    "role": "link",
+    "score": 0.0262
+   },
+   {
+    "ref": 12,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0261
+   },
+   {
+    "ref": 97,
+    "name": "今天，2026 年 10 月 26 日，星期一。 在这个深秋的时刻，我无意间刷到了天涯 A11 大佬的一篇神贴——《2027年以后，你要活成这个样子》。 看完之后，我整个人就像是被雷劈了一样，呆坐在屏",
+    "role": "link",
+    "score": 0.0099
+   }
+  ],
+  "conf": 0.0262,
+  "engine_ref": 14
+ },
+ {
+  "goal": "点登录按钮",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "登录",
+    "role": "button",
+    "score": 0.0267
+   },
+   {
+    "ref": 12,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0099
+   },
+   {
+    "ref": 15,
+    "name": "关注",
+    "role": "link",
+    "score": 0.0099
+   }
+  ],
+  "conf": 0.0267,
+  "engine_ref": 2
+ },
+ {
+  "goal": "打开人工智能分类",
+  "url": "https://juejin.cn/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "人工智能",
+    "role": "link",
+    "score": 0.0242
+   },
+   {
+    "ref": 18,
+    "name": "人工智能",
+    "role": "link",
+    "score": 0.0242
+   },
+   {
+    "ref": 35,
+    "name": "人工智能",
+    "role": "link",
+    "score": 0.0242
+   }
+  ],
+  "conf": 0.0242,
+  "engine_ref": 9
+ },
+ {
+  "goal": "完成人机验证继续访问",
+  "url": "https://www.v2ex.com/",
+  "candidates": [
+   {
+    "ref": 2,
+    "name": "隐私，在新标签页中打开",
+    "role": "link",
+    "score": 0.5004
+   },
+   {
+    "ref": 1,
+    "name": "Cloudflare，在新标签页中打开",
+    "role": "link",
+    "score": 0.4996
+   }
+  ],
+  "conf": 0.5004,
+  "engine_ref": 2
+ },
+ {
+  "goal": "点热榜",
+  "url": "https://zhuanlan.zhihu.com/",
+  "candidates": [
+   {
+    "ref": 5,
+    "name": "热榜",
+    "role": "link",
+    "score": 0.0683
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0254
+   },
+   {
+    "ref": 4,
+    "name": "推荐",
+    "role": "link",
+    "score": 0.0253
+   }
+  ],
+  "conf": 0.0683,
+  "engine_ref": 5
+ },
+ {
+  "goal": "搜索科幻小说",
+  "url": "https://zhuanlan.zhihu.com/",
+  "candidates": [
+   {
+    "ref": 11,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0269
+   },
+   {
+    "ref": 10,
+    "name": "搜索",
+    "role": "combobox",
+    "score": 0.0264
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0264
+   }
+  ],
+  "conf": 0.0269,
+  "engine_ref": 11
+ },
+ {
+  "goal": "看那个杂七杂八什么都写的专栏",
+  "url": "https://zhuanlan.zhihu.com/",
+  "candidates": [
+   {
+    "ref": 6,
+    "name": "专栏",
+    "role": "link",
+    "score": 0.0625
+   },
+   {
+    "ref": 27,
+    "name": "知乎专栏",
+    "role": "link",
+    "score": 0.0623
+   },
+   {
+    "ref": 18,
+    "name": "吾知乜名 这是一个很杂的专栏，想到什么写什么 318 人订阅 |55篇内容 进入专栏",
+    "role": "link",
+    "score": 0.0604
+   }
+  ],
+  "conf": 0.0625,
+  "engine_ref": 6
+ },
+ {
+  "goal": "点进入专栏按钮",
+  "url": "https://zhuanlan.zhihu.com/",
+  "candidates": [
+   {
+    "ref": 15,
+    "name": "进入专栏",
+    "role": "button",
+    "score": 0.0494
+   },
+   {
+    "ref": 17,
+    "name": "进入专栏",
+    "role": "button",
+    "score": 0.0494
+   },
+   {
+    "ref": 19,
+    "name": "进入专栏",
+    "role": "button",
+    "score": 0.0494
+   }
+  ],
+  "conf": 0.0494,
+  "engine_ref": 15
+ },
+ {
+  "goal": "打开故事频道",
+  "url": "https://zhuanlan.zhihu.com/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "故事",
+    "role": "link",
+    "score": 0.0682
+   },
+   {
+    "ref": 2,
+    "name": "知乎",
+    "role": "link",
+    "score": 0.0253
+   },
+   {
+    "ref": 12,
+    "name": "直答",
+    "role": "link",
+    "score": 0.0253
+   }
+  ],
+  "conf": 0.0682,
+  "engine_ref": 9
+ },
+ {
+  "goal": "搜索租房小组",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0188
+   },
+   {
+    "ref": 58,
+    "name": "极简生活小组",
+    "role": "link",
+    "score": 0.0186
+   },
+   {
+    "ref": 16,
+    "name": "热门小组",
+    "role": "link",
+    "score": 0.0185
+   }
+  ],
+  "conf": 0.0188,
+  "engine_ref": 9
+ },
+ {
+  "goal": "点热门小组",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "热门小组",
+    "role": "link",
+    "score": 0.0158
+   },
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0157
+   },
+   {
+    "ref": 14,
+    "name": "豆瓣小组",
+    "role": "link",
+    "score": 0.0157
+   }
+  ],
+  "conf": 0.0158,
+  "engine_ref": 16
+ },
+ {
+  "goal": "切到读书频道",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 4,
+    "name": "读书",
+    "role": "link",
+    "score": 0.0192
+   },
+   {
+    "ref": 10,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0191
+   },
+   {
+    "ref": 103,
+    "name": "学习",
+    "role": "link",
+    "score": 0.0072
+   }
+  ],
+  "conf": 0.0192,
+  "engine_ref": 4
+ },
+ {
+  "goal": "点登录",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 1,
+    "name": "登录/注册",
+    "role": "link",
+    "score": 0.0091
+   },
+   {
+    "ref": 18,
+    "name": "搜索",
+    "role": "button",
+    "score": 0.0073
+   },
+   {
+    "ref": 10,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0073
+   }
+  ],
+  "conf": 0.0091,
+  "engine_ref": 1
+ },
+ {
+  "goal": "看胰岛素抵抗那篇帖子",
+  "url": "https://www.douban.com/group/explore",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "胰岛素抵抗经验贴，症状+检查前+日常饮食和运动",
+    "role": "link",
+    "score": 0.0194
+   },
+   {
+    "ref": 51,
+    "name": "如果你总怀疑自己抗压能力不强，可以看看这篇",
+    "role": "link",
+    "score": 0.0074
+   },
+   {
+    "ref": 105,
+    "name": "ACG",
+    "role": "link",
+    "score": 0.0072
+   }
+  ],
+  "conf": 0.0194,
+  "engine_ref": 19
+ },
+ {
+  "goal": "在组内搜穿搭",
+  "url": "https://www.douban.com/group/661193/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0139
+   },
+   {
+    "ref": 14,
+    "name": "豆瓣小组",
+    "role": "link",
+    "score": 0.0061
+   },
+   {
+    "ref": 154,
+    "name": "搜索本组讨论",
+    "role": "textbox",
+    "score": 0.0054
+   }
+  ],
+  "conf": 0.0139,
+  "engine_ref": 9
+ },
+ {
+  "goal": "点加入小组",
+  "url": "https://www.douban.com/group/661193/",
+  "candidates": [
+   {
+    "ref": 19,
+    "name": "加入小组",
+    "role": "link",
+    "score": 0.0135
+   },
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0135
+   },
+   {
+    "ref": 16,
+    "name": "热门小组",
+    "role": "link",
+    "score": 0.0135
+   }
+  ],
+  "conf": 0.0135,
+  "engine_ref": 19
+ },
+ {
+  "goal": "看组长主页",
+  "url": "https://www.douban.com/group/661193/",
+  "candidates": [
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.014
+   },
+   {
+    "ref": 154,
+    "name": "搜索本组讨论",
+    "role": "textbox",
+    "score": 0.0053
+   },
+   {
+    "ref": 14,
+    "name": "豆瓣小组",
+    "role": "link",
+    "score": 0.0053
+   }
+  ],
+  "conf": 0.014,
+  "engine_ref": 9
+ },
+ {
+  "goal": "打开热门小组",
+  "url": "https://www.douban.com/group/661193/",
+  "candidates": [
+   {
+    "ref": 16,
+    "name": "热门小组",
+    "role": "link",
+    "score": 0.0137
+   },
+   {
+    "ref": 9,
+    "name": "小组",
+    "role": "link",
+    "score": 0.0137
+   },
+   {
+    "ref": 19,
+    "name": "加入小组",
+    "role": "link",
+    "score": 0.0137
+   }
+  ],
+  "conf": 0.0137,
+  "engine_ref": 16
+ },
+ {
+  "goal": "翻到下一页",
+  "url": "https://www.douban.com/group/661193/",
+  "candidates": [
+   {
+    "ref": 97,
+    "name": "现在再看陆翊发的这段。。。真的好诡异。。。",
+    "role": "link",
+    "score": 0.0053
+   },
+   {
+    "ref": 10,
+    "name": "阅读",
+    "role": "link",
+    "score": 0.0053
+   },
+   {
+    "ref": 111,
+    "name": "有没有出版行业的哥哥。。出来科普一下这个写序的规则啊。。。",
+    "role": "link",
+    "score": 0.0053
+   }
+  ],
+  "conf": 0.0053,
+  "engine_ref": 97
+ }
+]

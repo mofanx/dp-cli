@@ -56,6 +56,16 @@
 | `session.py` `download_path` | cwd 默认非"未配置"——已知教训，部分下游判定仍可能误用 | 统一 `_dl_path()` 语义封装 | P2 ✅已修(commit待)（`session._dl_path()` 封装"session download_dir 键=显式配置，page.download_path=DP 默认不可判定"；wait --download 与 download 结果回显接入，结果加 `configured` 字段消歧） |
 | `agent-state`/`snapshot` | refs epoch 签名只比 body sig——属性级变化（disabled/hidden）不重签 | sig 输入加交互属性子集哈希 | P2——影响 ref 缓存精度边缘 ✅已修(commit待)（`_SIG_PROPS` 17 属性子集+current 值进 sha1——disabled/hidden/checked/expanded 等属性级变化重签 epoch） |
 
+## 六、真实站扩采实测新发现（免登录 9 站 96 goals，daemon+reranker 渠道）
+
+| 文件 | 缺陷 | 建议修法 | 严重度理由 |
+|---|---|---|---|
+| `agent.py` conf 判据 | conf=top1 概率随候选数摊薄——豆瓣 420 refs conf≈0.009/淘宝 174≈0.015 已有记录；本轮实测 bing 62 opts conf≈0.016-0.04、so.csdn 118≈0.0085、SO 178≈0.006，min-conf 0.35 在 >60 refs 页系统性必拒 | conf 归一化（×N 或 top1/top2 ratio 替代）；bge 路径已 `_conf_gate=0` 绕过但非 bge/其他引擎仍中枪 | P2——只影响拒判率不产错选；但 min-conf 在大页面上形同虚设 📋已登记(待排期) |
+| `decide_train.py` hard_cases 采集盲区 | conf=1.0 高置信错选不落盘（B站"点第二个"错选 ref2 实锤）——hard_case 闸只看低置信/low_margin，meta-rules deterministic=1.0 路径更完全不经闸 | 加"执行后 post_delta 为空+conf 高"反查通道或人工标注接口（`decide --mark-wrong` 类） | P2——高置信 miss 是训练数据最有价值的纠错信号，当前通道采不到 📋已登记(待排期) |
+| `agent.py` `_meta_decide` blocked 判据 | 候选名全池子串扫描——资讯站列表含"机器人/人机（无人机）/拦截/安全验证/suspended"任一即整页判 blocked：cnblogs ref202"人形机器人"标题致全页短路、ithome 11 goals 零 reranker 产出、csdn/HN 首页同中 | blocked 判据限 title/url 或限定 nav 区/前 K 候选；或要求 kw 命中比例阈值 | P1 候选——真实资讯站几乎必中，blocked 形同整站拒采；meta 短路在 `_ask_questions` 前，连 hard_case 都不留 📋已登记(待排期) |
+| `agent.py` `_meta_decide` 序数短路 | 序数短路无页面健康守卫——sogou antispider 页"点击第一条搜索结果"确定性返 type ref=1（'搜'字命中 TYPE_INTENT），风控页上确定性动作比模型错选更危险 | 序数/序数选项短路前置 blocked/title 异常守卫；type 判定剔除目标为 link/button 角色的场景 | P2 📋已登记(待排期) |
+| `daemon.py`/`decide_train.py` `_record_decide_row` | argv 未剥 `_GLOBAL_FLAGS`——`dpx --compact decide` 录成 `chosen='--compact decide …'` 无 goal/engine_ref 垃圾行（本轮 77 条实锤，export 时静默 skip） | 录制前剥全局旗再判 `argv[0]=='decide'`；存量垃圾行 export 侧已天然过滤无需清洗 | P2 📋已登记(待排期) |
+
 ## 汇总
 
 - **P2 合计 ~40 条**（去重后），五桶分布：状态残留 ~10 / 竞态 ~8 / 契约 ~9 / DoS ~6 / 韧性 ~7

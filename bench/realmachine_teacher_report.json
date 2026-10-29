@@ -1,0 +1,71 @@
+{
+  "experiment": "真机 hard_cases 定向教师标注→v26（本 agent 即教师，无外部 API）——验证'真机低置信样本是否比合成 hardneg 更强'的实证问题",
+  "source_pool": {
+    "file": "~/.dp_cli/hard_cases.jsonl",
+    "total_rows": 261,
+    "unique_goal_url_groups": 18,
+    "note": "261 行仅是 18 个 (goal,url) 组的重复落盘（同组候选集/conf 完全一致）；真机池实际信息密度 = 18 个判别点",
+    "url_dist": "11 组 repo fixture(login/ambig_*/buttons/form/nav/product/settings/recall_bench) + 2 组真站点 github.com = 真机池被 fixture 主导，真实站点样本占比 2/18"
+  },
+  "annotation": {
+    "method": "--emit-teacher 模板 261 行 → (goal,url) 去重 18 组 → 逐组读 fixture HTML 判正例填 chosen_ref+negatives → bench/realmachine_teacher.jsonl",
+    "script": "bench/annotate_realmachine.py",
+    "labeled": 15,
+    "hard_skip": [
+      {"query": "点击登录按钮", "page": "login.html",
+       "reason": "正例 button Sign In(ref4) 不在 top3 候选(Username/Password/checkbox)——recall 层漏召回非判别层问题，候选内无正确答案不猜标"},
+      {"query": "开启深色模式", "page": "settings.html",
+       "reason": "候选全空 name(radio×2+checkbox)，Dark mode checkbox(ref2) 不在 top3——a11y 名称提取缺陷，无可判信息"}
+    ],
+    "twin_handling": "同文本孪生候选(ambig_item 删除/归档×2、github Sign up×2)取首 ref 为正；孪生同文本串不进 negatives(同串正负双标签矛盾，promote 闸4 亦拒)"
+  },
+  "promote": {
+    "cmd": "python bench/review_hard_cases.py --promote-teacher bench/realmachine_teacher.jsonl --promote-out bench/realmachine_teacher_promoted.jsonl",
+    "promoted": 13,
+    "rejected": 2,
+    "reject_detail": "2 行 chosen_ref 空(SKIP)——四条件门按设计拒收"
+  },
+  "leakage_gates": {
+    "gate1_query_x_eval_goal": "0 命中（_hit exact+子串×120 eval goal）",
+    "gate2_miss_candidate_reuse": "0 命中（13 入训行 pos+neg+candidates × miss28 候选串集）",
+    "gate2_audit_all_eval": "6 项通用 UI 串撞非-miss eval 候选(button 登录/button 置顶/link 忘记密码/textbox Phone)——按 r1/r2 口径记审计信息项",
+    "gate3_dedup": "组内 query 0 重复；与 merge_out_v24 query 0 重复；pos∉negs 全过",
+    "quarantine": [
+      {"query": "点击导出按钮", "reason": "gate2: positive button 导出 复用 miss-eval x01 候选串"},
+      {"query": "删除这条记录", "reason": "gate2: positive button 删除 复用 miss-eval x05 候选串"},
+      {"query": "提交订单", "reason": "gate3: query 与 v24 verified_real 行重复（该行 positive=button 确认无误，同 query 跨页异正例冲突）"}
+    ],
+    "merge_gate": "merge_train.merge --allow-unverified：剔除 0 撞车 + 0 src 拒收"
+  },
+  "merge": "merge_out_v24.json(407) + realmachine_teacher_promoted(13) → merge_out_v26.json(420)",
+  "train": {
+    "cmd": "HF_HOME=/media/yan/Data/hf_hub HF_HUB_OFFLINE=1 TRAIN_EPOCHS=1 python bench/train_reranker.py bench/merge_out_v26.json --model=BAAI/bge-reranker-base --out=/media/yan/Data/bge_v26_tuned --allow-unverified",
+    "pairs": 15497,
+    "steps": 1938,
+    "wall_time": "~43min (CPU, ~1.35s/it)",
+    "train_loss": 0.0567
+  },
+  "eval120": {
+    "v24_baseline": {"ALL": 91.7, "elem": 88.5, "meta": 100.0, "miss_n": 10,
+      "miss_ids": ["n05","m13","m15","m17","m25","m29","x01","x03","x04","x12"]},
+    "v26_realmachine": {"ALL": 90.8, "elem": 87.4, "meta": 100.0, "miss_n": 11,
+      "miss_ids": ["n05","m15","m17","m25","m29","m30","x03","x04","x12","x15","x50"]},
+    "delta": {"ALL": -0.9, "elem": -1.1, "meta": 0.0},
+    "miss_diff": {
+      "fixed": ["m13", "x01"],
+      "new": ["m30", "x15", "x50"],
+      "persistent": ["n05","m15","m17","m25","m29","x03","x04","x12"],
+      "note": "修2新3净-1；3 条新 miss(m30/x15/x50)与 v25 新 miss 同型——均为 ~0.001-0.02 掷硬币带抖动非方向性教错"
+    },
+    "side_note": "v25(含r2合成)复测=90.0%——v26 介于 v24 与 v25 之间"
+  },
+  "verdict": {
+    "classification": "中性偏污染（噪声带内小幅负增益）",
+    "answer": "本轮真机数据未比合成 hardneg 强——13 行中 11 行来自 repo 自带 fixture 页面，分布与合成 hardneg 同形态（同名异 role/同族近干扰/低 conf 简单场），真实站点信号仅 2 条 github.com 行，信息量不足以产生增量；真机池 261 行坍缩为 18 个判别点，且 2/18 暴露的是 recall/a11y 上游缺陷而非判别层可学的形态",
+    "actionable": [
+      "真机采集池要起量须扩大真实站点覆盖——当前池 fixture:real ≈ 8:1，fixture 录制等价于又一轮合成",
+      "SKIP 两行指向上游缺陷：'点击登录按钮'@login top3 无正确元素=召回深度问题；'开启深色模式'@settings 候选全空名=a11y 名称提取缺陷——修这两个比加训练数据更值",
+      "孪生歧义场(删除×2/归档×2/Sign up×2)在文本级 CE 下本质不可学——只能进 quarantine 类判例或等 page-context 特征"
+    ]
+  }
+}

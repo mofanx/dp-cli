@@ -410,9 +410,14 @@ _DONE_GOAL = ('已完成', '完成', '确认', '验证', '成功', '检查', 've
 _DONE_STATE = ('成功', '完成', 'welcome', '欢迎', 'results', '结果',
                'thank', 'success', 'complete', 'ok', '登出', '退出',
                'logged out', 'signed out', 'thank you')
-_BLOCKED_KW = ('验证码', '人机', '机器人', 'captcha', 'verify you are',
-               'robot', '安全验证', '盾', 'please verify', 'suspended',
-               '被封', '封号', '拦截', 'security check')
+# blocked 判据收窄（P2 backlog blocked 全池误判归因——资讯站候选名/标题
+# 含'人形机器人/拦截/无人机/盾'类内容词致整页短路，ithome/cnblogs/csdn/HN
+# 必中且连 hard_case 采集都掐掉）：只保留真拦截墙信号——验证挑战短语与
+# 账号封禁态，剔除可被普通内容命中的'人机/机器人/robot/拦截/盾'
+# （'人机'子串还误中'无人机'、'盾'误中'矛盾'）
+_BLOCKED_KW = ('验证码', '人机验证', 'captcha', 'verify you are',
+               '安全验证', 'please verify', 'suspended', '被封',
+               '封号', 'security check')
 # 表单字段含'验证码'≠拦截墙（登录页短信验证码输入框是正常可交互元素，
 # eval-120 x34/x41 误判归因）——候选名判拦截时剔除'验证码'，仅 title 判
 _BLOCKED_NAME_KW = tuple(k for k in _BLOCKED_KW if k != '验证码')

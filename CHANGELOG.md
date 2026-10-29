@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.18] - 2026-10-28
+
+### 改进（decide 蒸馏+daemon 兜底+跨平台）
+- **decide**：`_first_step` 多步 goal 截首步规则（eval-120 ALL 84.2）；教师蒸馏定向 hardneg 176 组 v24 模型 **88.3/87.1**（+4.1pp 首个蒸馏正收益）；v25 第二轮递减终点如实否证
+- **daemon**：`meta.sock_path` 权威源三入口根治 TMPDIR 分歧失联；integration CI `--reruns 1` 竞态防护
+- **测试基建**：HOME 隔离 USERPROFILE+顶层固化改惰性；误绿双保险（pipefail+passed 计数断言）；TCP 降级测试 `_HAS_UNIX_SOCK=False` 分支覆盖
+
 ## [0.15.17] - 2026-10-28
 
 ### 修复

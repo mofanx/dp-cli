@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.20] - 2026-10-28
+
+### 改进（真机训练数据链路+margin 校准）
+- **三形态数据契约**：`bench/DATA_SCHEMA.md`——verified_real（标签级三证）/hard_case（采集池级）/teacher（弱标注级）权责分闸，质量门四件（post_delta 判据/refs_epoch 增采/promote 零 diff 拒/emit-teacher 模板）
+- **信任边界补齐**：hard_cases 默认开文档化+`promote_teacher` 四条件 fail-closed 代码门
+- **margin 门校准**：0.15→0.005 扫档——eval-120 实测假拒 -74% 真拦 8/8 全保（gated ALL 47.5→80.0）
+
 ## [0.15.19] - 2026-10-28
 
 ### 改进（decide 自动化管线两组件+实机验证）

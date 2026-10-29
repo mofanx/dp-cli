@@ -53,23 +53,29 @@ _INTERACTIVE_ROLES = {
 
 # ── 控件表（Jev 格式）───────────────────────────────────────
 
-def _page_state(page, session, max_opts=_TOP_K):
-    """取 a11y 快照 → Jev 式 {state, options[{ref,role,name,current}]}。"""
+def _page_state(page, session, max_opts=_TOP_K, recall_pool=False):
+    """取 a11y 快照 → Jev 式 {state, options[{ref,role,name,current}]}。
+
+    recall_pool=True（decide reranker 引擎）：原始可交互数超
+    _EMBED_THRESHOLD 时不按 top_k 截断——全量候选交给 embedding
+    召回粗排（治"opts≤top_k<阈值 recall 永不触发"缺陷）；
+    池上限 _EMBED_POOL_MAX 防病理页面 encode 爆炸。
+    """
     from dp_cli.snapshot.a11y import take_a11y_snapshot
     data = take_a11y_snapshot(page, max_depth=12)
     nodes = data.get('tree') or data.get('elements') or []
     if isinstance(nodes, dict):
         nodes = nodes.get('children', [])
+    cands = [n for n in _walk(nodes)
+             if (n.get('role') or '').lower() in _INTERACTIVE_ROLES]
+    total = len(cands)        # 截断前原始 refs 数——recall 触发判据
+    limit = max_opts
+    if recall_pool and total > _EMBED_THRESHOLD:
+        limit = max(max_opts, _EMBED_POOL_MAX)
     opts, refs = [], {}
     prop_bits = []            # 交互属性子集指纹——进 epoch sig
-    i = 0
-    for n in _walk(nodes):
+    for i, n in enumerate(cands[:limit], 1):
         role = (n.get('role') or '').lower()
-        if role not in _INTERACTIVE_ROLES:
-            continue
-        i += 1
-        if i > max_opts:
-            break
         name = (n.get('name') or '').strip()[:120]
         cur = n.get('value')
         entry = {'ref': i, 'role': role, 'name': name}
@@ -108,9 +114,8 @@ def _page_state(page, session, max_opts=_TOP_K):
         save_session(session, sess)
     return {'state': {'url': url, 'title': title, 'sig': sig},
             'options': opts, 'epoch': sig,
-            'truncated': len([n for n in _walk(nodes)
-                              if (n.get('role') or '').lower()
-                              in _INTERACTIVE_ROLES]) > max_opts}
+            'options_total': total,
+            'truncated': total > len(opts)}
 
 
 def _walk(node):
@@ -171,29 +176,47 @@ _EMBED = None              # bge-embedding 召回模型（长页两级架构粗�
 _EMBED_MISS = False
 _EMBED_THRESHOLD = int(os.environ.get('DPX_EMBED_THRESHOLD', '30'))
 _EMBED_TOPK = int(os.environ.get('DPX_EMBED_TOPK', '8'))
+_EMBED_POOL_MAX = int(os.environ.get('DPX_EMBED_POOL_MAX', '300'))
 
 
 def _embed_model():
-    """embedding 召回模型惰性加载——不可用时 None（降级全量打分）。"""
+    """embedding 召回模型惰性加载——不可用时 None（降级全量打分）。
+
+    进程内单例：同进程（serve/daemon/REPL）复用零成本；CLI 单发
+    场景每进程首载 ~3.5-5s 属进程生命周期成本，可用
+    DPX_NO_EMBED=1 显式禁用召回层。
+    加载失败向 stderr 警告一次——静默降级会让召回层
+    "存在但永不生效"无从察觉（实机验证 A1 教训）。
+    """
     global _EMBED, _EMBED_MISS
     if _EMBED is None and not _EMBED_MISS:
+        if os.environ.get('DPX_NO_EMBED'):
+            return None                       # 用户显式关——不告警
         try:
             from sentence_transformers import SentenceTransformer
             _EMBED = SentenceTransformer(
                 os.environ.get('DPX_EMBED_MODEL',
                                'BAAI/bge-small-zh-v1.5'))
-        except Exception:
+        except Exception as e:
             _EMBED_MISS = True
+            _write_err('dpx: embedding 召回模型加载失败，'
+                       '召回层降级为全量打分'
+                       '（DPX_NO_EMBED=1 可彻底禁用）：'
+                       f'{type(e).__name__}: {e}\n')
     return _EMBED
 
 
-def _recall_topk(goal, texts, opts, topk=None):
+def _recall_topk(goal, texts, opts, topk=None, total=None):
     """embedding 余弦召回 topk——候选超阈值时先粗排再过 CrossEncoder。
 
+    total=截断前原始候选数（state['options_total']）——触发判定看
+    原始数而非截断后 len(opts)，否则 opts≤top_k<阈值时永不触发。
     返回 (子集 opts, 子集 texts)；embedding 不可用返回原列表降级。"""
     topk = topk or _EMBED_TOPK
-    if len(opts) <= _EMBED_THRESHOLD:
+    if (total if total is not None else len(opts)) <= _EMBED_THRESHOLD:
         return opts, texts
+    if len(opts) <= topk:
+        return opts, texts                      # 池已≤topk，召回是恒等
     m = _embed_model()
     if m is None:
         return opts, texts                    # 降级：全量直排
@@ -312,7 +335,8 @@ def _engine_reranker(state, goal):
     import math
     q = _first_step(goal)                   # 多步 goal 截首步再打分
     texts = [f"{o['role']} {o['name']}" for o in opts]
-    opts, texts = _recall_topk(q, texts, opts)   # 长页两级：embedding 召回→CE 细排
+    opts, texts = _recall_topk(                 # 长页两级：embedding 召回→CE 细排
+        q, texts, opts, total=state.get('options_total'))
     if m[0] == 'ort':                       # ONNX 直跑 session
         _, sess, tok = m
         enc = tok([q] * len(texts), texts, return_tensors='np',
@@ -709,7 +733,8 @@ def register(cli):
         page = _get_page(session)
         sess = load_session(session) or {}
         eng = engine or sess.get('agent_engine') or 'external'
-        state = _page_state(page, session, max_opts=top_k)
+        state = _page_state(page, session, max_opts=top_k,
+                            recall_pool=(eng == 'reranker'))
         prev_sig = _state_sig(session)
         # meta 决策确定性短路——done/blocked/scroll 走规则非模型
         # （语义学习对状态决策零增益已实测；规则命中即出判定）

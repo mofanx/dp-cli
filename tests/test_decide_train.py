@@ -326,7 +326,7 @@ def test_hard_case_via_decide_command(tmp_path, monkeypatch):
     from tests.conftest import FakePage
 
     monkeypatch.setattr(am, '_page_state',
-                        lambda p, s, max_opts=20: dict(_HARD_STATE))
+                        lambda p, s, max_opts=20, **kw: dict(_HARD_STATE))
     monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
     monkeypatch.setattr(_utils, 'load_session', lambda s: {})
     monkeypatch.setattr(am, 'load_session', lambda s: {})

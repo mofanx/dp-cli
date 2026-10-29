@@ -1,0 +1,6 @@
+{
+  "status": "error",
+  "code": "AGENT_UNSURE",
+  "message": "置信度 0.21 / margin 0.00 低于阈值——候选不足或页面不适合当前决策模型",
+  "detail": "{\"action\": \"click\", \"ref\": 49, \"confidence\": 0.214, \"probs\": {\"target\": {\"49\": 0.214, \"4\": 0.2138, \"46\": 0.1678, \"45\": 0.0835, \"51\": 0.0812, \"53\": 0.08, \"40\": 0.0799, \"54\": 0.0797}}, \"done\": false, \"done_hash_changed\": false, \"stuck\": false, \"epoch\": \"42438bd58c46\", \"options_count\": 54, \"truncated\": false, \"engine\": \"reranker\", \"advisory\": true, \"margin\": 0.0002, \"margin_source\": \"single_side\", \"tier\": \"refuse\"}"
+}

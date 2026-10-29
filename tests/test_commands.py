@@ -4035,7 +4035,7 @@ def test_decide_external_and_unsure(runner, monkeypatch):
     from dp_cli.main import cli
 
     monkeypatch.setattr('dp_cli.agent._page_state',
-                        lambda p, s, max_opts=20: {
+                        lambda p, s, max_opts=20, **kw: {
                             'state': {'url': 'u', 'title': 't', 'sig': 'x'},
                             'options': [{'ref': 1, 'role': 'button',
                                          'name': 'Go'}],
@@ -4067,7 +4067,7 @@ def test_decide_stuck_detection(runner, monkeypatch):
     import dp_cli.agent as am
 
     monkeypatch.setattr(am, '_page_state',
-                        lambda p, s, max_opts=20: {
+                        lambda p, s, max_opts=20, **kw: {
                             'state': {'url': 'u', 'title': 't', 'sig': 'x'},
                             'options': [{'ref': 1, 'role': 'button',
                                          'name': 'Go'}],
@@ -4092,7 +4092,7 @@ def test_decide_cascade_returns_candidates(runner, monkeypatch):
     import dp_cli.agent as am
 
     monkeypatch.setattr(am, '_page_state',
-                        lambda p, s, max_opts=20: {
+                        lambda p, s, max_opts=20, **kw: {
                             'state': {'url': 'u', 'title': 't', 'sig': 'x'},
                             'options': [{'ref': 1, 'role': 'button',
                                          'name': 'A'},
@@ -4120,7 +4120,7 @@ def test_decide_margin_gate(runner, monkeypatch):
     import dp_cli.agent as am
 
     monkeypatch.setattr(am, '_page_state',
-                        lambda p, s, max_opts=20: {
+                        lambda p, s, max_opts=20, **kw: {
                             'state': {'url': 'u', 'title': 't', 'sig': 'x'},
                             'options': [{'ref': 1, 'role': 'button',
                                          'name': 'A'},
@@ -4273,7 +4273,7 @@ def test_decide_margin_source_field(runner, monkeypatch):
     import dp_cli.agent as am
 
     monkeypatch.setattr(am, '_page_state',
-                        lambda p, s, max_opts=20: {
+                        lambda p, s, max_opts=20, **kw: {
                             'state': {'url': 'u', 'title': 't', 'sig': 'x'},
                             'options': [{'ref': 1, 'role': 'button',
                                          'name': 'A'},

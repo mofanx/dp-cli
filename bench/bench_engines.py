@@ -8,7 +8,8 @@
   qwen06   Qwen3-0.6B 生成式 JSON（transformers CPU）
 
 排名类引擎（lex/e5/reranker）：候选 = 元素 + 6 个动作伪选项，
-goal↔候选相似度取 argmax；ref 命中后 action 由 _ROLE_ACTION 映射。
+goal↔候选相似度取 argmax；ref 命中后 action 由 _goal_action 映射
+（生产 agent.py 同一函数——type 族角色无输入意图降级 click）。
 """
 import json
 import sys
@@ -16,7 +17,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from bench_needle import CASES, _ROLE_ACTION  # noqa: E402
+from bench_needle import CASES  # noqa: E402
 
 OUT = Path(__file__).parent / 'engines_results.json'
 
@@ -45,9 +46,10 @@ def rich_name(o):
 
 def candidates(case):
     """统一候选表：元素 + 动作伪选项 → [(action, ref, text)]"""
+    from dp_cli.agent import _goal_action      # eval 与生产同映射
     rows = []
     for o in case['options']:
-        rows.append((_ROLE_ACTION.get(o['role'], 'click'), o['ref'],
+        rows.append((_goal_action(case['goal'], o['role']), o['ref'],
                      f"{o['role']} {rich_name(o)}"))
     for a, t in _ACT_CANDS:
         rows.append((a, None, t))

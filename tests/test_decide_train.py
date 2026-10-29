@@ -186,3 +186,188 @@ def test_decide_train_trim_below_high_water_untouched(tmp_path,
     dt.record('s', ['click', '@e1'], refs)
     dt.record('s', ['click', '@e1'], refs)
     assert len(f.read_text(encoding='utf-8').splitlines()) == 2
+
+
+# ── hard-case 被动落盘（默认开，~/.dp_cli/hard_cases.jsonl）──────────
+# conftest autouse 已把 _hard_file/_hard_lock_path 重定向到
+# tmp_path/.dp_cli/——以下用例直接读该路径即可。
+
+_HARD_STATE = {'state': {'url': 'https://x/login', 'title': 'L'},
+               'options': [{'ref': 2, 'role': 'button', 'name': '登录'},
+                           {'ref': 5, 'role': 'link', 'name': '注册'},
+                           {'ref': 7, 'role': 'link', 'name': '帮助'}],
+               'epoch': 'e1', 'truncated': False}
+
+
+def _hard_result(conf, margin, probs=None, **kw):
+    r = {'action': 'click', 'ref': 2, 'confidence': conf,
+         'probs': probs if probs is not None else
+                {'target': {'2': 0.4, '5': 0.33, '7': 0.02}},
+         'margin': margin, 'margin_source': 'probs',
+         'engine': 'reranker', 'done': False}
+    r.update(kw)
+    return r
+
+
+def _hard_rows(tmp_path):
+    import json as _j
+    f = tmp_path / '.dp_cli' / 'hard_cases.jsonl'
+    if not f.exists():
+        return []
+    return [_j.loads(l)
+            for l in f.read_text(encoding='utf-8').splitlines()]
+
+
+def test_hard_case_low_conf_logged(tmp_path):
+    """conf<0.5 触发落盘；行 schema 齐（goal/top3 candidates ref+name+
+    score/engine_ref/conf/margin/ts/session/url）。"""
+    import dp_cli.decide_train as dt
+    dt._maybe_log_hard_case(_hard_result(0.42, 0.3), 's1',
+                            goal='点登录', state=_HARD_STATE, unsure=True)
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1
+    r = rows[0]
+    for k in ('ts', 'session', 'goal', 'url', 'engine', 'engine_ref',
+              'conf', 'margin', 'margin_source', 'unsure', 'triggers',
+              'candidates'):
+        assert k in r, k
+    assert r['session'] == 's1' and r['goal'] == '点登录'
+    assert r['url'] == 'https://x/login'
+    assert r['engine_ref'] == 2 and r['conf'] == 0.42
+    assert r['unsure'] is True and r['triggers'] == ['low_conf']
+    assert [c['ref'] for c in r['candidates']] == [2, 5, 7]
+    c0 = r['candidates'][0]
+    assert c0['name'] == '登录' and c0['role'] == 'button'
+    assert abs(c0['score'] - 0.4) < 1e-6
+
+
+def test_hard_case_confident_not_logged(tmp_path):
+    """conf≥0.5 且 margin≥0.1 → 不落盘（文件不创建）。"""
+    import dp_cli.decide_train as dt
+    dt._maybe_log_hard_case(_hard_result(0.92, 0.6), 's1',
+                            goal='点登录', state=_HARD_STATE)
+    assert _hard_rows(tmp_path) == []
+
+
+def test_hard_case_low_margin_logged(tmp_path):
+    """conf≥0.5 但 top2 margin<0.1（歧义）同样落盘；
+    conf/margin 双低时 triggers 两标。"""
+    import dp_cli.decide_train as dt
+    dt._maybe_log_hard_case(_hard_result(0.9, 0.05), 's1',
+                            goal='x', state=_HARD_STATE)
+    dt._maybe_log_hard_case(_hard_result(0.3, 0.05), 's1',
+                            goal='y', state=_HARD_STATE)
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 2
+    assert rows[0]['triggers'] == ['low_margin']
+    assert rows[1]['triggers'] == ['low_conf', 'low_margin']
+
+
+def test_hard_case_opt_out(tmp_path, monkeypatch):
+    """DPX_HARD_CASES=0 显式关闭——低置信也不落盘。"""
+    import dp_cli.decide_train as dt
+    monkeypatch.setenv('DPX_HARD_CASES', '0')
+    dt._maybe_log_hard_case(_hard_result(0.1, 0.01), 's1',
+                            state=_HARD_STATE)
+    assert _hard_rows(tmp_path) == []
+
+
+def test_hard_case_state_fallback_load_refs(tmp_path, monkeypatch):
+    """无内嵌 state 时走 load_refs/load_session 补 name/url——
+    与录制路径同数据源。"""
+    import dp_cli.decide_train as dt
+    import dp_cli.session as sess_mod
+    monkeypatch.setattr(
+        sess_mod, 'load_refs',
+        lambda s: {'2': {'role': 'button', 'name': '登录'}})
+    monkeypatch.setattr(
+        sess_mod, 'load_session',
+        lambda s: {'refs_epoch': {'url': 'https://x/inner'}})
+    res = _hard_result(0.4, 0.3,
+                       probs={'target': {'2': 0.4, '9': 0.1}})
+    dt._maybe_log_hard_case(res, 's1', goal='登录', state=None)
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]['url'] == 'https://x/inner'
+    assert rows[0]['candidates'][0]['name'] == '登录'
+
+
+def test_hard_case_concurrent_writes_no_tear(tmp_path):
+    """线程锁+跨进程 spawn-lock 双保险——并发 append 不撕裂
+    （每行都是完整 JSON，行数齐全）。"""
+    import threading
+    import dp_cli.decide_train as dt
+    res = _hard_result(0.2, 0.05)
+
+    def _w(tag):
+        for i in range(40):
+            dt._maybe_log_hard_case(dict(res), f's-{tag}',
+                                    goal=f'g{tag}-{i}',
+                                    state=_HARD_STATE)
+
+    ts = [threading.Thread(target=_w, args=(t,)) for t in 'ab']
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    rows = _hard_rows(tmp_path)     # 撕裂行会 JSONDecodeError 挂掉
+    assert len(rows) == 80
+    assert all(r['triggers'] for r in rows)
+
+
+def test_hard_case_via_decide_command(tmp_path, monkeypatch):
+    """decide 返回路径单挂点全渠道覆盖：高 conf + 低 margin（歧义）
+    → AGENT_UNSURE 且 hard_cases 落盘；conftest autouse 已把
+    _hard_file 重定向进 tmp_path 不碰真实 HOME。"""
+    import dp_cli.agent as am
+    from click.testing import CliRunner
+    from dp_cli.main import cli
+    from dp_cli.commands import _utils
+    from tests.conftest import FakePage
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20: dict(_HARD_STATE))
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 2, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.55, 'type': 0.45},
+                   'target': {'2': 0.52, '5': 0.48}}}, {}))
+    r = CliRunner().invoke(cli, ['decide', '点登录',
+                                 '--engine', 'external'])
+    assert 'AGENT_UNSURE' in r.output
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]['triggers'] == ['low_margin']
+    assert rows[0]['unsure'] is True
+    assert rows[0]['goal'] == '点登录'
+    assert rows[0]['url'] == 'https://x/login'
+    assert [c['ref'] for c in rows[0]['candidates']] == [2, 5]
+    assert rows[0]['candidates'][0]['name'] == '登录'
+
+
+def test_review_hard_cases_summary(tmp_path):
+    """bench/review_hard_cases：读盘汇总 + review 清单 conf 升序。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import load_rows, summarize, review_rows
+    f = tmp_path / 'hc.jsonl'
+    f.write_text(
+        json.dumps({'goal': 'g1', 'conf': 0.4, 'margin': 0.3,
+                    'triggers': ['low_conf'], 'engine': 'reranker',
+                    'url': 'u1', 'candidates': []}) + '\n'
+        + json.dumps({'goal': 'g2', 'conf': 0.9, 'margin': 0.03,
+                      'triggers': ['low_margin'],
+                      'engine': 'external', 'url': 'u2',
+                      'unsure': True, 'candidates': []}) + '\n'
+        + 'not-json\n', encoding='utf-8')
+    rows, bad = load_rows(f)
+    assert len(rows) == 2 and bad == 1
+    s = summarize(rows)
+    assert s['total'] == 2 and s['unsure'] == 1
+    assert s['triggers'] == {'low_conf': 1, 'low_margin': 1}
+    rev = review_rows(rows)
+    assert rev[0]['goal'] == 'g1'    # conf 0.4 < 0.9 排前
+    assert rev[0]['engine_ref'] is None or 'engine_ref' in rev[0]

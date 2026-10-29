@@ -29,6 +29,13 @@ def _isolate_session_state(tmp_path: Path, monkeypatch):
     bd = tmp_path / '.dp_cli' / 'bridges'
     bd.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(reg_mod, '_bridges_dir', lambda: bd)
+    # hard_cases 落盘直读 Path.home()——decide 用例低置信时会
+    # 触发被动写入，重定向到 tmp 防污染真实 ~/.dp_cli
+    import dp_cli.decide_train as dt_mod
+    monkeypatch.setattr(dt_mod, '_hard_file',
+                        lambda: tmp_path / '.dp_cli' / 'hard_cases.jsonl')
+    monkeypatch.setattr(dt_mod, '_hard_lock_path',
+                        lambda: tmp_path / '.dp_cli' / 'hard_cases.lock')
     yield
     session_mod._PAGE_CACHE.clear()
 

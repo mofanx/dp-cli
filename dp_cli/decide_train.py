@@ -7,9 +7,16 @@
 导出（decide-train-export）：reranker 训练格式
   {query, positive, negatives[]}——query=state 描述拼接，
   positive=chosen 命令文本，negatives=同 state 其他候选文本。
+
+hard-case 被动落盘（默认开，DPX_HARD_CASES=0 关闭）：
+decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
+~/.dp_cli/hard_cases.jsonl——调试/标注原料非训练承诺，
+与 decide_train.jsonl 并行两份职责，bench/review_hard_cases.py
+定期汇总输出 LLM 标注清单。
 """
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -49,6 +56,137 @@ def enabled() -> bool:
 
 def _file() -> Path:
     return get_session_dir() / 'decide_train.jsonl'
+
+
+# ── hard-case 被动落盘（默认开）──────────────────────────────────
+# decide 低置信候选自动攒盘：conf<0.5 或 top2 margin<0.1 →
+# ~/.dp_cli/hard_cases.jsonl。调试数据非训练承诺——被动攒默认开，
+# DPX_HARD_CASES=0 显式关闭；与 decide_train.jsonl（opt-in 训练
+# 录制）并行，两个文件两份职责。
+_HARD_FLAG = 'DPX_HARD_CASES'
+_HARD_CONF = 0.5         # conf 低于此值 → hard case
+_HARD_MARGIN = 0.1       # top2 分差低于此值 → hard case（歧义）
+_hard_lock = threading.Lock()
+
+
+def hard_cases_enabled() -> bool:
+    """hard-case 落盘总闸——默认开（被动攒调试数据），'0' 显式关。"""
+    return os.environ.get(_HARD_FLAG, '1') != '0'
+
+
+def _hard_file() -> Path:
+    return Path.home() / '.dp_cli' / 'hard_cases.jsonl'
+
+
+def _hard_lock_path() -> Path:
+    return Path.home() / '.dp_cli' / 'hard_cases.lock'
+
+
+def _ref_meta(session: str, state: dict = None) -> dict:
+    """ref→{role,name} 查名表：decide 内嵌 state.options 优先；
+    无 state（录制路径）退 load_refs——与录制同源数据。"""
+    if state:
+        opts = state.get('options') or []
+        if opts:
+            return {str(o.get('ref')): o for o in opts}
+    try:
+        from dp_cli.session import load_refs
+        return {str(k): v for k, v in (load_refs(session) or {}).items()}
+    except Exception:
+        return {}
+
+
+def _hard_url(session: str, state: dict = None):
+    """页面 url：state 内嵌优先，退 session refs_epoch（_page_state
+    在 decide 时已写入——同一次快照的 url，零额外 IO 成本）。"""
+    url = ((state or {}).get('state') or {}).get('url')
+    if url:
+        return url
+    try:
+        from dp_cli.session import load_session
+        return ((load_session(session) or {}).get('refs_epoch')
+                or {}).get('url')
+    except Exception:
+        return None
+
+
+def _maybe_log_hard_case(result: dict, session: str, goal: str = None,
+                         state: dict = None, unsure: bool = False) -> None:
+    """decide 低置信候选被动落盘——主动学习 hard-case 原料。
+
+    触发：conf<0.5 或 top2 margin<0.1（result['margin'] 已是
+    action/target 双侧 min，conf_fallback 降级语义由
+    margin_source 字段透传给 review 侧判读，此处不重复分流）。
+    一切异常自吞——旁路调试采集绝不炸 decide 主链路；进程内
+    线程锁 + 跨进程 spawn-lock（netlog 同款双保险）防 serve/
+    daemon/CLI 并存写撕裂。
+    """
+    try:
+        if not hard_cases_enabled() or not isinstance(result, dict):
+            return
+        conf = result.get('confidence')
+        margin = result.get('margin')
+        triggers = []
+        if isinstance(conf, (int, float)) and conf < _HARD_CONF:
+            triggers.append('low_conf')
+        if isinstance(margin, (int, float)) and margin < _HARD_MARGIN:
+            triggers.append('low_margin')
+        if not triggers:
+            return
+        meta = _ref_meta(session, state)
+        probs_t = ((result.get('probs') or {}).get('target')) or {}
+
+        def _prob(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+
+        cands = []
+        for k, v in sorted(probs_t.items(),
+                           key=lambda kv: -_prob(kv[1]))[:3]:
+            m = meta.get(str(k)) or {}
+            cands.append({'ref': int(k) if str(k).isdigit() else k,
+                          'name': m.get('name', ''),
+                          'role': m.get('role', ''),
+                          'score': round(_prob(v), 4)})
+        if not cands and result.get('ref') is not None:
+            # 无 probs 引擎——引擎 pick 即唯一候选
+            m = meta.get(str(result['ref'])) or {}
+            cands.append({'ref': result['ref'],
+                          'name': m.get('name', ''),
+                          'role': m.get('role', ''), 'score': conf})
+        row = {'ts': int(time.time()), 'session': session,
+               'goal': goal, 'url': _hard_url(session, state),
+               'engine': result.get('engine'),
+               'action': result.get('action'),
+               'engine_ref': result.get('ref'),
+               'conf': round(float(conf), 4)
+                       if isinstance(conf, (int, float)) else conf,
+               'margin': margin,
+               'margin_source': result.get('margin_source'),
+               'tier': result.get('tier'),
+               'unsure': bool(unsure),
+               'triggers': triggers,
+               'candidates': cands}
+        f = _hard_file()
+        with _hard_lock:
+            try:
+                from dp_cli.daemon import _acquire_spawn_lock
+                f.parent.mkdir(parents=True, exist_ok=True)
+                with _acquire_spawn_lock(_hard_lock_path(), timeout=5):
+                    with f.open('a', encoding='utf-8') as fp:
+                        fp.write(json.dumps(row, ensure_ascii=False)
+                                 + '\n')
+                    _maybe_trim(f)
+            except (OSError, TimeoutError):
+                pass
+    except Exception as e:
+        try:
+            from dp_cli.output import debug
+            debug('hard-case 落盘异常（已忽略）', e)
+        except Exception:
+            pass
 
 
 def record(session: str, argv: list, refs: dict,

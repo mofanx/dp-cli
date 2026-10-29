@@ -167,6 +167,42 @@ def _engine_julia(request, session):
 
 
 _RERANKER = None           # 惰性单例——首次调用才加载模型
+_EMBED = None              # bge-embedding 召回模型（长页两级架构粗排）
+_EMBED_MISS = False
+_EMBED_THRESHOLD = int(os.environ.get('DPX_EMBED_THRESHOLD', '30'))
+_EMBED_TOPK = int(os.environ.get('DPX_EMBED_TOPK', '8'))
+
+
+def _embed_model():
+    """embedding 召回模型惰性加载——不可用时 None（降级全量打分）。"""
+    global _EMBED, _EMBED_MISS
+    if _EMBED is None and not _EMBED_MISS:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _EMBED = SentenceTransformer(
+                os.environ.get('DPX_EMBED_MODEL',
+                               'BAAI/bge-small-zh-v1.5'))
+        except Exception:
+            _EMBED_MISS = True
+    return _EMBED
+
+
+def _recall_topk(goal, texts, opts, topk=None):
+    """embedding 余弦召回 topk——候选超阈值时先粗排再过 CrossEncoder。
+
+    返回 (子集 opts, 子集 texts)；embedding 不可用返回原列表降级。"""
+    topk = topk or _EMBED_TOPK
+    if len(opts) <= _EMBED_THRESHOLD:
+        return opts, texts
+    m = _embed_model()
+    if m is None:
+        return opts, texts                    # 降级：全量直排
+    import numpy as np
+    ve = np.asarray(m.encode([goal] + texts,
+                             normalize_embeddings=True))
+    sims = (ve[1:] @ ve[0]).tolist()
+    idx = sorted(range(len(sims)), key=lambda i: -sims[i])[:topk]
+    return [opts[i] for i in idx], [texts[i] for i in idx]
 _RERANKER_FAM = None        # 'bge'|'minilm'——tier 封顶判据
 _ORT_MOD = None            # onnxruntime 可用性缓存（False=不可用）
 
@@ -276,6 +312,7 @@ def _engine_reranker(state, goal):
     import math
     q = _first_step(goal)                   # 多步 goal 截首步再打分
     texts = [f"{o['role']} {o['name']}" for o in opts]
+    opts, texts = _recall_topk(q, texts, opts)   # 长页两级：embedding 召回→CE 细排
     if m[0] == 'ort':                       # ONNX 直跑 session
         _, sess, tok = m
         enc = tok([q] * len(texts), texts, return_tensors='np',
@@ -364,6 +401,45 @@ _SCROLL_KW = ('下方', '页底', '更多', '滚动', '向下', 'scroll', 'more'
               'below', 'find', '找到', '查看全部')
 
 
+def _kw_hit(kw, g, goal):
+    """关键词命中——ASCII 词要求左词界，非 ASCII 走子串。
+
+    '\\b' 左界根治 'load'⊂'download'/'ok'⊂'Tokyo' 类词内误命中
+    （eval-120 n08 归因）；'loading'/'waited' 等形态后缀仍命中
+    （右界不卡，保留词形变体召回）。
+    """
+    if kw.isascii():
+        return re.search(r'\b' + re.escape(kw), g) is not None
+    return kw in goal or kw in g
+
+
+# 输入意图词——goal 含其一时 textbox/searchbox/spinbutton 目标才判 type
+_TYPE_INTENT = ('输入', '填写', '填', '键入', '写', '搜', '搜索',
+                '改成', 'type', 'fill', 'enter', 'search', 'write')
+
+
+def _goal_action(goal, role):
+    """role→action 映射 goal 感知——type 族角色无输入意图时降级 click。
+
+    'reply to this thread' 的回复框是 focus 前置点击非 type（eval-120
+    m12 归因）——裸 role 映射把"点击输入框"类 goal 错成 type。
+    goal 含输入意图词（填/输入/写/搜/type/fill/…）仍判 type。
+    """
+    act = _ROLE_ACTION.get(role, 'click')
+    if act == 'type':
+        g = goal.lower()
+        if not any(_kw_hit(k, g, goal) for k in _TYPE_INTENT):
+            return 'click'
+    return act
+
+
+# 序数修饰'选项/option'→N 是 option 序号非元素序号（m26 归因）
+_ORD_OPT_RE = re.compile(
+    r'第\s*(?:\d+|[一二两三四五六七八九十]+)\s*(?:个|项)?\s*选项'
+    r'|\b(?:\d+(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|'
+    r'seventh|eighth|ninth|tenth)\s+options?\b')
+
+
 _TIER = {'probs': ('act', 'confirm', 'refuse'),
          'single_side': ('confirm', 'confirm', 'refuse'),
          'conf_fallback': ('confirm', 'confirm', 'refuse')}
@@ -431,38 +507,51 @@ def _meta_decide(state, goal):
     title = (state['state'].get('title') or '').lower()
     g = goal.lower()
     names = ' '.join(o['name'].lower() for o in opts)
-    if any(k in names for k in _BLOCKED_NAME_KW) or \
-            any(k in title for k in _BLOCKED_KW):
+    if any(_kw_hit(k, names, names) for k in _BLOCKED_NAME_KW) or \
+            any(_kw_hit(k, title, title) for k in _BLOCKED_KW):
         return {'action': 'blocked', 'deterministic': True,
                 'reason': '验证码/人机特征命中'}
     if not opts:
         return {'action': 'done', 'deterministic': True,
                 'reason': '无可交互候选'}
-    if any(k in g or k in goal for k in _DONE_GOAL) and \
-            any(k in title for k in _DONE_STATE):
+    if any(_kw_hit(k, g, goal) for k in _DONE_GOAL) and \
+            any(_kw_hit(k, title, title) for k in _DONE_STATE):
         return {'action': 'done', 'deterministic': True,
                 'reason': 'goal 完成意图+页面完成态'}
     # 序数定位确定性短路——'第N个/第N页/第N行/last' 直接映射 ref，
     # 模型只看 goal↔文本语义拿不到位置信号（eval-120 x-系 6 miss 归因）
     n = _ordinal_n(g, goal)
     if n is not None:
+        # 序数修饰'选项/option'（'选下拉的第二个选项'）→ N 是 option
+        # 序号非元素 ref——select 作用在 combobox/listbox 本体；
+        # 候选无下拉元素时按普通元素序数处理（eval-120 m26 归因）
+        if n > 0 and _ORD_OPT_RE.search(g):
+            cb = next((o for o in opts
+                       if o['role'] in ('combobox', 'listbox')), None)
+            if cb is not None:
+                return {'action': 'select', 'ref': cb['ref'],
+                        'deterministic': True,
+                        'reason': f'goal 含序数选项（第{n}个选项→下拉本体）'}
         ref = opts[-1]['ref'] if n == -1 else (n if n <= len(opts) else None)
         if ref is not None:
-            is_type = any(k in g or k in goal for k in
-                          ('输入', '填写', '填', '键入', 'type', 'fill', 'enter'))
+            is_type = any(_kw_hit(k, g, goal) for k in _TYPE_INTENT)
             act = 'type' if is_type else 'click'
             return {'action': act, 'ref': ref, 'deterministic': True,
                     'reason': f'goal 含序数定位（第{n if n > 0 else len(opts)}）'}
-    if any(k in g or k in goal for k in _BACK_KW):
+    if any(_kw_hit(k, g, goal) for k in _BACK_KW):
         return {'action': 'back', 'deterministic': True,
                 'reason': 'goal 含返回意图'}
-    if any(k in g or k in goal for k in _WAIT_KW):
+    if any(_kw_hit(k, g, goal) for k in _WAIT_KW):
         return {'action': 'wait', 'deterministic': True,
                 'reason': 'goal 含等待意图'}
-    if any(k in g or k in goal for k in _SCROLL_UP_KW):
+    # 滚动意图词若同时是候选元素名（'查看全部 12 条回复'按钮）→ 意图
+    # 落在元素上非页面滚动，交 elem 打分不短路（eval-120 c10 归因）
+    su_hit = [k for k in _SCROLL_UP_KW if _kw_hit(k, g, goal)]
+    if su_hit and not any(_kw_hit(k, names, names) for k in su_hit):
         return {'action': 'scroll_up', 'deterministic': True,
                 'reason': 'goal 含向上滚动意图'}
-    if any(k in g or k in goal for k in _SCROLL_KW):
+    sd_hit = [k for k in _SCROLL_KW if _kw_hit(k, g, goal)]
+    if sd_hit and not any(_kw_hit(k, names, names) for k in sd_hit):
         return {'action': 'scroll_down', 'deterministic': True,
                 'reason': 'goal 含向下滚动/查找意图'}
     return None
@@ -506,7 +595,7 @@ def _ask_questions(state, goal, engine, session, answer, answer_file):
                     t = -1
                 role = next((o['role'] for o in state['options']
                              if o['ref'] == t), '')
-                resp['action'] = _ROLE_ACTION.get(role, 'click')
+                resp['action'] = _goal_action(goal, role)
         return resp, request
     opts = [f"{o['ref']}. {o['role']}: {o['name']}"
             + (f" [={o['current']}]" if o.get('current') else '')
@@ -543,7 +632,7 @@ def _ask_questions(state, goal, engine, session, answer, answer_file):
                 t = -1
             role = next((o['role'] for o in state['options']
                          if o['ref'] == t), '')
-            resp['action'] = _ROLE_ACTION.get(role, 'click')
+            resp['action'] = _goal_action(goal, role)
         return resp, request
     return {'_error': f'未知引擎: {engine}'}, request
 
@@ -722,8 +811,19 @@ def register(cli):
         # bge softmax 分布集中 0.16-0.28（conf 无分离信号）——
         # bge 下 min_conf 门槛失效，unsure 只判 margin
         _conf_gate = min_conf if _RERANKER_FAM != 'bge' else 0.0
-        if not done and (conf and conf < _conf_gate
-                         or margin < min_margin):
+        _unsure = bool(not done and (conf and conf < _conf_gate
+                                     or margin < min_margin))
+        # hard-case 被动落盘：conf<0.5 或 top2 margin<0.1 →
+        # ~/.dp_cli/hard_cases.jsonl（默认开，DPX_HARD_CASES=0 关；
+        # 调试数据非训练承诺，与 decide_train 录制并行两份职责。
+        # 挂在 decide 返回路径一处——CLI/serve/REPL/daemon 全渠道覆盖）
+        try:
+            from dp_cli.decide_train import _maybe_log_hard_case
+            _maybe_log_hard_case(result, session, goal=goal,
+                                 state=state, unsure=_unsure)
+        except Exception:
+            pass
+        if _unsure:
             error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'
                   '候选不足或页面不适合当前决策模型',
                   code='AGENT_UNSURE',

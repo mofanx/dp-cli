@@ -48,7 +48,14 @@ _INTERACTIVE_ROLES = {
     'link', 'button', 'textbox', 'searchbox', 'combobox', 'listbox',
     'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option',
     'spinbutton', 'slider', 'treeitem',
+    # a11y._INTERACTIVE_ROLES 对齐——菜单态控件漏收即丢候选
+    'menuitemcheckbox', 'menuitemradio',
 }
+
+# clickable_extras tag→role 映射——未覆盖 tag 统一 'clickable'
+_EXTRA_TAG_ROLE = {'a': 'link', 'button': 'button', 'input': 'textbox',
+                   'textarea': 'textbox', 'select': 'combobox',
+                   'option': 'option', 'label': 'clickable'}
 
 
 # ── 控件表（Jev 格式）───────────────────────────────────────
@@ -56,22 +63,42 @@ _INTERACTIVE_ROLES = {
 def _page_state(page, session, max_opts=_TOP_K, recall_pool=False):
     """取 a11y 快照 → Jev 式 {state, options[{ref,role,name,current}]}。
 
-    recall_pool=True（decide reranker 引擎）：原始可交互数超
-    _EMBED_THRESHOLD 时不按 top_k 截断——全量候选交给 embedding
-    召回粗排（治"opts≤top_k<阈值 recall 永不触发"缺陷）；
-    池上限 _EMBED_POOL_MAX 防病理页面 encode 爆炸。
+    recall_pool=True（decide reranker 引擎）：不按 top_k 截断——
+    全量候选交给 embedding 召回粗排（>阈值）或 CE 直接细排
+    （治"opts≤top_k<阈值 recall 永不触发"+total∈(top_k,阈值] 死区
+    双缺陷）；池上限 _EMBED_POOL_MAX 防病理页面 encode 爆炸。
+
+    召回覆盖三补（v26b 真机归因——63% miss 是候选召回层非排序）：
+    - max_depth=None 全深度：depth=12 会把深层搜索框/提交按钮
+      整子树裁掉（baidu #kw/#su 实测只在全深度树出现）
+    - clickable_extras 并入候选：a11y 树漏收的真交互元素
+      （div 频道 tab/div 按钮/隐藏 submit），探测白跑不合并即丢弃
+    - 空 name DOM 回填：裸 input 无 label/placeholder 缺失时
+      从 aria-label/label[for]/相邻文本/value 补名（settings/zhihu/
+      12306/gov 实测）——语义寻址下 name='' 的候选等于不存在
     """
     from dp_cli.snapshot.a11y import take_a11y_snapshot
-    data = take_a11y_snapshot(page, max_depth=12)
+    data = take_a11y_snapshot(page, max_depth=None)
     nodes = data.get('tree') or data.get('elements') or []
     if isinstance(nodes, dict):
         nodes = nodes.get('children', [])
     cands = [n for n in _walk(nodes)
              if (n.get('role') or '').lower() in _INTERACTIVE_ROLES]
+    # clickable_extras 并入候选（a11y 之后追加——ref 序号稳定，
+    # extras 是二档线索置尾符合优先级）。无名 extras（纯图标/空 div）
+    # 不收：语义寻址不可达还白占池位。
+    for e in data.get('clickable_extras') or []:
+        name = (e.get('label') or e.get('text') or '').strip()
+        if name:
+            cands.append(_extra_node(e, name))
+    _fill_dom_names(page, cands)
     total = len(cands)        # 截断前原始 refs 数——recall 触发判据
     limit = max_opts
-    if recall_pool and total > _EMBED_THRESHOLD:
-        limit = max(max_opts, _EMBED_POOL_MAX)
+    if recall_pool:
+        # 候选全量进池（上限 _EMBED_POOL_MAX）：total≤阈值时 CE 直接
+        # 细排不需要 recall；total 在 (top_k, 阈值] 区间照旧截断会把
+        # 尾部候选永久丢弃——旧 guard 只挡了 >阈值 一半场景
+        limit = min(total, _EMBED_POOL_MAX)
     opts, refs = [], {}
     prop_bits = []            # 交互属性子集指纹——进 epoch sig
     for i, n in enumerate(cands[:limit], 1):
@@ -128,6 +155,108 @@ def _walk(node):
     yield node
     for ch in node.get('children') or []:
         yield from _walk(ch)
+
+
+def _extra_node(rec, name):
+    """clickable_extras 记录 → a11y 式节点，与 _walk 产物同构进候选。"""
+    tag = (rec.get('tag') or '').lower()
+    return {'role': _EXTRA_TAG_ROLE.get(tag, 'clickable'),
+            'name': name, 'value': '',
+            'properties': {}, 'children': [],
+            'locator': rec.get('locator'),
+            'backendNodeId': rec.get('backendNodeId'),
+            '_extra': True}
+
+
+# 空 name 回填 JS：aria-label → label[for]/closest label →
+# title/placeholder → 自有 innerText → 相邻文本节点 →
+# input[submit/button] value → img alt
+_DOM_NAME_JS = r"""
+function () {
+  const el = this;
+  const pick = s => (s || '').replace(/\s+/g, ' ').trim();
+  const attr = k => (el.getAttribute && el.getAttribute(k)) || '';
+  let n = pick(attr('aria-label'));
+  if (!n && el.id) {
+    let l = null;
+    try {
+      l = el.ownerDocument.querySelector(
+        'label[for="' + (window.CSS ? CSS.escape(el.id) : el.id) + '"]');
+    } catch (e) {}
+    if (l) n = pick(l.innerText);
+  }
+  if (!n && el.closest) {
+    const l = el.closest('label');
+    if (l) n = pick(l.innerText);
+  }
+  if (!n) {
+    // aria-labelledby 指向的任意元素文本（antd/element-ui 常见
+    // 旁挂 label 模式：<span id=x>出发地</span><input aria-labelledby=x>）
+    for (const id of attr('aria-labelledby').split(/\s+/)) {
+      const l = id && el.ownerDocument.getElementById(id);
+      if (l) { n = pick(l.innerText); if (n) break; }
+    }
+  }
+  if (!n) n = pick(attr('title')) || pick(attr('placeholder'));
+  if (!n) n = pick(el.innerText);
+  if (!n) {
+    // 相邻文本：裸 input 无 label 场景（<input>Dark mode / 前缀文本<input>）
+    const adj = (sib, fwd) => {
+      for (let d = 0; sib && d < 4; d++) {
+        if (sib.nodeType === 3) {
+          const t = pick(sib.textContent);
+          if (t) return t;
+        } else if (sib.nodeType === 1) {
+          if (/^(INPUT|SELECT|TEXTAREA|BUTTON|A|SCRIPT|STYLE)$/
+              .test(sib.tagName)) break;
+          const t = pick(sib.innerText);
+          if (t) return t;
+        }
+        sib = fwd ? sib.nextSibling : sib.previousSibling;
+      }
+      return '';
+    };
+    n = adj(el.nextSibling, true) || adj(el.previousSibling, false);
+    // 父级相邻：<div>出发地</div><div><input></div> 跨分支 label
+    if (!n && el.parentNode)
+      n = adj(el.parentNode.previousSibling, false)
+          || adj(el.parentNode.nextSibling, true);
+  }
+  if (!n && el.tagName === 'INPUT' &&
+      /^(submit|button|reset|checkbox|radio)$/i.test(el.type || ''))
+    n = pick(el.value);
+  if (!n && el.tagName === 'IMG') n = pick(el.alt);
+  return (n || '').slice(0, 120);
+}
+"""
+
+
+def _fill_dom_names(page, cands, max_nodes=25):
+    """空 name 候选 DOM 回填——a11y name 缺失时从 DOM 侧补名。
+
+    每节点两次 CDP（resolveNode→callFunctionOn），仅处理有空 name 且
+    有 backendNodeId 的 a11y 节点，封顶 max_nodes 防病态页拖慢
+    snapshot；extras 自带 name 不参与。全部失败静默——补名是增强
+    非必需，回填不到就保持原状。
+    """
+    empties = [n for n in cands if not (n.get('name') or '').strip()
+               and n.get('backendNodeId') and not n.get('_extra')]
+    for n in empties[:max_nodes]:
+        try:
+            r = page.run_cdp('DOM.resolveNode',
+                             backendNodeId=n['backendNodeId'])
+            oid = (r.get('object') or {}).get('objectId')
+            if not oid:
+                continue
+            res = page.run_cdp('Runtime.callFunctionOn',
+                               objectId=oid,
+                               functionDeclaration=_DOM_NAME_JS,
+                               returnByValue=True)
+            v = ((res.get('result') or {}).get('value') or '').strip()
+            if v:
+                n['name'] = v
+        except Exception:
+            continue
 
 
 # ── 引擎 ────────────────────────────────────────────────────

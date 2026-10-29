@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.21] - 2026-10-29
+
+### 修复（decide 覆盖桶根治——真机进池率 5/20→16/20）
+- **候选召回覆盖**：extras 未合并/空 name 回填/depth 截断三桶结构性修复——真机 top3 命中 0→8
+- **BLOCKED_KW 收窄**：剔人机/机器人/robot/拦截/盾 5 内容污染词留强墙信号——资讯站整页误拦根治
+- **真机管线**：hard_cases 523 行 real 55.8%+v26b 真机标注否证留档（Δ=0）+LOGIN_SITES 清单
+
 ## [0.15.20] - 2026-10-28
 
 ### 改进（真机训练数据链路+margin 校准）

@@ -1,0 +1,6 @@
+{"page": "https://fixture.hardneg-r2/quar/replies-twin", "query": "点开这条评论的全部回复", "reason": "eval-semantic-twin c10 + meta 滚动词误命中——规则层非数据层"}
+{"page": "https://fixture.hardneg-r2/quar/dl-twin", "query": "download the log bundle", "reason": "eval-semantic-twin n08 + meta \"load\"⊂\"download\" 误命中 wait——规则层"}
+{"page": "https://fixture.hardneg-r2/quar/sel-ord-twin", "query": "挑下拉里的第 3 项", "reason": "eval-semantic-twin m26 + _meta_decide 序数短路接管——规则层"}
+{"page": "https://fixture.hardneg-r2/quar/reply-twin", "query": "post a reply under this topic", "reason": "eval-semantic-twin m12 + expect=click 与 textbox→type 口径冲突——规则层"}
+{"page": "https://fixture.hardneg-r2/quar/cancel-twin", "query": "别点\"取消\"，点\"确定\"", "reason": "eval-semantic-twin n22/m30 原字面对（取消/确定候选串在 FORBIDDEN）"}
+{"page": "https://fixture.hardneg-r2/quar/mute-twin", "query": "静音这条通知", "reason": "eval-semantic-twin m15（Snooze/Settings/Clear all/Bell off 候选串禁用；~0 分临界态修不修看权重抖动，不强灌）"}

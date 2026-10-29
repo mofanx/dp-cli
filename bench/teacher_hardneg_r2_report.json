@@ -1,0 +1,133 @@
+{
+ "experiment": "v24→v25 二轮定向 hard-negative（本 agent 即教师）：m25 真回归文件内纠偏 + 仅针对'标注可修类'形态的 r2 生成 + 新增闸4对称性自查",
+ "m25_attribution": {
+  "source": "teacher_hardneg.jsonl 登录页族标注不对称：'link Sign up' pos=1(en a5-2)/neg=2(a3-3 signin方向+a5-5 SSO方向)，zh register 方向零正例锚点；eval m25 '去注册一个账号'为 zh register 方向→模型把 Sign up 学成恒负，Log in +0.019 反超 +0.016",
+  "fix": "补对称对 4 行（不删污染行——a3-3 的 Sign up 负例本身是合法的'方向消歧'教学信号，缺的是反向正例锚点）：a3-8 'click the Sign up link to enroll'→pos link Sign up（a3-3 镜像）；a5-6 '没账号，去开一个'→pos link Sign up（zh register 锚点）；a5-7 'log into my dashboard'→pos button Log in；a5-8 '登进我自己的账户'→pos button 登录",
+  "polarity_after": {
+   "link Sign up": "pos3/neg3 对称",
+   "button Log in": "pos1/neg4（register 方向保持抑制=正确）",
+   "button 登录": "pos1/neg3",
+   "link Sign in": "pos1/neg1"
+  },
+  "gate_note": "4 行复用 m25 候选串（Sign up/Log in/Forgot password）属纠偏必需——同一候选在不同 query 方向下正负反转正是消歧教学信号本体（r1 报告已立此例）；query 仍过闸1 exact+子串 0 命中",
+  "result": "未清账但 margin 收窄 3×：v24 gap=+0.0026（Log in +0.0187 vs Sign up +0.0161）→ v25 gap=+0.0009（+0.0219 vs +0.0210）——纠偏把它从'真回归'压进掷硬币带，未翻转"
+ },
+ "miss14_classification": {
+  "annotatable_fixable(8)": {
+   "m25": "真回归——zh register 方向 Sign up 无正例锚（已纠偏，见上）",
+   "m29": "否定语义+被否项字面全中：'别点删除点归档' Delete 字面引力 +0.893→v25 +0.039 仍压过 Archive +0.023；r2 A桶38行（双点名/正例同义非字面/正向点名镜像）",
+   "n05": "序数地址纯名 radio：'公司地址'含'地址'字面引力赢 ordinal；r2 D桶16行 pos名不含地址字面+含字面陷阱负例",
+   "m13": "目的地→To 字段（t06 已修的同型残余）：Search 伪字面受益；r2 B桶18行",
+   "x01": "开新工单→Create Ticket：编辑/导出同屏干扰字面引力；r2 C4桶12行",
+   "x03": "作废→冲红：v24 margin 已大幅收窄未翻转，r2 C1桶12行加量 → v25 FIXED",
+   "x04": "驳回→不予通过：'批准转正'字面重叠'转正'引力；r2 C2桶12行 → v25 仍未翻转但全候选压至 ~0.001",
+   "x12": "压掉→Acknowledge——查明根因后重判：v21 verified_real 含 '执行Escalate这个操作'→pos 'button Escalate'、'认领这条告警'→pos 'button Acknowledge'、'把这个通知静音一小时'→pos 'button Mute'；Escalate +0.99 异常分来自真数据正例锚，r2 负例压不动也不该压（压它=与真数据打架）→ 改判'真数据语义冲突/数据层不可修'"
+  },
+  "rules_layer_structural(4)": {
+   "c10": "meta 误命中 scroll_down（'查看全部回复'撞滚动词）——规则层非数据",
+   "n08": "meta 误命中 wait（'load'⊂'download' 子串）——规则层非数据",
+   "m12": "expect=click 而 'Write a reply' 是 textbox→type，模型 top1 type ref3 +0.896 仍判 miss——标注口径与 _ROLE_ACTION 冲突，结构性",
+   "m26": "_meta_decide 序数短路 '第二个'→click ref2，expect select:1——规则层误截"
+  },
+  "critical_noise(2)": {
+   "m15": "~0.01 掷硬币带 → v25 FIXED（Bell off 翻转成功，属运气好方向的抖动）",
+   "m17": "persistent：v25 'back' 伪动作 +0.024 上浮压过 🔖 +0.0075——压缩副作用受害者（见 new_miss_mechanism）"
+  }
+ },
+ "r2_generation": {
+  "rows": 152,
+  "quarantine": 6,
+  "buckets": {
+   "neg": 38,
+   "dst": 18,
+   "biz": 54,
+   "ord": 16,
+   "auth": 16,
+   "icon": 10
+  },
+  "gates": "闸1 query×120 eval-goal exact+子串 0 命中；闸2 miss28(v19∪v24)候选串 pos+neg 0 复用；闸3 query 去重+r1 query 0 重复+pos∉negs；闸4(新增) 方向串 33 个对称断言通过——auth 三方向(register/signin/recover)+neg 核心被点名串均 pos≥1",
+  "pos_neg_crossover": "38 串 pos↔neg 跨行交叉（方向对/点名对教学信号本体）",
+  "quarantine_items": [
+   "c10/n08/m26/m12 四规则层语义孪生",
+   "n22/m30 原字面对（候选串禁用）",
+   "m15 语义孪生（临界态不强灌）"
+  ]
+ },
+ "merge": "merge_out_v21.json(231) + teacher_hardneg.json(180 含纠偏) + teacher_hardneg_r2.json(152) → merge_out_v25.json(563)；merge 闸 0 撞车 0 拒收",
+ "train": {
+  "pairs": 16045,
+  "steps": 2006,
+  "train_loss": 0.07785,
+  "wall": "~44min CPU",
+  "out": "/media/yan/Data/bge_v25_tuned"
+ },
+ "eval120": {
+  "v24": {
+   "ALL": 88.3,
+   "elem": 87.1,
+   "meta": 91.4,
+   "miss_n": 14
+  },
+  "v25": {
+   "ALL": 86.7,
+   "elem": 84.7,
+   "meta": 91.4,
+   "miss_n": 16
+  },
+  "delta": {
+   "ALL": -1.6,
+   "elem": -2.4,
+   "meta": 0.0
+  },
+  "miss_diff": {
+   "fixed": [
+    "n05",
+    "m13",
+    "x03",
+    "m15"
+   ],
+   "persistent": [
+    "c10",
+    "n08",
+    "m12",
+    "m17",
+    "m25",
+    "m26",
+    "m29",
+    "x01",
+    "x04",
+    "x12"
+   ],
+   "new": [
+    "m10",
+    "m30",
+    "x05",
+    "x15",
+    "x47",
+    "x50"
+   ],
+   "fixed_margin_evidence": {
+    "n05": "v24 公司地址+0.0288 压 家+0.0159 → v25 翻转",
+    "m13": "v24 Search+0.0194 压 To+0.0096 → v25 翻转",
+    "x03": "v24 批量开票+0.041 压 冲红+0.0142 → v25 翻转（rc1 加量生效）",
+    "m29": "未翻转但 Delete 引力 +0.893→+0.039 字面压制基本解除"
+   }
+  }
+ },
+ "new_miss_mechanism": {
+  "pattern": "6 条新 miss 全部落在 ~0.001-0.02 掷硬币带，无一条是被'教错'的方向性混淆",
+  "root_cause_hypothesis": "hardneg 由 176→332 行后 elem 候选分数整体压缩（x05 pos 分 +0.19→+0.01）；训练对只含 elem-vs-elem，6 个 meta 伪动作文本(back/wait/done/scroll)从未作负例受压——elem 压向 0 后伪动作相对上浮抢 top1：x01 top=wait +0.0017、x04 top=back +0.0097、m17 top=back +0.024、x47 top=done",
+  "evidence": "v24 同 case 分数对照：m10 +0.034/+0.015→+0.022/+0.012；x50 +0.0072→+0.0084 flip；m30 确定+0.019→跌出 top4（取消正确被压 0.0024，未点名的确定/关闭掷硬币出关闭）"
+ },
+ "verdict": {
+  "net": "修4-新6=-2，ALL -1.6pp——本轮负向",
+  "regression_ledger": "m25 纠偏后 gap 0.0026→0.0009 未翻转=半清账；新增 6 miss 均非 m25 型方向性污染（对称闸4有效——auth/neg 方向族零新回归），而是全局分数压缩+伪动作上浮副作用",
+  "diminishing_returns": "数据层收益递减终点信号明确：(a) 可修形态已基本覆盖，剩余 persistent 中 c10/n08/m12/m26 规则层、x12 真数据锚冲突、m25 已压入掷硬币带；(b) hardneg 加量的边际成本首次显形——elem 压缩挤出的伪动作上浮吃掉了修复收益",
+  "next_round_options": [
+   "规则层优先：修 c10/n08 meta 关键词误命中 + m26 序数短路 + m12 action 口径——4 条确定性收益 ~+3.3pp，不动模型",
+   "若再开数据轮：训练对需含 'elem vs meta-pseudo' 负例对（把 back/wait/done 文本挂进 elem goal 的 negatives）或改用 pairwise/MarginMSELoss 保住正例绝对分；hardneg 占比降回 <40%",
+   "x12 唯一数据层出路是给 v21 那行 '执行Escalate这个操作' 降权/剔除——属于动真数据，需人工裁定",
+   "m25/x47/x50/m10 类掷硬币带建议接受噪声或走规则层别名表，不再灌数据"
+  ]
+ }
+}

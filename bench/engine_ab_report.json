@@ -1,7 +1,7 @@
 {
   "meta": {
-    "open_ms": 1012.8,
-    "daemon_start_ms": 270.3
+    "open_ms": 1010.8,
+    "daemon_start_ms": 285.8
   },
   "scenarios": [
     {
@@ -14,7 +14,7 @@
         "role": "button",
         "action": "click"
       },
-      "goto_ms": 290.3,
+      "goto_ms": 306.2,
       "options_count": 6,
       "options": [
         {
@@ -51,7 +51,7 @@
       "expect_ref": 4,
       "external": [
         {
-          "ms": 138.7,
+          "ms": 161.8,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -74,7 +74,7 @@
           ]
         },
         {
-          "ms": 148.1,
+          "ms": 155.3,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -98,7 +98,7 @@
         }
       ],
       "reranker_cold": {
-        "ms": 6953.6,
+        "ms": 7034.7,
         "status": "error",
         "code": "AGENT_UNSURE",
         "unsure": true,
@@ -127,7 +127,7 @@
       },
       "reranker": [
         {
-          "ms": 220.6,
+          "ms": 210.0,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -155,7 +155,7 @@
           ]
         },
         {
-          "ms": 211.4,
+          "ms": 184.5,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -183,7 +183,7 @@
           ]
         },
         {
-          "ms": 222.7,
+          "ms": 189.7,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -228,7 +228,7 @@
         "role": "button",
         "action": "click"
       },
-      "goto_ms": 178.1,
+      "goto_ms": 164.0,
       "options_count": 10,
       "options": [
         {
@@ -285,7 +285,7 @@
       "expect_ref": 5,
       "external": [
         {
-          "ms": 144.6,
+          "ms": 126.9,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -308,7 +308,7 @@
           ]
         },
         {
-          "ms": 169.3,
+          "ms": 163.3,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -333,10 +333,9 @@
       ],
       "reranker": [
         {
-          "ms": 278.3,
-          "status": "error",
-          "code": "AGENT_UNSURE",
-          "unsure": true,
+          "ms": 249.3,
+          "status": "ok",
+          "code": null,
           "engine": "reranker",
           "action": "click",
           "ref": 5,
@@ -361,10 +360,9 @@
           ]
         },
         {
-          "ms": 220.5,
-          "status": "error",
-          "code": "AGENT_UNSURE",
-          "unsure": true,
+          "ms": 238.9,
+          "status": "ok",
+          "code": null,
           "engine": "reranker",
           "action": "click",
           "ref": 5,
@@ -389,10 +387,9 @@
           ]
         },
         {
-          "ms": 237.5,
-          "status": "error",
-          "code": "AGENT_UNSURE",
-          "unsure": true,
+          "ms": 240.7,
+          "status": "ok",
+          "code": null,
           "engine": "reranker",
           "action": "click",
           "ref": 5,
@@ -422,7 +419,7 @@
       "meta_hit": false,
       "meta_reason": null,
       "unsure_ext": false,
-      "unsure_rer": true
+      "unsure_rer": false
     },
     {
       "id": "c3",
@@ -434,7 +431,7 @@
         "role": "button",
         "action": "click"
       },
-      "goto_ms": 138.7,
+      "goto_ms": 160.7,
       "options_count": 3,
       "options": [
         {
@@ -456,7 +453,7 @@
       "expect_ref": 1,
       "external": [
         {
-          "ms": 140.4,
+          "ms": 134.6,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -479,7 +476,7 @@
           ]
         },
         {
-          "ms": 127.8,
+          "ms": 151.6,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -504,7 +501,7 @@
       ],
       "reranker": [
         {
-          "ms": 187.4,
+          "ms": 209.9,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -531,7 +528,7 @@
           ]
         },
         {
-          "ms": 192.8,
+          "ms": 172.5,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -558,7 +555,7 @@
           ]
         },
         {
-          "ms": 224.6,
+          "ms": 178.4,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -602,7 +599,7 @@
         "role": "textbox",
         "action": "type"
       },
-      "goto_ms": 162.7,
+      "goto_ms": 179.1,
       "options_count": 6,
       "options": [
         {
@@ -639,7 +636,7 @@
       "expect_ref": 1,
       "external": [
         {
-          "ms": 143.8,
+          "ms": 131.5,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -662,7 +659,7 @@
           ]
         },
         {
-          "ms": 161.3,
+          "ms": 167.7,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -687,7 +684,7 @@
       ],
       "reranker": [
         {
-          "ms": 228.0,
+          "ms": 228.8,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -714,7 +711,7 @@
           ]
         },
         {
-          "ms": 199.6,
+          "ms": 211.7,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -741,7 +738,7 @@
           ]
         },
         {
-          "ms": 229.2,
+          "ms": 218.4,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -785,7 +782,7 @@
         "role": "textbox",
         "action": "type"
       },
-      "goto_ms": 149.8,
+      "goto_ms": 165.8,
       "options_count": 9,
       "options": [
         {
@@ -837,7 +834,7 @@
       "expect_ref": 2,
       "external": [
         {
-          "ms": 167.7,
+          "ms": 128.0,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -860,7 +857,7 @@
           ]
         },
         {
-          "ms": 129.3,
+          "ms": 177.8,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -885,7 +882,7 @@
       ],
       "reranker": [
         {
-          "ms": 266.9,
+          "ms": 267.9,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -912,7 +909,7 @@
           ]
         },
         {
-          "ms": 222.5,
+          "ms": 253.1,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -939,7 +936,7 @@
           ]
         },
         {
-          "ms": 237.8,
+          "ms": 246.9,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -983,7 +980,7 @@
         "role": "searchbox",
         "action": "type"
       },
-      "goto_ms": 150.1,
+      "goto_ms": 153.5,
       "options_count": 7,
       "options": [
         {
@@ -1025,7 +1022,7 @@
       "expect_ref": 7,
       "external": [
         {
-          "ms": 160.1,
+          "ms": 129.2,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1048,7 +1045,7 @@
           ]
         },
         {
-          "ms": 145.0,
+          "ms": 148.7,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1073,7 +1070,7 @@
       ],
       "reranker": [
         {
-          "ms": 249.4,
+          "ms": 244.2,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1101,7 +1098,7 @@
           ]
         },
         {
-          "ms": 197.6,
+          "ms": 250.2,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1129,7 +1126,7 @@
           ]
         },
         {
-          "ms": 220.5,
+          "ms": 210.9,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1175,7 +1172,7 @@
         "action": "click"
       },
       "note": "登录语义紧邻干扰：导航登录链接+表单登录按钮",
-      "goto_ms": 161.2,
+      "goto_ms": 134.6,
       "options_count": 8,
       "options": [
         {
@@ -1222,7 +1219,7 @@
       "expect_ref": 7,
       "external": [
         {
-          "ms": 157.2,
+          "ms": 128.0,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1245,7 +1242,7 @@
           ]
         },
         {
-          "ms": 132.3,
+          "ms": 124.1,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1270,61 +1267,61 @@
       ],
       "reranker": [
         {
+          "ms": 271.6,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 7,
+          "conf": 0.2792,
+          "margin": 0.176,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.2792
+            ],
+            [
+              "4",
+              0.1032
+            ],
+            [
+              "3",
+              0.1031
+            ]
+          ]
+        },
+        {
+          "ms": 247.1,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 7,
+          "conf": 0.2792,
+          "margin": 0.176,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.2792
+            ],
+            [
+              "4",
+              0.1032
+            ],
+            [
+              "3",
+              0.1031
+            ]
+          ]
+        },
+        {
           "ms": 249.9,
-          "status": "ok",
-          "code": null,
-          "engine": "reranker",
-          "action": "click",
-          "ref": 7,
-          "conf": 0.2792,
-          "margin": 0.176,
-          "tier": "refuse",
-          "reason": null,
-          "deterministic": null,
-          "top3": [
-            [
-              "7",
-              0.2792
-            ],
-            [
-              "4",
-              0.1032
-            ],
-            [
-              "3",
-              0.1031
-            ]
-          ]
-        },
-        {
-          "ms": 227.5,
-          "status": "ok",
-          "code": null,
-          "engine": "reranker",
-          "action": "click",
-          "ref": 7,
-          "conf": 0.2792,
-          "margin": 0.176,
-          "tier": "refuse",
-          "reason": null,
-          "deterministic": null,
-          "top3": [
-            [
-              "7",
-              0.2792
-            ],
-            [
-              "4",
-              0.1032
-            ],
-            [
-              "3",
-              0.1031
-            ]
-          ]
-        },
-        {
-          "ms": 236.4,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -1369,7 +1366,7 @@
         "action": "click"
       },
       "note": "同名 link vs submit button——期望主操作 button",
-      "goto_ms": 162.2,
+      "goto_ms": 143.0,
       "options_count": 8,
       "options": [
         {
@@ -1416,7 +1413,7 @@
       "expect_ref": 6,
       "external": [
         {
-          "ms": 160.2,
+          "ms": 171.2,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1439,7 +1436,7 @@
           ]
         },
         {
-          "ms": 134.8,
+          "ms": 152.1,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1464,7 +1461,7 @@
       ],
       "reranker": [
         {
-          "ms": 221.6,
+          "ms": 277.1,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1492,7 +1489,7 @@
           ]
         },
         {
-          "ms": 240.3,
+          "ms": 246.5,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1520,7 +1517,7 @@
           ]
         },
         {
-          "ms": 241.1,
+          "ms": 249.3,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1566,7 +1563,7 @@
         "action": "click"
       },
       "note": "删除 vs 归档 近义；两行重复控件",
-      "goto_ms": 139.6,
+      "goto_ms": 133.5,
       "options_count": 8,
       "options": [
         {
@@ -1613,7 +1610,7 @@
       "expect_ref": 3,
       "external": [
         {
-          "ms": 160.4,
+          "ms": 151.1,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1636,7 +1633,7 @@
           ]
         },
         {
-          "ms": 126.5,
+          "ms": 149.7,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1661,7 +1658,7 @@
       ],
       "reranker": [
         {
-          "ms": 212.5,
+          "ms": 260.5,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1689,7 +1686,7 @@
           ]
         },
         {
-          "ms": 256.0,
+          "ms": 239.3,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1717,7 +1714,7 @@
           ]
         },
         {
-          "ms": 238.7,
+          "ms": 221.4,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1763,7 +1760,7 @@
         "action": "click"
       },
       "note": "a3 反向——归档是第二个候选组",
-      "goto_ms": 138.0,
+      "goto_ms": 169.2,
       "options_count": 8,
       "options": [
         {
@@ -1810,7 +1807,7 @@
       "expect_ref": 2,
       "external": [
         {
-          "ms": 142.3,
+          "ms": 135.4,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1833,7 +1830,7 @@
           ]
         },
         {
-          "ms": 122.7,
+          "ms": 145.4,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -1858,7 +1855,7 @@
       ],
       "reranker": [
         {
-          "ms": 242.3,
+          "ms": 244.0,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1886,7 +1883,7 @@
           ]
         },
         {
-          "ms": 239.7,
+          "ms": 233.4,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1914,7 +1911,7 @@
           ]
         },
         {
-          "ms": 238.0,
+          "ms": 236.7,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -1960,7 +1957,7 @@
         "action": "click"
       },
       "note": "三个同名\"详情\"按钮，aria-label 区分上下文",
-      "goto_ms": 139.5,
+      "goto_ms": 172.0,
       "options_count": 6,
       "options": [
         {
@@ -1997,7 +1994,7 @@
       "expect_ref": 3,
       "external": [
         {
-          "ms": 155.9,
+          "ms": 126.6,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2020,7 +2017,7 @@
           ]
         },
         {
-          "ms": 137.9,
+          "ms": 138.6,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2045,7 +2042,7 @@
       ],
       "reranker": [
         {
-          "ms": 249.8,
+          "ms": 238.7,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -2073,7 +2070,7 @@
           ]
         },
         {
-          "ms": 232.8,
+          "ms": 217.6,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -2101,7 +2098,7 @@
           ]
         },
         {
-          "ms": 246.7,
+          "ms": 207.1,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -2147,7 +2144,7 @@
         "action": "click"
       },
       "note": "Buy now vs Add to cart 近义干扰",
-      "goto_ms": 165.3,
+      "goto_ms": 144.9,
       "options_count": 7,
       "options": [
         {
@@ -2189,7 +2186,7 @@
       "expect_ref": 6,
       "external": [
         {
-          "ms": 131.6,
+          "ms": 132.5,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2212,7 +2209,7 @@
           ]
         },
         {
-          "ms": 163.0,
+          "ms": 140.7,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2237,7 +2234,7 @@
       ],
       "reranker": [
         {
-          "ms": 267.3,
+          "ms": 262.6,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2264,7 +2261,7 @@
           ]
         },
         {
-          "ms": 263.4,
+          "ms": 215.1,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2291,7 +2288,7 @@
           ]
         },
         {
-          "ms": 224.7,
+          "ms": 226.5,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2336,7 +2333,7 @@
         "action": "click"
       },
       "note": "相邻 checkbox Enable notifications 干扰",
-      "goto_ms": 173.3,
+      "goto_ms": 192.0,
       "options_count": 5,
       "options": [
         {
@@ -2368,7 +2365,7 @@
       "expect_ref": 2,
       "external": [
         {
-          "ms": 127.5,
+          "ms": 127.0,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2391,7 +2388,7 @@
           ]
         },
         {
-          "ms": 158.4,
+          "ms": 137.0,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -2416,7 +2413,7 @@
       ],
       "reranker": [
         {
-          "ms": 243.6,
+          "ms": 253.1,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2443,7 +2440,7 @@
           ]
         },
         {
-          "ms": 202.4,
+          "ms": 231.4,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2470,7 +2467,7 @@
           ]
         },
         {
-          "ms": 207.6,
+          "ms": 215.5,
           "status": "ok",
           "code": null,
           "engine": "reranker",
@@ -2512,7 +2509,7 @@
       "expect": {
         "action": "back"
       },
-      "goto_ms": 151.4,
+      "goto_ms": 164.5,
       "options_count": 10,
       "options": [
         {
@@ -2569,7 +2566,7 @@
       "expect_ref": null,
       "external": [
         {
-          "ms": 121.1,
+          "ms": 129.0,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2583,7 +2580,7 @@
           "top3": []
         },
         {
-          "ms": 139.2,
+          "ms": 142.8,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2599,7 +2596,7 @@
       ],
       "reranker": [
         {
-          "ms": 164.4,
+          "ms": 153.5,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2613,7 +2610,7 @@
           "top3": []
         },
         {
-          "ms": 152.4,
+          "ms": 159.0,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2627,7 +2624,7 @@
           "top3": []
         },
         {
-          "ms": 135.6,
+          "ms": 144.7,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2656,7 +2653,7 @@
       "expect": {
         "action": "scroll_down"
       },
-      "goto_ms": 148.5,
+      "goto_ms": 127.2,
       "options_count": 10,
       "options": [
         {
@@ -2713,7 +2710,7 @@
       "expect_ref": null,
       "external": [
         {
-          "ms": 180.7,
+          "ms": 157.2,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2727,7 +2724,7 @@
           "top3": []
         },
         {
-          "ms": 141.1,
+          "ms": 133.0,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2743,7 +2740,7 @@
       ],
       "reranker": [
         {
-          "ms": 114.6,
+          "ms": 128.1,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2757,7 +2754,7 @@
           "top3": []
         },
         {
-          "ms": 155.6,
+          "ms": 139.3,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2771,7 +2768,7 @@
           "top3": []
         },
         {
-          "ms": 143.6,
+          "ms": 140.5,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2800,7 +2797,7 @@
       "expect": {
         "action": "done"
       },
-      "goto_ms": 132.7,
+      "goto_ms": 173.2,
       "options_count": 1,
       "options": [
         {
@@ -2812,7 +2809,7 @@
       "expect_ref": null,
       "external": [
         {
-          "ms": 128.4,
+          "ms": 144.1,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2826,7 +2823,7 @@
           "top3": []
         },
         {
-          "ms": 151.7,
+          "ms": 150.7,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2842,7 +2839,7 @@
       ],
       "reranker": [
         {
-          "ms": 142.8,
+          "ms": 130.8,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2856,7 +2853,7 @@
           "top3": []
         },
         {
-          "ms": 134.3,
+          "ms": 138.4,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2870,7 +2867,7 @@
           "top3": []
         },
         {
-          "ms": 114.0,
+          "ms": 113.1,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2899,7 +2896,7 @@
       "expect": {
         "action": "blocked"
       },
-      "goto_ms": 137.3,
+      "goto_ms": 125.8,
       "options_count": 1,
       "options": [
         {
@@ -2911,7 +2908,7 @@
       "expect_ref": null,
       "external": [
         {
-          "ms": 112.3,
+          "ms": 130.0,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2925,7 +2922,7 @@
           "top3": []
         },
         {
-          "ms": 112.7,
+          "ms": 110.7,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2941,7 +2938,7 @@
       ],
       "reranker": [
         {
-          "ms": 140.1,
+          "ms": 135.7,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2955,7 +2952,7 @@
           "top3": []
         },
         {
-          "ms": 200.6,
+          "ms": 142.5,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2969,7 +2966,7 @@
           "top3": []
         },
         {
-          "ms": 137.0,
+          "ms": 154.5,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -2999,7 +2996,7 @@
         "action": "back"
       },
       "note": "meta 与语义冲突用例：goal 指 Back-to-cart 链接，meta 规则按\"返回\"误短路为浏览器 back",
-      "goto_ms": 162.8,
+      "goto_ms": 161.7,
       "options_count": 8,
       "options": [
         {
@@ -3046,7 +3043,7 @@
       "expect_ref": null,
       "external": [
         {
-          "ms": 161.0,
+          "ms": 154.0,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -3060,7 +3057,7 @@
           "top3": []
         },
         {
-          "ms": 152.9,
+          "ms": 168.4,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -3076,7 +3073,7 @@
       ],
       "reranker": [
         {
-          "ms": 162.1,
+          "ms": 134.2,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -3090,7 +3087,7 @@
           "top3": []
         },
         {
-          "ms": 147.9,
+          "ms": 124.4,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -3104,7 +3101,7 @@
           "top3": []
         },
         {
-          "ms": 139.1,
+          "ms": 168.1,
           "status": "ok",
           "code": null,
           "engine": "meta-rules",
@@ -3136,7 +3133,7 @@
         "action": "click"
       },
       "note": "真实站：Sign in link vs Sign up button 近义对",
-      "goto_ms": 13914.5,
+      "goto_ms": 19584.6,
       "options_count": 20,
       "options": [
         {
@@ -3182,68 +3179,68 @@
         {
           "ref": 9,
           "role": "link",
-          "name": "repo starred by HyperTanker Lord1Egypt/proxy-collector 7 minutes ago"
+          "name": "repo starred by ufotable2265 ElectronGirl/ComfyUI-Anima-Ref-Adapter 7 minutes ago"
         },
         {
           "ref": 10,
           "role": "link",
-          "name": "branch merged from dependabot[bot] traverse-framework/traverse 7 minutes ago"
+          "name": "push from dandyraka dandyraka/JKT48IDNHistory 2 days ago"
         },
         {
           "ref": 11,
           "role": "link",
-          "name": "pull request from boburning boburning/portcove 7 minutes ago"
+          "name": "pull request from kippolitov kippolitov/job-posting-analyzer 7 minutes ago"
         },
         {
           "ref": 12,
           "role": "link",
-          "name": "repo forked from DiogoBrasilianodasilva ChrisCompton/omniroute 7 minutes ago"
+          "name": "branch merged from sindre-maskin[bot] sindre-ai/maskin 7 minutes ago"
         },
         {
           "ref": 13,
           "role": "link",
-          "name": "push from lebanhan113-dotcom lebanhan113-dotcom/chem_AI 2 days ago"
+          "name": "repo starred by alexiusll RototRobot/Tomb-Raider-Legend-VR-Port 7 minutes ago"
         },
         {
           "ref": 14,
           "role": "link",
-          "name": "repo starred by csq66666666 HKUDS/DeepTutor 7 minutes ago"
+          "name": "push from GrandFreexchange GrandFreexchange/GrandFreexchange.github.io 2 days ago"
         },
         {
           "ref": 15,
           "role": "link",
-          "name": "branch merged from mvc-bot mavogel/awscdk-rootmail 7 minutes ago"
+          "name": "pull request from dependabot[bot] bonigarcia/selenium-jupiter-webrtc 7 minutes ago"
         },
         {
           "ref": 16,
           "role": "link",
-          "name": "pull request from ThaSMorato ThaSMorato/skills 7 minutes ago"
+          "name": "branch merged from renovate[bot] hongbo-miao/hongbomiao.com 7 minutes ago"
         },
         {
           "ref": 17,
           "role": "link",
-          "name": "repo forked from mzf11125 aws-samples/sample-tokenized-deposits 7 minutes ago"
+          "name": "repo starred by bv09 akitaonrails/ai-memory 7 minutes ago"
         },
         {
           "ref": 18,
           "role": "link",
-          "name": "push from lzl51230 lzl51230/HerdrContinue 17 hours ago"
+          "name": "push from padillajohn48 padillajohn48/ioupoj yesterday"
         },
         {
           "ref": 19,
           "role": "link",
-          "name": "repo starred by MohamedSaeed11718 github/spec-kit 7 minutes ago"
+          "name": "pull request from SHAYOUWORLD SHAYOUWORLD/egov-law-mcp 7 minutes ago"
         },
         {
           "ref": 20,
           "role": "link",
-          "name": "branch merged from Adama101 Mizan-AI-Org/Mizan_FE 7 minutes ago"
+          "name": "branch merged from mohazari mohazari/the-block 7 minutes ago"
         }
       ],
       "expect_ref": 4,
       "external": [
         {
-          "ms": 843.2,
+          "ms": 817.5,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -3266,7 +3263,7 @@
           ]
         },
         {
-          "ms": 876.6,
+          "ms": 841.2,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -3291,7 +3288,7 @@
       ],
       "reranker": [
         {
-          "ms": 12727.2,
+          "ms": 6683.8,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -3319,7 +3316,7 @@
           ]
         },
         {
-          "ms": 3444.7,
+          "ms": 3080.3,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -3347,7 +3344,7 @@
           ]
         },
         {
-          "ms": 3609.4,
+          "ms": 3144.2,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -3393,7 +3390,7 @@
         "action": "click"
       },
       "note": "g1 反向——注册歧义对",
-      "goto_ms": 3719.7,
+      "goto_ms": 3197.3,
       "options_count": 20,
       "options": [
         {
@@ -3439,68 +3436,68 @@
         {
           "ref": 9,
           "role": "link",
-          "name": "push from lzl51230 lzl51230/HerdrContinue 17 hours ago"
+          "name": "push from maplefm maplefm/maplefm.github.io 2 days ago"
         },
         {
           "ref": 10,
           "role": "link",
-          "name": "pull request from iamshaynez TheSecondCurve/gb-pmo 7 minutes ago"
+          "name": "pull request from kippolitov kippolitov/job-posting-analyzer 7 minutes ago"
         },
         {
           "ref": 11,
           "role": "link",
-          "name": "repo forked from mzf11125 aws-samples/sample-tokenized-deposits 8 minutes ago"
+          "name": "branch merged from sindre-maskin[bot] sindre-ai/maskin 7 minutes ago"
         },
         {
           "ref": 12,
           "role": "link",
-          "name": "branch merged from maitabom maitabom/landingpagetabernamulher 8 minutes ago"
+          "name": "repo starred by bv09 akitaonrails/ai-memory 7 minutes ago"
         },
         {
           "ref": 13,
           "role": "link",
-          "name": "repo starred by MRand-M MakkaPakka-7788/ARRAS.FLASHCARDS 8 minutes ago"
+          "name": "push from padillajohn48 padillajohn48/ioupoj yesterday"
         },
         {
           "ref": 14,
           "role": "link",
-          "name": "push from hyeonseungkang AU-Bcube/b-cube-subdomain-lending 18 hours ago"
+          "name": "pull request from yasminyaseen20 smicolon/fasla-ui 7 minutes ago"
         },
         {
           "ref": 15,
           "role": "link",
-          "name": "pull request from Tan90degrees Tan90degrees/AgentBerth 7 minutes ago"
+          "name": "branch merged from tamnd tamnd/rupg 7 minutes ago"
         },
         {
           "ref": 16,
           "role": "link",
-          "name": "repo forked from DiogoBrasilianodasilva ChrisCompton/omniroute 8 minutes ago"
+          "name": "repo starred by uglykitty gcggcg/domestic-route 7 minutes ago"
         },
         {
           "ref": 17,
           "role": "link",
-          "name": "branch merged from weakcrypto-scanner[bot] qernelkit/weakcrypto 8 minutes ago"
+          "name": "push from cipher2150 cipher2150/TriadModel 18 hours ago"
         },
         {
           "ref": 18,
           "role": "link",
-          "name": "repo starred by markmsmith Villagers654/Venture 7 minutes ago"
+          "name": "pull request from rinopatrick rinopatrick/geolog 7 minutes ago"
         },
         {
           "ref": 19,
           "role": "link",
-          "name": "push from lebanhan113-dotcom lebanhan113-dotcom/chem_AI 2 days ago"
+          "name": "branch merged from irumvanselme tabiya-tech/compass-connect 7 minutes ago"
         },
         {
           "ref": 20,
           "role": "link",
-          "name": "pull request from KimArthemSon KimArthemSon/PlantScope 7 minutes ago"
+          "name": "repo starred by Raz606149 na-ive/nandoroid-shell 7 minutes ago"
         }
       ],
       "expect_ref": 7,
       "external": [
         {
-          "ms": 857.8,
+          "ms": 864.5,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -3523,7 +3520,7 @@
           ]
         },
         {
-          "ms": 864.9,
+          "ms": 906.1,
           "status": "ok",
           "code": null,
           "engine": "external",
@@ -3548,7 +3545,7 @@
       ],
       "reranker": [
         {
-          "ms": 3305.7,
+          "ms": 3062.6,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -3576,7 +3573,7 @@
           ]
         },
         {
-          "ms": 3165.8,
+          "ms": 2958.9,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,
@@ -3604,7 +3601,7 @@
           ]
         },
         {
-          "ms": 3271.4,
+          "ms": 3169.0,
           "status": "error",
           "code": "AGENT_UNSURE",
           "unsure": true,

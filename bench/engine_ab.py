@@ -111,6 +111,8 @@ SCENARIOS = [
 
 RUNS_EXT = 2
 RUNS_RER = 3          # 热载采样次数（冷载首跑单列）
+# margin 阈值扫档：DP_AB_MIN_MARGIN=0.05 复跑对照（默认=CLI 现状值）
+MIN_MARGIN = os.environ.get('DP_AB_MIN_MARGIN')
 
 
 def dpx(*args, timeout=120):
@@ -145,6 +147,8 @@ def run_decide(goal, engine, answer=None):
     args = ['decide', goal, '--engine', engine]
     if answer is not None:
         args += ['--answer', answer]
+    if MIN_MARGIN is not None:
+        args += ['--min-margin', MIN_MARGIN]
     ms, data, p = dpx(*args)
     row = {'ms': round(ms, 1)}
     if data is None:

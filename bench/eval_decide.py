@@ -13,9 +13,27 @@ from eval_cases import EVAL_CASES
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else \
     str(Path.home() / '.dp_cli/decide_model')
+# argv[2]：margin 阈值扫档（逗号分隔，如 0.05,0.08,0.10,0.15）——
+# 模拟生产 decide 的 margin 门：reranker 只出 target probs →
+# margin_source='single_side' → margin=softmax p1-p2；UNSURE 计 miss。
+MARGINS = ([float(x) for x in sys.argv[2].split(',')]
+           if len(sys.argv) > 2 else [])
 BASELINE = {'reranker_zero_42': 0.786, 'julia_42': 0.60}
 GATE = 0.85
 _META = {'scroll_down', 'scroll_up', 'back', 'wait', 'done', 'blocked'}
+
+
+def _margin(sims):
+    """生产同款：softmax(CE scores) → top1-top2（reranker=单边 target）。"""
+    import math
+    if not sims:
+        return 1.0
+    mx = max(sims)
+    ps = sorted((math.exp(float(s) - mx) for s in sims), reverse=True)
+    tot = sum(ps)
+    p1 = ps[0] / tot
+    p2 = ps[1] / tot if len(ps) > 1 else 0.0
+    return p1 - p2
 
 
 def main():
@@ -34,7 +52,8 @@ def main():
                     'confidence': 1.0, 'top3': [(meta['action'], meta.get('ref'))]}
             full, _, _, topk = score_row(c, pred)
             rows.append({'id': c['id'], 'bucket': 'meta', 'hit': full,
-                         'topk': topk, 'conf': 1.0, 'lat': 0})
+                         'topk': topk, 'conf': 1.0, 'lat': 0,
+                         'margin': None})     # meta 短路在 margin 门之前
             continue
         cands = candidates(c)
         pairs = [[_first_step(c['goal']), t] for _, _, t in cands]
@@ -51,7 +70,7 @@ def main():
         bucket = 'meta' if c['expect']['action'] in _META else 'elem'
         rows.append({'id': c['id'], 'bucket': bucket, 'hit': full,
                      'topk': topk, 'conf': pred['confidence'],
-                     'lat': round(lat)})
+                     'lat': round(lat), 'margin': _margin(sims)})
 
     def agg(rs, label):
         n = len(rs)
@@ -74,6 +93,20 @@ def main():
     print(f'GATE {GATE:.0%} → {"AUTONOMOUS" if acc >= GATE else "ADVISORY"}')
     miss = [r['id'] for r in rows if not r['hit']]
     print(f'miss: {miss}')
+    for thr in MARGINS:
+        gated = [dict(r, unsure=(r['margin'] is not None
+                                 and r['margin'] < thr))
+                 for r in rows]
+        un = [r for r in gated if r['unsure']]
+        gh = lambda rs: (sum(1 for r in rs
+                             if r['hit'] and not r['unsure'])
+                         / max(1, len(rs)))
+        fe = [r['id'] for r in un if r['hit']]      # 假拒（top1 对仍拒）
+        te = [r['id'] for r in un if not r['hit']]  # 真拦（top1 错拒对）
+        print(f'margin>={thr}: UNSURE={len(un)} '
+              f'(假拒 {len(fe)} {fe} / 真拦 {len(te)} {te}) '
+              f'ALL={gh(gated):.1%} '
+              f'elem={gh([r for r in gated if r["bucket"]=="elem"]):.1%}')
 
 
 if __name__ == '__main__':

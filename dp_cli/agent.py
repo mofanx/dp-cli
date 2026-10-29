@@ -705,8 +705,10 @@ def register(cli):
                   help='external 引擎答复文件路径')
     @click.option('--min-conf', default=_CONF_FLOOR, show_default=True,
                   help='最低置信度，低于此 AGENT_UNSURE')
-    @click.option('--min-margin', default=0.15, show_default=True,
-                  help='top1-top2 margin 阈值（歧义判定，比绝对置信可靠）')
+    @click.option('--min-margin', default=0.005, show_default=True,
+                  help='top1-top2 margin 阈值（歧义判定，比绝对置信可靠；'
+                       'eval-120 校准：可拦 miss margin≤0.0028，'
+                       '0.005 全拦且假拒 -74% vs 旧值 0.15）')
     @click.option('--cascade', is_flag=True,
                   help='级联模式：Julia 粗筛 top-3 候选集给上层终裁')
     @click.option('--top-k', default=_TOP_K, show_default=True)
@@ -807,7 +809,11 @@ def register(cli):
         if action in ('type', 'type_text', 'fill'):
             result['needs_value'] = True
         # margin 门：top1-top2 概率差——绝对置信不可信
-        # （实测 conf=1.00 也会错，margin 能拦 3/4 miss）
+        # （实测 conf=1.00 也会错，margin 能拦 3/4 miss）。
+        # 阈值校准（eval-120 + engine_ab-20，bge_v24_tuned）：
+        # 可拦 miss 的 margin 聚类 ≤0.0028（m29/x12 高 margin miss
+        # 任何档都拦不住）；hit 侧 margin<0.005 仍有真歧义样本——
+        # 0.005 = 真拦全保 + 假拒最小的平衡点（旧值 0.15 假拒 78%）。
         _pa = sorted((probs.get('action') or {}).values(), reverse=True)
         _pt = sorted((probs.get('target') or {}).values(), reverse=True)
         if _pa and _pt:

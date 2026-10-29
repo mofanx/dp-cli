@@ -334,7 +334,7 @@ def test_hard_case_via_decide_command(tmp_path, monkeypatch):
     monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
         {'action': 'click', 'target': 2, 'confidence': 0.9,
          'probs': {'action': {'click': 0.55, 'type': 0.45},
-                   'target': {'2': 0.52, '5': 0.48}}}, {}))
+                   'target': {'2': 0.501, '5': 0.499}}}, {}))
     r = CliRunner().invoke(cli, ['decide', '点登录',
                                  '--engine', 'external'])
     assert 'AGENT_UNSURE' in r.output

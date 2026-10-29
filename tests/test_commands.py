@@ -4045,6 +4045,8 @@ def test_decide_external_and_unsure(runner, monkeypatch):
     monkeypatch.setattr('dp_cli.agent.load_session', lambda s: {})
     monkeypatch.setattr('dp_cli.agent.save_session',
                         lambda *a, **k: None)
+    # conf 门依赖 fam≠bge——防 _RERANKER_FAM 跨用例泄漏
+    monkeypatch.setattr('dp_cli.agent._RERANKER_FAM', None)
 
     r = runner.invoke(cli, ['decide', 'go', '--engine', 'external',
                             '--answer',
@@ -4115,7 +4117,11 @@ def test_decide_cascade_returns_candidates(runner, monkeypatch):
 
 @pytest.mark.unit
 def test_decide_margin_gate(runner, monkeypatch):
-    """margin 门控：top1-top2 差小 → AGENT_UNSURE 即使 conf 高。"""
+    """margin 门控：top1-top2 差小 → AGENT_UNSURE 即使 conf 高。
+
+    默认阈值校准为 0.005（eval-120：可拦 miss margin≤0.0028）——
+    margin=0.002 仍拒；0.01/0.03 已放行（旧值 0.15 的假拒修复）。
+    """
     from dp_cli.main import cli
     import dp_cli.agent as am
 
@@ -4127,18 +4133,29 @@ def test_decide_margin_gate(runner, monkeypatch):
                                         {'ref': 2, 'role': 'link',
                                          'name': 'B'}],
                             'epoch': 'e1', 'truncated': False})
-    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
-        {'action': 'click', 'target': 1, 'confidence': 0.9,
-         'probs': {'action': {'click': 0.55, 'type': 0.45},
-                   'target': {'1': 0.52, '2': 0.48}}},
-        {}))
     monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
     monkeypatch.setattr(_utils, 'load_session', lambda s: {})
     monkeypatch.setattr(am, 'load_session', lambda s: {})
     monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+
+    # margin=min(0.06, 0.002)=0.002 < 0.005 → AGENT_UNSURE
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.53, 'type': 0.47},
+                   'target': {'1': 0.501, '2': 0.499}}},
+        {}))
     r = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
-    # margin=0.03 < 默认 0.15 → AGENT_UNSURE
     assert 'AGENT_UNSURE' in r.output
+
+    # margin=0.01 ≥ 0.005 → 放行（旧默认 0.15 下会误拒）
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'action': {'click': 0.55, 'type': 0.45},
+                   'target': {'1': 0.505, '2': 0.495}}},
+        {}))
+    r2 = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    assert r2.exit_code == 0, r2.output
+    assert 'AGENT_UNSURE' not in r2.output and '"ref": 1' in r2.output
 
 
 @pytest.mark.unit

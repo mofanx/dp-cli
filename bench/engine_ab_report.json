@@ -1,0 +1,3643 @@
+{
+  "meta": {
+    "open_ms": 1012.8,
+    "daemon_start_ms": 270.3
+  },
+  "scenarios": [
+    {
+      "id": "c1",
+      "cat": "click",
+      "goal": "点击登录按钮",
+      "page": "login.html",
+      "expect": {
+        "name": "Sign In",
+        "role": "button",
+        "action": "click"
+      },
+      "goto_ms": 290.3,
+      "options_count": 6,
+      "options": [
+        {
+          "ref": 1,
+          "role": "textbox",
+          "name": "Username"
+        },
+        {
+          "ref": 2,
+          "role": "textbox",
+          "name": "Password"
+        },
+        {
+          "ref": 3,
+          "role": "checkbox",
+          "name": ""
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "Sign In"
+        },
+        {
+          "ref": 5,
+          "role": "link",
+          "name": "Forgot password?"
+        },
+        {
+          "ref": 6,
+          "role": "link",
+          "name": "Create account"
+        }
+      ],
+      "expect_ref": 4,
+      "external": [
+        {
+          "ms": 138.7,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 148.1,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker_cold": {
+        "ms": 6953.6,
+        "status": "error",
+        "code": "AGENT_UNSURE",
+        "unsure": true,
+        "engine": "reranker",
+        "action": "click",
+        "ref": 1,
+        "conf": 0.1669,
+        "margin": 0.0003,
+        "tier": "refuse",
+        "reason": null,
+        "deterministic": null,
+        "top3": [
+          [
+            "1",
+            0.1669
+          ],
+          [
+            "2",
+            0.1666
+          ],
+          [
+            "3",
+            0.1666
+          ]
+        ]
+      },
+      "reranker": [
+        {
+          "ms": 220.6,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.1669,
+          "margin": 0.0003,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.1669
+            ],
+            [
+              "2",
+              0.1666
+            ],
+            [
+              "3",
+              0.1666
+            ]
+          ]
+        },
+        {
+          "ms": 211.4,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.1669,
+          "margin": 0.0003,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.1669
+            ],
+            [
+              "2",
+              0.1666
+            ],
+            [
+              "3",
+              0.1666
+            ]
+          ]
+        },
+        {
+          "ms": 222.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.1669,
+          "margin": 0.0003,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.1669
+            ],
+            [
+              "2",
+              0.1666
+            ],
+            [
+              "3",
+              0.1666
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": false,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "c2",
+      "cat": "click",
+      "goal": "点击导出按钮",
+      "page": "buttons.html",
+      "expect": {
+        "name": "导出",
+        "role": "button",
+        "action": "click"
+      },
+      "goto_ms": 178.1,
+      "options_count": 10,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "新建"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "编辑"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "复制"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "导出"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "导入"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "刷新"
+        },
+        {
+          "ref": 8,
+          "role": "button",
+          "name": "设置"
+        },
+        {
+          "ref": 9,
+          "role": "button",
+          "name": "帮助"
+        },
+        {
+          "ref": 10,
+          "role": "button",
+          "name": "退出"
+        }
+      ],
+      "expect_ref": 5,
+      "external": [
+        {
+          "ms": 144.6,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 169.3,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 278.3,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 5,
+          "conf": 0.2315,
+          "margin": 0.1456,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "5",
+              0.2315
+            ],
+            [
+              "10",
+              0.0859
+            ],
+            [
+              "9",
+              0.0855
+            ]
+          ]
+        },
+        {
+          "ms": 220.5,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 5,
+          "conf": 0.2315,
+          "margin": 0.1456,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "5",
+              0.2315
+            ],
+            [
+              "10",
+              0.0859
+            ],
+            [
+              "9",
+              0.0855
+            ]
+          ]
+        },
+        {
+          "ms": 237.5,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 5,
+          "conf": 0.2315,
+          "margin": 0.1456,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "5",
+              0.2315
+            ],
+            [
+              "10",
+              0.0859
+            ],
+            [
+              "9",
+              0.0855
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "c3",
+      "cat": "click",
+      "goal": "取消这次删除操作",
+      "page": "dialog.html",
+      "expect": {
+        "name": "Cancel",
+        "role": "button",
+        "action": "click"
+      },
+      "goto_ms": 138.7,
+      "options_count": 3,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "Cancel"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "Delete"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "Close"
+        }
+      ],
+      "expect_ref": 1,
+      "external": [
+        {
+          "ms": 140.4,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 127.8,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 187.4,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.5663,
+          "margin": 0.3417,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.5663
+            ],
+            [
+              "2",
+              0.2246
+            ],
+            [
+              "3",
+              0.2091
+            ]
+          ]
+        },
+        {
+          "ms": 192.8,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.5663,
+          "margin": 0.3417,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.5663
+            ],
+            [
+              "2",
+              0.2246
+            ],
+            [
+              "3",
+              0.2091
+            ]
+          ]
+        },
+        {
+          "ms": 224.6,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.5663,
+          "margin": 0.3417,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.5663
+            ],
+            [
+              "2",
+              0.2246
+            ],
+            [
+              "3",
+              0.2091
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "f1",
+      "cat": "type",
+      "goal": "填写用户名",
+      "page": "login.html",
+      "expect": {
+        "name": "Username",
+        "role": "textbox",
+        "action": "type"
+      },
+      "goto_ms": 162.7,
+      "options_count": 6,
+      "options": [
+        {
+          "ref": 1,
+          "role": "textbox",
+          "name": "Username"
+        },
+        {
+          "ref": 2,
+          "role": "textbox",
+          "name": "Password"
+        },
+        {
+          "ref": 3,
+          "role": "checkbox",
+          "name": ""
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "Sign In"
+        },
+        {
+          "ref": 5,
+          "role": "link",
+          "name": "Forgot password?"
+        },
+        {
+          "ref": 6,
+          "role": "link",
+          "name": "Create account"
+        }
+      ],
+      "expect_ref": 1,
+      "external": [
+        {
+          "ms": 143.8,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 161.3,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 228.0,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.3518,
+          "margin": 0.222,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.3518
+            ],
+            [
+              "3",
+              0.1298
+            ],
+            [
+              "4",
+              0.1296
+            ]
+          ]
+        },
+        {
+          "ms": 199.6,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.3518,
+          "margin": 0.222,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.3518
+            ],
+            [
+              "3",
+              0.1298
+            ],
+            [
+              "4",
+              0.1296
+            ]
+          ]
+        },
+        {
+          "ms": 229.2,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.3518,
+          "margin": 0.222,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.3518
+            ],
+            [
+              "3",
+              0.1298
+            ],
+            [
+              "4",
+              0.1296
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "f2",
+      "cat": "type",
+      "goal": "填写邮箱地址",
+      "page": "form.html",
+      "expect": {
+        "name": "Email",
+        "role": "textbox",
+        "action": "type"
+      },
+      "goto_ms": 149.8,
+      "options_count": 9,
+      "options": [
+        {
+          "ref": 1,
+          "role": "textbox",
+          "name": "Full name"
+        },
+        {
+          "ref": 2,
+          "role": "textbox",
+          "name": "Email"
+        },
+        {
+          "ref": 3,
+          "role": "textbox",
+          "name": "Phone"
+        },
+        {
+          "ref": 4,
+          "role": "combobox",
+          "name": ""
+        },
+        {
+          "ref": 5,
+          "role": "option",
+          "name": "Country"
+        },
+        {
+          "ref": 6,
+          "role": "option",
+          "name": "China"
+        },
+        {
+          "ref": 7,
+          "role": "option",
+          "name": "USA"
+        },
+        {
+          "ref": 8,
+          "role": "checkbox",
+          "name": ""
+        },
+        {
+          "ref": 9,
+          "role": "button",
+          "name": "Submit"
+        }
+      ],
+      "expect_ref": 2,
+      "external": [
+        {
+          "ms": 167.7,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 129.3,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "type",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 266.9,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 2,
+          "conf": 0.2509,
+          "margin": 0.1571,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2509
+            ],
+            [
+              "8",
+              0.0938
+            ],
+            [
+              "3",
+              0.0937
+            ]
+          ]
+        },
+        {
+          "ms": 222.5,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 2,
+          "conf": 0.2509,
+          "margin": 0.1571,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2509
+            ],
+            [
+              "8",
+              0.0938
+            ],
+            [
+              "3",
+              0.0937
+            ]
+          ]
+        },
+        {
+          "ms": 237.8,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 2,
+          "conf": 0.2509,
+          "margin": 0.1571,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2509
+            ],
+            [
+              "8",
+              0.0938
+            ],
+            [
+              "3",
+              0.0937
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "f3",
+      "cat": "type",
+      "goal": "搜索本站内容",
+      "page": "nav.html",
+      "expect": {
+        "name": "Search",
+        "role": "searchbox",
+        "action": "type"
+      },
+      "goto_ms": 150.1,
+      "options_count": 7,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "Home"
+        },
+        {
+          "ref": 2,
+          "role": "link",
+          "name": "Products"
+        },
+        {
+          "ref": 3,
+          "role": "link",
+          "name": "Pricing"
+        },
+        {
+          "ref": 4,
+          "role": "link",
+          "name": "Blog"
+        },
+        {
+          "ref": 5,
+          "role": "link",
+          "name": "Contact"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "Menu"
+        },
+        {
+          "ref": 7,
+          "role": "searchbox",
+          "name": "Search site"
+        }
+      ],
+      "expect_ref": 7,
+      "external": [
+        {
+          "ms": 160.1,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 145.0,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 249.4,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 7,
+          "conf": 0.144,
+          "margin": 0.0012,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.144
+            ],
+            [
+              "4",
+              0.1428
+            ],
+            [
+              "2",
+              0.1427
+            ]
+          ]
+        },
+        {
+          "ms": 197.6,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 7,
+          "conf": 0.144,
+          "margin": 0.0012,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.144
+            ],
+            [
+              "4",
+              0.1428
+            ],
+            [
+              "2",
+              0.1427
+            ]
+          ]
+        },
+        {
+          "ms": 220.5,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "type",
+          "ref": 7,
+          "conf": 0.144,
+          "margin": 0.0012,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.144
+            ],
+            [
+              "4",
+              0.1428
+            ],
+            [
+              "2",
+              0.1427
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "a1",
+      "cat": "ambig",
+      "goal": "注册新账号",
+      "page": "ambig_auth.html",
+      "expect": {
+        "name": "注册新账号",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "登录语义紧邻干扰：导航登录链接+表单登录按钮",
+      "goto_ms": 161.2,
+      "options_count": 8,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "首页"
+        },
+        {
+          "ref": 2,
+          "role": "link",
+          "name": "登录"
+        },
+        {
+          "ref": 3,
+          "role": "link",
+          "name": "帮助"
+        },
+        {
+          "ref": 4,
+          "role": "textbox",
+          "name": "手机号或邮箱"
+        },
+        {
+          "ref": 5,
+          "role": "textbox",
+          "name": "密码"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "登录"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "注册新账号"
+        },
+        {
+          "ref": 8,
+          "role": "link",
+          "name": "忘记密码"
+        }
+      ],
+      "expect_ref": 7,
+      "external": [
+        {
+          "ms": 157.2,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 132.3,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 249.9,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 7,
+          "conf": 0.2792,
+          "margin": 0.176,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.2792
+            ],
+            [
+              "4",
+              0.1032
+            ],
+            [
+              "3",
+              0.1031
+            ]
+          ]
+        },
+        {
+          "ms": 227.5,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 7,
+          "conf": 0.2792,
+          "margin": 0.176,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.2792
+            ],
+            [
+              "4",
+              0.1032
+            ],
+            [
+              "3",
+              0.1031
+            ]
+          ]
+        },
+        {
+          "ms": 236.4,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 7,
+          "conf": 0.2792,
+          "margin": 0.176,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "7",
+              0.2792
+            ],
+            [
+              "4",
+              0.1032
+            ],
+            [
+              "3",
+              0.1031
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "a2",
+      "cat": "ambig",
+      "goal": "点登录",
+      "page": "ambig_auth.html",
+      "expect": {
+        "name": "登录",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "同名 link vs submit button——期望主操作 button",
+      "goto_ms": 162.2,
+      "options_count": 8,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "首页"
+        },
+        {
+          "ref": 2,
+          "role": "link",
+          "name": "登录"
+        },
+        {
+          "ref": 3,
+          "role": "link",
+          "name": "帮助"
+        },
+        {
+          "ref": 4,
+          "role": "textbox",
+          "name": "手机号或邮箱"
+        },
+        {
+          "ref": 5,
+          "role": "textbox",
+          "name": "密码"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "登录"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "注册新账号"
+        },
+        {
+          "ref": 8,
+          "role": "link",
+          "name": "忘记密码"
+        }
+      ],
+      "expect_ref": 6,
+      "external": [
+        {
+          "ms": 160.2,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 134.8,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 221.6,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.2373
+            ],
+            [
+              "2",
+              0.2373
+            ],
+            [
+              "4",
+              0.0877
+            ]
+          ]
+        },
+        {
+          "ms": 240.3,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.2373
+            ],
+            [
+              "2",
+              0.2373
+            ],
+            [
+              "4",
+              0.0877
+            ]
+          ]
+        },
+        {
+          "ms": 241.1,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.2373
+            ],
+            [
+              "2",
+              0.2373
+            ],
+            [
+              "4",
+              0.0877
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "a3",
+      "cat": "ambig",
+      "goal": "删除这条记录",
+      "page": "ambig_item.html",
+      "expect": {
+        "name": "删除",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "删除 vs 归档 近义；两行重复控件",
+      "goto_ms": 139.6,
+      "options_count": 8,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "查看"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "归档"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "置顶"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "查看"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "归档"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 8,
+          "role": "button",
+          "name": "置顶"
+        }
+      ],
+      "expect_ref": 3,
+      "external": [
+        {
+          "ms": 160.4,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 126.5,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 212.5,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2373
+            ],
+            [
+              "7",
+              0.2373
+            ],
+            [
+              "2",
+              0.0876
+            ]
+          ]
+        },
+        {
+          "ms": 256.0,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2373
+            ],
+            [
+              "7",
+              0.2373
+            ],
+            [
+              "2",
+              0.0876
+            ]
+          ]
+        },
+        {
+          "ms": 238.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2373,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2373
+            ],
+            [
+              "7",
+              0.2373
+            ],
+            [
+              "2",
+              0.0876
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "a4",
+      "cat": "ambig",
+      "goal": "归档这条记录",
+      "page": "ambig_item.html",
+      "expect": {
+        "name": "归档",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "a3 反向——归档是第二个候选组",
+      "goto_ms": 138.0,
+      "options_count": 8,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "查看"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "归档"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "置顶"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "查看"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "归档"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 8,
+          "role": "button",
+          "name": "置顶"
+        }
+      ],
+      "expect_ref": 2,
+      "external": [
+        {
+          "ms": 142.3,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 122.7,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 242.3,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.2374,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2374
+            ],
+            [
+              "6",
+              0.2374
+            ],
+            [
+              "4",
+              0.0876
+            ]
+          ]
+        },
+        {
+          "ms": 239.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.2374,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2374
+            ],
+            [
+              "6",
+              0.2374
+            ],
+            [
+              "4",
+              0.0876
+            ]
+          ]
+        },
+        {
+          "ms": 238.0,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.2374,
+          "margin": 0.0,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.2374
+            ],
+            [
+              "6",
+              0.2374
+            ],
+            [
+              "4",
+              0.0876
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "a5",
+      "cat": "ambig",
+      "goal": "查看耳机的详情",
+      "page": "ambig_dup.html",
+      "expect": {
+        "name": "查看耳机详情",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "三个同名\"详情\"按钮，aria-label 区分上下文",
+      "goto_ms": 139.5,
+      "options_count": 6,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "查看手机详情"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "加入购物车"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "查看耳机详情"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "加入购物车"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "查看键盘详情"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "加入购物车"
+        }
+      ],
+      "expect_ref": 3,
+      "external": [
+        {
+          "ms": 155.9,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 137.9,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 249.8,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2874,
+          "margin": 0.0022,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2874
+            ],
+            [
+              "1",
+              0.2852
+            ],
+            [
+              "5",
+              0.1102
+            ]
+          ]
+        },
+        {
+          "ms": 232.8,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2874,
+          "margin": 0.0022,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2874
+            ],
+            [
+              "1",
+              0.2852
+            ],
+            [
+              "5",
+              0.1102
+            ]
+          ]
+        },
+        {
+          "ms": 246.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 3,
+          "conf": 0.2874,
+          "margin": 0.0022,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "3",
+              0.2874
+            ],
+            [
+              "1",
+              0.2852
+            ],
+            [
+              "5",
+              0.1102
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "a6",
+      "cat": "ambig",
+      "goal": "立即购买下单",
+      "page": "product.html",
+      "expect": {
+        "name": "Buy now",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "Buy now vs Add to cart 近义干扰",
+      "goto_ms": 165.3,
+      "options_count": 7,
+      "options": [
+        {
+          "ref": 1,
+          "role": "combobox",
+          "name": ""
+        },
+        {
+          "ref": 2,
+          "role": "option",
+          "name": "Color: Black"
+        },
+        {
+          "ref": 3,
+          "role": "option",
+          "name": "Color: White"
+        },
+        {
+          "ref": 4,
+          "role": "spinbutton",
+          "name": "Qty"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "Add to cart"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "Buy now"
+        },
+        {
+          "ref": 7,
+          "role": "link",
+          "name": "Reviews (128)"
+        }
+      ],
+      "expect_ref": 6,
+      "external": [
+        {
+          "ms": 131.6,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "select",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 163.0,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "select",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 267.3,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.3108,
+          "margin": 0.1959,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.3108
+            ],
+            [
+              "4",
+              0.1149
+            ],
+            [
+              "1",
+              0.1149
+            ]
+          ]
+        },
+        {
+          "ms": 263.4,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.3108,
+          "margin": 0.1959,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.3108
+            ],
+            [
+              "4",
+              0.1149
+            ],
+            [
+              "1",
+              0.1149
+            ]
+          ]
+        },
+        {
+          "ms": 224.7,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 6,
+          "conf": 0.3108,
+          "margin": 0.1959,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "6",
+              0.3108
+            ],
+            [
+              "4",
+              0.1149
+            ],
+            [
+              "1",
+              0.1149
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "a7",
+      "cat": "ambig",
+      "goal": "开启深色模式",
+      "page": "ambig_check.html",
+      "expect": {
+        "name": "Dark mode",
+        "role": "checkbox",
+        "action": "click"
+      },
+      "note": "相邻 checkbox Enable notifications 干扰",
+      "goto_ms": 173.3,
+      "options_count": 5,
+      "options": [
+        {
+          "ref": 1,
+          "role": "checkbox",
+          "name": "Enable notifications"
+        },
+        {
+          "ref": 2,
+          "role": "checkbox",
+          "name": "Dark mode"
+        },
+        {
+          "ref": 3,
+          "role": "checkbox",
+          "name": "Auto-save drafts"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "Save changes"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "Reset to defaults"
+        }
+      ],
+      "expect_ref": 2,
+      "external": [
+        {
+          "ms": 127.5,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 158.4,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 243.6,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.4042,
+          "margin": 0.2553,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.4042
+            ],
+            [
+              "4",
+              0.1489
+            ],
+            [
+              "5",
+              0.1489
+            ]
+          ]
+        },
+        {
+          "ms": 202.4,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.4042,
+          "margin": 0.2553,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.4042
+            ],
+            [
+              "4",
+              0.1489
+            ],
+            [
+              "5",
+              0.1489
+            ]
+          ]
+        },
+        {
+          "ms": 207.6,
+          "status": "ok",
+          "code": null,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 2,
+          "conf": 0.4042,
+          "margin": 0.2553,
+          "tier": "confirm",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "2",
+              0.4042
+            ],
+            [
+              "4",
+              0.1489
+            ],
+            [
+              "5",
+              0.1489
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "m1",
+      "cat": "meta",
+      "goal": "返回上一页",
+      "page": "buttons.html",
+      "expect": {
+        "action": "back"
+      },
+      "goto_ms": 151.4,
+      "options_count": 10,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "新建"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "编辑"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "复制"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "导出"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "导入"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "刷新"
+        },
+        {
+          "ref": 8,
+          "role": "button",
+          "name": "设置"
+        },
+        {
+          "ref": 9,
+          "role": "button",
+          "name": "帮助"
+        },
+        {
+          "ref": 10,
+          "role": "button",
+          "name": "退出"
+        }
+      ],
+      "expect_ref": null,
+      "external": [
+        {
+          "ms": 121.1,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 139.2,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 164.4,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 152.4,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 135.6,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": true,
+      "meta_reason": "goal 含返回意图",
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "m2",
+      "cat": "meta",
+      "goal": "向下滚动查看更多内容",
+      "page": "buttons.html",
+      "expect": {
+        "action": "scroll_down"
+      },
+      "goto_ms": 148.5,
+      "options_count": 10,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "新建"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "编辑"
+        },
+        {
+          "ref": 3,
+          "role": "button",
+          "name": "删除"
+        },
+        {
+          "ref": 4,
+          "role": "button",
+          "name": "复制"
+        },
+        {
+          "ref": 5,
+          "role": "button",
+          "name": "导出"
+        },
+        {
+          "ref": 6,
+          "role": "button",
+          "name": "导入"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "刷新"
+        },
+        {
+          "ref": 8,
+          "role": "button",
+          "name": "设置"
+        },
+        {
+          "ref": 9,
+          "role": "button",
+          "name": "帮助"
+        },
+        {
+          "ref": 10,
+          "role": "button",
+          "name": "退出"
+        }
+      ],
+      "expect_ref": null,
+      "external": [
+        {
+          "ms": 180.7,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "scroll_down",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含向下滚动/查找意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 141.1,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "scroll_down",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含向下滚动/查找意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 114.6,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "scroll_down",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含向下滚动/查找意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 155.6,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "scroll_down",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含向下滚动/查找意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 143.6,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "scroll_down",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含向下滚动/查找意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": true,
+      "meta_reason": "goal 含向下滚动/查找意图",
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "m3",
+      "cat": "meta",
+      "goal": "确认提交已成功",
+      "page": "done.html",
+      "expect": {
+        "action": "done"
+      },
+      "goto_ms": 132.7,
+      "options_count": 1,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "返回首页"
+        }
+      ],
+      "expect_ref": null,
+      "external": [
+        {
+          "ms": 128.4,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "done",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 完成意图+页面完成态",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 151.7,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "done",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 完成意图+页面完成态",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 142.8,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "done",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 完成意图+页面完成态",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 134.3,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "done",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 完成意图+页面完成态",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 114.0,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "done",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 完成意图+页面完成态",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": true,
+      "meta_reason": "goal 完成意图+页面完成态",
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "m4",
+      "cat": "meta",
+      "goal": "继续下一步操作",
+      "page": "blocked.html",
+      "expect": {
+        "action": "blocked"
+      },
+      "goto_ms": 137.3,
+      "options_count": 1,
+      "options": [
+        {
+          "ref": 1,
+          "role": "button",
+          "name": "点击验证"
+        }
+      ],
+      "expect_ref": null,
+      "external": [
+        {
+          "ms": 112.3,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "blocked",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "验证码/人机特征命中",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 112.7,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "blocked",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "验证码/人机特征命中",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 140.1,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "blocked",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "验证码/人机特征命中",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 200.6,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "blocked",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "验证码/人机特征命中",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 137.0,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "blocked",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "验证码/人机特征命中",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": true,
+      "meta_reason": "验证码/人机特征命中",
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "m5",
+      "cat": "meta",
+      "goal": "返回购物车",
+      "page": "checkout.html",
+      "expect": {
+        "action": "back"
+      },
+      "note": "meta 与语义冲突用例：goal 指 Back-to-cart 链接，meta 规则按\"返回\"误短路为浏览器 back",
+      "goto_ms": 162.8,
+      "options_count": 8,
+      "options": [
+        {
+          "ref": 1,
+          "role": "textbox",
+          "name": "Card number"
+        },
+        {
+          "ref": 2,
+          "role": "textbox",
+          "name": "Expiry MM/YY"
+        },
+        {
+          "ref": 3,
+          "role": "textbox",
+          "name": "CVC"
+        },
+        {
+          "ref": 4,
+          "role": "combobox",
+          "name": ""
+        },
+        {
+          "ref": 5,
+          "role": "option",
+          "name": "Shipping: Standard"
+        },
+        {
+          "ref": 6,
+          "role": "option",
+          "name": "Express"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "Place order"
+        },
+        {
+          "ref": 8,
+          "role": "link",
+          "name": "Back to cart"
+        }
+      ],
+      "expect_ref": null,
+      "external": [
+        {
+          "ms": 161.0,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 152.9,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 162.1,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 147.9,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        },
+        {
+          "ms": 139.1,
+          "status": "ok",
+          "code": null,
+          "engine": "meta-rules",
+          "action": "back",
+          "ref": null,
+          "conf": 1.0,
+          "margin": null,
+          "tier": null,
+          "reason": "goal 含返回意图",
+          "deterministic": true,
+          "top3": []
+        }
+      ],
+      "ext_top1_ok": true,
+      "rer_top1_ok": true,
+      "meta_hit": true,
+      "meta_reason": "goal 含返回意图",
+      "unsure_ext": false,
+      "unsure_rer": false
+    },
+    {
+      "id": "g1",
+      "cat": "ambig",
+      "goal": "点击 Sign in 登录",
+      "page": "github.com",
+      "expect": {
+        "name": "Sign in",
+        "role": "link",
+        "action": "click"
+      },
+      "note": "真实站：Sign in link vs Sign up button 近义对",
+      "goto_ms": 13914.5,
+      "options_count": 20,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "Skip to content"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "Toggle navigation"
+        },
+        {
+          "ref": 3,
+          "role": "link",
+          "name": "Homepage"
+        },
+        {
+          "ref": 4,
+          "role": "link",
+          "name": "Sign in"
+        },
+        {
+          "ref": 5,
+          "role": "link",
+          "name": "GitHub Universe ‘26 Recap"
+        },
+        {
+          "ref": 6,
+          "role": "textbox",
+          "name": "Enter your email"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "Sign up for GitHub"
+        },
+        {
+          "ref": 8,
+          "role": "link",
+          "name": "Download GitHub Copilot app"
+        },
+        {
+          "ref": 9,
+          "role": "link",
+          "name": "repo starred by HyperTanker Lord1Egypt/proxy-collector 7 minutes ago"
+        },
+        {
+          "ref": 10,
+          "role": "link",
+          "name": "branch merged from dependabot[bot] traverse-framework/traverse 7 minutes ago"
+        },
+        {
+          "ref": 11,
+          "role": "link",
+          "name": "pull request from boburning boburning/portcove 7 minutes ago"
+        },
+        {
+          "ref": 12,
+          "role": "link",
+          "name": "repo forked from DiogoBrasilianodasilva ChrisCompton/omniroute 7 minutes ago"
+        },
+        {
+          "ref": 13,
+          "role": "link",
+          "name": "push from lebanhan113-dotcom lebanhan113-dotcom/chem_AI 2 days ago"
+        },
+        {
+          "ref": 14,
+          "role": "link",
+          "name": "repo starred by csq66666666 HKUDS/DeepTutor 7 minutes ago"
+        },
+        {
+          "ref": 15,
+          "role": "link",
+          "name": "branch merged from mvc-bot mavogel/awscdk-rootmail 7 minutes ago"
+        },
+        {
+          "ref": 16,
+          "role": "link",
+          "name": "pull request from ThaSMorato ThaSMorato/skills 7 minutes ago"
+        },
+        {
+          "ref": 17,
+          "role": "link",
+          "name": "repo forked from mzf11125 aws-samples/sample-tokenized-deposits 7 minutes ago"
+        },
+        {
+          "ref": 18,
+          "role": "link",
+          "name": "push from lzl51230 lzl51230/HerdrContinue 17 hours ago"
+        },
+        {
+          "ref": 19,
+          "role": "link",
+          "name": "repo starred by MohamedSaeed11718 github/spec-kit 7 minutes ago"
+        },
+        {
+          "ref": 20,
+          "role": "link",
+          "name": "branch merged from Adama101 Mizan-AI-Org/Mizan_FE 7 minutes ago"
+        }
+      ],
+      "expect_ref": 4,
+      "external": [
+        {
+          "ms": 843.2,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 876.6,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 12727.2,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 4,
+          "conf": 0.0275,
+          "margin": 0.0174,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "4",
+              0.0275
+            ],
+            [
+              "7",
+              0.0101
+            ],
+            [
+              "44",
+              0.0101
+            ]
+          ]
+        },
+        {
+          "ms": 3444.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 4,
+          "conf": 0.0275,
+          "margin": 0.0174,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "4",
+              0.0275
+            ],
+            [
+              "7",
+              0.0101
+            ],
+            [
+              "44",
+              0.0101
+            ]
+          ]
+        },
+        {
+          "ms": 3609.4,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 4,
+          "conf": 0.0275,
+          "margin": 0.0174,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "4",
+              0.0275
+            ],
+            [
+              "7",
+              0.0101
+            ],
+            [
+              "44",
+              0.0101
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": true,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    },
+    {
+      "id": "g2",
+      "cat": "ambig",
+      "goal": "注册 GitHub 账号",
+      "page": "github.com",
+      "expect": {
+        "name": "Sign up",
+        "role": "button",
+        "action": "click"
+      },
+      "note": "g1 反向——注册歧义对",
+      "goto_ms": 3719.7,
+      "options_count": 20,
+      "options": [
+        {
+          "ref": 1,
+          "role": "link",
+          "name": "Skip to content"
+        },
+        {
+          "ref": 2,
+          "role": "button",
+          "name": "Toggle navigation"
+        },
+        {
+          "ref": 3,
+          "role": "link",
+          "name": "Homepage"
+        },
+        {
+          "ref": 4,
+          "role": "link",
+          "name": "Sign in"
+        },
+        {
+          "ref": 5,
+          "role": "link",
+          "name": "GitHub Universe ‘26 Recap"
+        },
+        {
+          "ref": 6,
+          "role": "textbox",
+          "name": "Enter your email"
+        },
+        {
+          "ref": 7,
+          "role": "button",
+          "name": "Sign up for GitHub"
+        },
+        {
+          "ref": 8,
+          "role": "link",
+          "name": "Download GitHub Copilot app"
+        },
+        {
+          "ref": 9,
+          "role": "link",
+          "name": "push from lzl51230 lzl51230/HerdrContinue 17 hours ago"
+        },
+        {
+          "ref": 10,
+          "role": "link",
+          "name": "pull request from iamshaynez TheSecondCurve/gb-pmo 7 minutes ago"
+        },
+        {
+          "ref": 11,
+          "role": "link",
+          "name": "repo forked from mzf11125 aws-samples/sample-tokenized-deposits 8 minutes ago"
+        },
+        {
+          "ref": 12,
+          "role": "link",
+          "name": "branch merged from maitabom maitabom/landingpagetabernamulher 8 minutes ago"
+        },
+        {
+          "ref": 13,
+          "role": "link",
+          "name": "repo starred by MRand-M MakkaPakka-7788/ARRAS.FLASHCARDS 8 minutes ago"
+        },
+        {
+          "ref": 14,
+          "role": "link",
+          "name": "push from hyeonseungkang AU-Bcube/b-cube-subdomain-lending 18 hours ago"
+        },
+        {
+          "ref": 15,
+          "role": "link",
+          "name": "pull request from Tan90degrees Tan90degrees/AgentBerth 7 minutes ago"
+        },
+        {
+          "ref": 16,
+          "role": "link",
+          "name": "repo forked from DiogoBrasilianodasilva ChrisCompton/omniroute 8 minutes ago"
+        },
+        {
+          "ref": 17,
+          "role": "link",
+          "name": "branch merged from weakcrypto-scanner[bot] qernelkit/weakcrypto 8 minutes ago"
+        },
+        {
+          "ref": 18,
+          "role": "link",
+          "name": "repo starred by markmsmith Villagers654/Venture 7 minutes ago"
+        },
+        {
+          "ref": 19,
+          "role": "link",
+          "name": "push from lebanhan113-dotcom lebanhan113-dotcom/chem_AI 2 days ago"
+        },
+        {
+          "ref": 20,
+          "role": "link",
+          "name": "pull request from KimArthemSon KimArthemSon/PlantScope 7 minutes ago"
+        }
+      ],
+      "expect_ref": 7,
+      "external": [
+        {
+          "ms": 857.8,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        },
+        {
+          "ms": 864.9,
+          "status": "ok",
+          "code": null,
+          "engine": "external",
+          "action": "click",
+          "ref": 1,
+          "conf": 0.99,
+          "margin": 0.98,
+          "tier": null,
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "1",
+              0.99
+            ],
+            [
+              "2",
+              0.01
+            ]
+          ]
+        }
+      ],
+      "reranker": [
+        {
+          "ms": 3305.7,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 47,
+          "conf": 0.0274,
+          "margin": 0.0172,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "47",
+              0.0274
+            ],
+            [
+              "7",
+              0.0102
+            ],
+            [
+              "44",
+              0.0102
+            ]
+          ]
+        },
+        {
+          "ms": 3165.8,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 47,
+          "conf": 0.0274,
+          "margin": 0.0172,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "47",
+              0.0274
+            ],
+            [
+              "7",
+              0.0102
+            ],
+            [
+              "44",
+              0.0102
+            ]
+          ]
+        },
+        {
+          "ms": 3271.4,
+          "status": "error",
+          "code": "AGENT_UNSURE",
+          "unsure": true,
+          "engine": "reranker",
+          "action": "click",
+          "ref": 47,
+          "conf": 0.0274,
+          "margin": 0.0172,
+          "tier": "refuse",
+          "reason": null,
+          "deterministic": null,
+          "top3": [
+            [
+              "47",
+              0.0274
+            ],
+            [
+              "7",
+              0.0102
+            ],
+            [
+              "44",
+              0.0102
+            ]
+          ]
+        }
+      ],
+      "ext_top1_ok": false,
+      "rer_top1_ok": false,
+      "meta_hit": false,
+      "meta_reason": null,
+      "unsure_ext": false,
+      "unsure_rer": true
+    }
+  ]
+}

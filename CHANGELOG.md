@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.19] - 2026-10-28
+
+### 改进（decide 自动化管线两组件+实机验证）
+- **hard-case 主动学习落盘**：decide 低置信（conf<0.5/margin<0.1）双触发自动落盘 `hard_cases.jsonl`+跨进程锁+`bench/review_hard_cases.py` 审阅脚本——真实流量喂养管线
+- **embedding 召回两级架构**：候选>30 时 bge-embedding 余弦召回 top-8 再过 CrossEncoder 细排——长页截断盲区根治；`NO_EMBED` stderr 信号+`recall_pool` 扩池兜底（实机 54 refs 验证真触发）
+- **A/B 实测证据链**：`bench/engine_ab.py`+20 场景报告+fixture 入库可复跑（歧义场 +88.9pp 实锤）
+
 ## [0.15.18] - 2026-10-28
 
 ### 改进（decide 蒸馏+daemon 兜底+跨平台）

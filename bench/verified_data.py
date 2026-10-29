@@ -70,6 +70,16 @@ def eligible(row):
             and has_outcome_evidence(row))
 
 
+def _state_delta(pre, post):
+    """快照 diff——与 dp_cli.decide_train.state_delta 同判据
+    （URL/hash/refs_epoch/DOM sig 任一变化=有执行后证据）；
+    bench 侧自包含副本，保持 verified_data 零依赖可独立 import。"""
+    if not isinstance(pre, dict) or not isinstance(post, dict):
+        return []
+    return [k for k in ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig')
+            if post.get(k) is not None and post.get(k) != pre.get(k)]
+
+
 def promote_recorded(row):
     """录制行 → eligible 行：pre/post_state 快照 diff 推导断言。
 
@@ -86,6 +96,14 @@ def promote_recorded(row):
     ref = row.get('engine_ref') or row.get('chosen_ref')
     if not (goal and refs and pre and post
             and type(ref) is int and len(argv) >= 2):
+        return None
+    # post_state 无变化降 elig——快照齐但 URL/hash/refs_epoch/DOM
+    # sig 全同=动作未生效的空快照，不冒充 verified。写端 post_delta
+    # 标记与本地重算同判据：标记在且空→短路拒（fail closed）；
+    # 标记缺失（旧行/外部写）→就地重算兜底。
+    if 'post_delta' in row and not row['post_delta']:
+        return None
+    if not _state_delta(pre, post):
         return None
     url_pre, url_post = pre.get('url'), post.get('url')
     # 断言推导：url 变化→导航断言；同源 sig 变化→DOM 状态断言

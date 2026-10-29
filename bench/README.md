@@ -7,6 +7,10 @@
 - `train_reranker.py` — CrossEncoder 微调入口；**含泄漏守卫**（train query 命中 eval goal 即拒训）
 - `collect_sites.py` — 静态采集器（fixture HTML→样本 jsonl）
 - `bench_*.py`/`results.json` — 各引擎实测数据
+- `DATA_SCHEMA.md` — 三形态数据契约（verified_real / hard_case /
+  teacher），落盘开关与信任边界详见该文件
+- `review_hard_cases.py` — hard_cases.jsonl 复核清单 + teacher
+  待标注模板（`--emit-teacher`）+ 转正确认门（`--promote-teacher`）
 
 ## 数据纪律
 
@@ -21,6 +25,16 @@
   **全部无证据来源**（含 pilot_local/decide/meta/synthetic），
   只能作历史实验，eval goal 撞车仍被拒，
   标注不会作为 clean 数据声明
+- **hard_case 被动采集默认开启**（`DPX_HARD_CASES` 缺省 `'1'`）：
+  decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
+  `~/.dp_cli/hard_cases.jsonl`，`DPX_HARD_CASES=0` 关闭。
+  性质=本地调试/训练采集池，不外发；与 **opt-in** 的
+  `DPX_RECORD_DECIDE`（缺省关，写 `decide_train.jsonl`）是两份
+  职责——一个默认开攒待标注原料、一个默认关录交互训练对。
+  hard_case 永不当标签：须经 `--emit-teacher` 出模板 → LLM 回填
+  → `--promote-teacher` 门检（chosen_ref∈candidate_refs、
+  negatives 非空、pos∉negs）转正 `prov='teacher'` 才可走
+  `--allow-unverified` 入训；手动改 prov 不绕过门检。
 - `collected_train.jsonl` 首采 4 行=fixture 小集跑通验证，**非产量**；
   放量需真实 URL 集或多 fixture
 - 历史口径修正：旧 n=8 holdout ±12.5pp/case 噪声不可信；

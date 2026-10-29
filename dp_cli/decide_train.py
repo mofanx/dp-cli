@@ -12,7 +12,12 @@ hard-case 被动落盘（默认开，DPX_HARD_CASES=0 关闭）：
 decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
 ~/.dp_cli/hard_cases.jsonl——调试/标注原料非训练承诺，
 与 decide_train.jsonl 并行两份职责，bench/review_hard_cases.py
-定期汇总输出 LLM 标注清单。
+定期汇总输出 LLM 标注清单（--emit-teacher 出待标注模板）。
+
+pre_state/post_state 双快照齐时行内附 post_delta 字段（
+state_delta() 判据：url/hash/refs_epoch/DOM sig 任一变化=有
+执行后证据，[]=空快照不冒充 verified）；三形态数据契约见
+bench/DATA_SCHEMA.md。
 """
 import json
 import os
@@ -56,6 +61,26 @@ def enabled() -> bool:
 
 def _file() -> Path:
     return get_session_dir() / 'decide_train.jsonl'
+
+
+# ── 快照 diff 证据判定（断言可执行性）─────────────────────────────
+# URL/hash/refs_epoch/DOM sig 任一变化=有执行后状态证据；全同=
+# 动作疑似未生效的空快照（不冒充 verified）。bench/verified_data.
+# _state_delta 与本函数同判据（bench 侧自包含副本，勿分叉）。
+_STATE_KEYS = ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig')
+
+
+def state_delta(pre: dict, post: dict) -> list:
+    """pre/post 快照 diff 字段清单——断言可执行性判定。
+
+    返回 _STATE_KEYS 序的变化字段名；任一侧非 dict → []。
+    post 侧字段缺失不计变化（快照残缺≠状态变）；pre 缺字段而
+    post 有值算变化（无旧值可比按新状态计）。
+    """
+    if not isinstance(pre, dict) or not isinstance(post, dict):
+        return []
+    return [k for k in _STATE_KEYS
+            if post.get(k) is not None and post.get(k) != pre.get(k)]
 
 
 # ── hard-case 被动落盘（默认开）──────────────────────────────────
@@ -227,6 +252,13 @@ def record(session: str, argv: list, refs: dict,
         # 能补执行后证据过 verified_data.eligible()；无 diff 的行
         # 仍只是原料不冒充 verified。
         entry['post_state'] = post_state
+        if pre_state:
+            # 断言可执行性校验：post_delta 显式记录快照 diff 字段
+            # 清单——非空=有执行后状态证据，[]=快照全同（动作疑似
+            # 未生效），promote_recorded 见此标记直接不提升；
+            # 缺/空 pre_state 无基线可判，不写 post_delta（空 dict
+            # 是 _snap_state 失败形态，不能当"全字段变化"伪证据）。
+            entry['post_delta'] = state_delta(pre_state, post_state)
     try:
         f = _file()
         f.parent.mkdir(parents=True, exist_ok=True)

@@ -371,3 +371,211 @@ def test_review_hard_cases_summary(tmp_path):
     rev = review_rows(rows)
     assert rev[0]['goal'] == 'g1'    # conf 0.4 < 0.9 排前
     assert rev[0]['engine_ref'] is None or 'engine_ref' in rev[0]
+
+
+# ── post_delta 断言可执行性 + promote 零变化降 elig（DATA_SCHEMA 契约）──
+
+def test_record_post_delta_marker(tmp_path, monkeypatch):
+    """断言可执行性校验：pre/post 快照齐 → post_delta diff 字段清单
+    落盘——url/hash/refs_epoch 任一变化=有证据，全同=[] 空快照；
+    缺 pre_state 无基线不写 post_delta。"""
+    import dp_cli.decide_train as dt
+    import json
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    f = tmp_path / 'r.jsonl'
+    monkeypatch.setattr(dt, '_file', lambda: f)
+    refs = {'1': {'role': 'link', 'name': 'Sign in'}}
+    dt.record('s', ['click', '@e1'], refs,
+              pre_state={'url': 'https://x/a', 'refs_epoch': 's1'},
+              post_state={'url': 'https://x/b', 'refs_epoch': 's1'})
+    dt.record('s', ['click', '@e1'], refs,
+              pre_state={'url': 'https://x/a', 'refs_epoch': 's1'},
+              post_state={'url': 'https://x/a', 'refs_epoch': 's2'})
+    dt.record('s', ['click', '@e1'], refs,
+              pre_state={'url': 'https://x/a', 'refs_epoch': 's1'},
+              post_state={'url': 'https://x/a', 'refs_epoch': 's1'})
+    dt.record('s', ['click', '@e1'], refs,
+              post_state={'url': 'https://x/b'})     # 无 pre 基线
+    dt.record('s', ['click', '@e1'], refs,
+              pre_state={},                          # 空 dict=快照失败
+              post_state={'url': 'https://x/b'})     # 非全字段变化伪证据
+    rows = [json.loads(l)
+            for l in f.read_text(encoding='utf-8').splitlines()]
+    assert rows[0]['post_delta'] == ['url']
+    assert rows[1]['post_delta'] == ['refs_epoch']
+    assert rows[2]['post_delta'] == []
+    assert 'post_delta' not in rows[3]
+    assert 'post_delta' not in rows[4]
+
+
+def test_state_delta_semantics():
+    """state_delta 判据：非 dict/全同/post 缺字段 → []；
+    pre 缺字段而 post 有值按新状态计变化。"""
+    from dp_cli.decide_train import state_delta
+    assert state_delta(None, {'url': 'u'}) == []
+    assert state_delta({'url': 'u'}, 'x') == []
+    assert state_delta({'url': 'u'}, {'url': 'u'}) == []
+    # post 侧字段缺失不计变化（快照残缺≠状态变）
+    assert state_delta({'url': 'u', 'sig': 'a'}, {'url': 'v'}) == ['url']
+    # pre 缺字段 post 有值→计变化
+    assert state_delta({'url': 'u'},
+                       {'url': 'u', 'refs_epoch': 's1'}) == ['refs_epoch']
+    # 键序按 _STATE_KEYS（url 在 refs_epoch 前）
+    assert state_delta({'url': 'a', 'refs_epoch': 's1'},
+                       {'url': 'b', 'refs_epoch': 's2'}) == [
+        'url', 'refs_epoch']
+
+
+def test_promote_recorded_no_change_demoted():
+    """post_state 零变化行自动降 elig——URL/hash/refs_epoch/DOM sig
+    全同=动作未生效不冒充 verified；post_delta=[] 标记行即使 url
+    字段矛盾也短路拒（写端判据 fail closed 优先）。"""
+    import sys
+    sys.path.insert(0, 'bench')
+    from verified_data import promote_recorded, eligible
+    refs = [{'ref': 1, 'role': 'link', 'name': 'Sign in'}]
+    base = {'goal': 'g', 'chosen': 'click @e1', 'engine_ref': 1,
+            'state': {'refs': refs},
+            'pre_state': {'url': 'https://x/a'},
+            'post_state': {'url': 'https://x/b'}}
+    r = promote_recorded(dict(base))
+    assert r and eligible(r)          # 正常 url diff 回归
+    # 零变化快照（无标记旧行→就地重算路径）
+    bad = dict(base); bad['post_state'] = dict(base['pre_state'])
+    assert promote_recorded(bad) is None
+    # post_delta=[] 标记短路——与 url diff 矛盾也 fail closed
+    bad2 = dict(base); bad2['post_delta'] = []
+    assert promote_recorded(bad2) is None
+    # post_delta 非空但 url 未变→仍不提升（硬证据只剩 url）
+    bad3 = dict(base)
+    bad3['pre_state'] = {'url': 'https://x/a', 'sig': 'a'}
+    bad3['post_state'] = {'url': 'https://x/a', 'sig': 'b'}
+    bad3['post_delta'] = ['sig']
+    assert promote_recorded(bad3) is None
+
+
+def test_review_emit_teacher_template(tmp_path):
+    """hard_case→teacher 转正接口：--emit-teacher 出待标注模板——
+    src/prov/query/candidates 就位，chosen_ref/positive/negatives
+    留空待 LLM 填；engine_ref/conf/triggers 透传作标注参考。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import load_rows, teacher_rows, main as rmain
+    f = tmp_path / 'hc.jsonl'
+    f.write_text(json.dumps({
+        'goal': '点登录', 'url': 'https://x/login', 'conf': 0.3,
+        'margin': 0.05, 'triggers': ['low_conf', 'low_margin'],
+        'engine': 'reranker', 'engine_ref': 2, 'session': 's1',
+        'ts': 1,
+        'candidates': [{'ref': 2, 'role': 'button', 'name': '登录',
+                        'score': 0.4},
+                       {'ref': 5, 'role': 'link', 'name': '注册',
+                        'score': 0.35}]}) + '\n', encoding='utf-8')
+    rows, bad = load_rows(f)
+    assert bad == 0
+    tr = teacher_rows(rows)
+    assert len(tr) == 1
+    t = tr[0]
+    assert t['src'] == 'teacher_hardneg' and t['prov'] == 'teacher_pending'
+    assert t['query'] == '点登录' and t['page'] == 'https://x/login'
+    assert t['chosen_ref'] is None and t['positive'] is None
+    assert t['negatives'] is None
+    assert t['candidates'] == ['button 登录', 'link 注册']
+    assert t['candidate_refs'] == [2, 5] and t['engine_ref'] == 2
+    assert t['triggers'] == ['low_conf', 'low_margin']
+    # 待标注模板不被 eligible() 误收（src 非 verified_real）
+    from verified_data import eligible
+    assert not eligible(t)
+    # CLI 形态落盘
+    out = tmp_path / 'teacher.jsonl'
+    rmain(['--file', str(f), '--emit-teacher', str(out)])
+    disk = json.loads(out.read_text(encoding='utf-8').splitlines()[0])
+    assert disk == t
+
+
+# ── teacher_pending → teacher 显式确认门（--promote-teacher）──────
+
+def _pending_row(**kw):
+    r = {'src': 'teacher_hardneg', 'prov': 'teacher_pending',
+         'page': 'https://x/login', 'goal': '点登录', 'query': '点登录',
+         'chosen_ref': None, 'positive': None, 'negatives': None,
+         'candidates': ['button 登录', 'link 注册'],
+         'candidate_refs': [2, 5], 'engine_ref': 2}
+    r.update(kw)
+    return r
+
+
+def test_promote_teacher_rejects_unfilled(tmp_path):
+    """chosen_ref 空/非法/negatives 空 → 一律拒收计数，prov 不改。"""
+    import sys
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import promote_teacher
+    cases = [
+        _pending_row(),                                        # 未回填
+        _pending_row(chosen_ref='', negatives=['link 注册']),  # 空串
+        _pending_row(chosen_ref=9, negatives=['link 注册']),   # 不在候选集
+        _pending_row(chosen_ref=2),                            # negatives 空
+        _pending_row(chosen_ref=2, negatives='link 注册'),     # 非 list
+        _pending_row(chosen_ref=2, negatives=['button 登录']), # pos∈negs
+        _pending_row(prov='teacher', chosen_ref=2,
+                     negatives=['link 注册']),                 # 非 pending 态
+    ]
+    ok, no = promote_teacher(cases)
+    assert ok == [] and len(no) == 7
+    reasons = [w for _, w in no]
+    assert 'chosen_ref 空' in reasons
+    assert 'chosen_ref 不在 candidate_refs' in reasons
+    assert 'negatives 空' in reasons
+    assert 'prov 非 teacher_pending' in reasons
+
+
+def test_promote_teacher_valid_row(tmp_path):
+    """合法回填行转正：prov='teacher'、chosen_ref 归一、positive
+    留空按 chosen 候选渲染回填；数字字符串 ref 可转正。"""
+    import sys
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import promote_teacher
+    ok, no = promote_teacher([_pending_row(
+        chosen_ref=2, negatives=['link 注册'])])
+    assert len(ok) == 1 and not no
+    t = ok[0]
+    assert t['prov'] == 'teacher' and t['chosen_ref'] == 2
+    assert t['positive'] == 'button 登录'          # 自动回填
+    assert 'PENDING' not in t['teacher_note']
+    # LLM 填成字符串 ref → int 归一转正
+    ok2, no2 = promote_teacher([_pending_row(
+        chosen_ref='5', positive='link 注册',
+        negatives=['button 登录'])])
+    assert len(ok2) == 1 and ok2[0]['chosen_ref'] == 5
+
+
+def test_promote_teacher_cli_and_merge_gate(tmp_path):
+    """CLI：--promote-teacher+--promote-out 只写转正行，拒收行计数；
+    merge 侧 teacher_pending 天然被 eligible() 拒（src 非
+    verified_real）——手改 prov 未过门也进不了默认训练集。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import main as rmain
+    src = tmp_path / 'pending.jsonl'
+    src.write_text(
+        json.dumps(_pending_row(chosen_ref=2,
+                                negatives=['link 注册'])) + '\n'
+        + json.dumps(_pending_row(query='空标注')) + '\n',
+        encoding='utf-8')
+    out = tmp_path / 'teacher.jsonl'
+    rmain(['--promote-teacher', str(src), '--promote-out', str(out)])
+    lines = out.read_text(encoding='utf-8').splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])['prov'] == 'teacher'
+    # merge 默认门：teacher_pending 行 src=teacher_hardneg 不过
+    # eligible() → src 拒收；即使手改 prov='teacher' 同样被拒
+    from merge_train import merge
+    msrc = tmp_path / 'm.json'
+    msrc.write_text(json.dumps([
+        json.loads(lines[0]),
+        _pending_row(query='伪造行', prov='teacher',
+                     chosen_ref=2, negatives=['link 注册']),
+    ]), encoding='utf-8')
+    merge([str(msrc)], str(tmp_path / 'mout.json'))
+    assert json.loads(
+        (tmp_path / 'mout.json').read_text(encoding='utf-8')) == []

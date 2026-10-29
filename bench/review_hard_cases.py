@@ -11,7 +11,18 @@ decide 低置信候选由 dp_cli.decide_train._maybe_log_hard_case 被动
     python bench/review_hard_cases.py                  # 摘要 → stdout
     python bench/review_hard_cases.py --json           # 摘要 JSON
     python bench/review_hard_cases.py --emit bench/hard_review.jsonl
+    python bench/review_hard_cases.py --emit-teacher bench/teacher_pending.jsonl
     python bench/review_hard_cases.py --file x.jsonl --limit 30
+    python bench/review_hard_cases.py --promote-teacher bench/teacher_pending.jsonl \
+        --promote-out bench/teacher_labeled.jsonl      # 转正确认门
+
+--emit-teacher 出 teacher 待标注模板（chosen_ref/positive/negatives
+留空 prov='teacher_pending'）——LLM 回填后须过 --promote-teacher
+显式确认门转正 prov='teacher'（chosen_ref 已填+∈candidate_refs+
+negatives 非空三条件齐备，positive 留空按 chosen 候选回填），再
+过泄漏三闸方可入训；手动改 prov 不写 chosen_ref/negatives 的伪
+标注过不了本门，未回填/未转正前 eligible() 同样拒收。三形态
+数据契约见 bench/DATA_SCHEMA.md。
 """
 import argparse
 import json
@@ -100,6 +111,103 @@ def review_rows(rows, limit=None):
     return out
 
 
+def teacher_rows(rows, limit=None):
+    """review 清单 → teacher 待标注模板行（hard_case→teacher 转正接口）。
+
+    hard_case 本身不是标签是待标注池：模板行 prov='teacher_pending'
+    标未标注态——chosen_ref/positive/negatives 三字段留空待 LLM
+    回填，回填后必须经 promote_teacher() 显式确认门转正 prov 改
+    'teacher' 再过泄漏三闸才可入训；未回填/未转正前 eligible()
+    拒收（src 非 verified_real），绝不误入默认训练。candidates
+    保留 ref+文本双形态供标注对照，engine_ref/conf/margin/
+    triggers 透传供标注参考（不作标签）。
+    """
+    out = []
+    for r in review_rows(rows, limit=limit):
+        cands = r.get('candidates') or []
+        out.append({'src': 'teacher_hardneg',
+                    'prov': 'teacher_pending',   # 待标注态≠已标注 teacher_*
+                    'page': r.get('url'),
+                    'goal': r.get('goal'),
+                    'query': r.get('goal'),
+                    'chosen_ref': None,          # ← LLM 标注位
+                    'positive': None,            # ← 由 chosen_ref 回填
+                    'negatives': None,           # ← 除 chosen 外候选回填
+                    'candidates': [
+                        f"{c.get('role', '')} {c.get('name', '')}".strip()
+                        for c in cands],
+                    'candidate_refs': [c.get('ref') for c in cands],
+                    'engine_ref': r.get('engine_ref'),
+                    'conf': r.get('conf'),
+                    'margin': r.get('margin'),
+                    'triggers': r.get('triggers'),
+                    'session': r.get('session'),
+                    'ts': r.get('ts'),
+                    'teacher_note': 'PENDING: 填 chosen_ref 后回填 '
+                                    'positive/negatives'})
+    return out
+
+
+def promote_teacher(rows):
+    """teacher_pending → teacher 显式确认门（唯一转正接口）。
+
+    手动把 prov 从 'teacher_pending' 改成 'teacher' 不能绕过标注——
+    转正必须过本门校验：
+      1. prov=='teacher_pending'（已转正/异源行不重入）
+      2. chosen_ref 已填且 ∈ candidate_refs（数字字符串可 int 归一）
+      3. negatives 非空 list
+      4. query 非空 且 最终 positive ∉ negatives（防自相矛盾行）
+    全过才写 prov='teacher'；positive 留空时按 chosen 候选渲染
+    回填。返回 (promoted, rejected)，rejected 为 (row, reason)
+    二元组列表——chosen_ref 空/非法一律拒收计数，绝不静默放行。
+    """
+    promoted, rejected = [], []
+    for r in rows:
+        def _rej(why):
+            rejected.append((r, why))
+        if not isinstance(r, dict) or r.get('prov') != 'teacher_pending':
+            _rej('prov 非 teacher_pending')
+            continue
+        ref = r.get('chosen_ref')
+        if ref is None or (isinstance(ref, str) and not ref.strip()):
+            _rej('chosen_ref 空')
+            continue
+        cand_refs = r.get('candidate_refs')
+        if not isinstance(cand_refs, list):
+            cand_refs = []
+        hit = ref if ref in cand_refs else None
+        # LLM 回填可能把 ref 写成 "5" 字符串——数字串 int 归一再比对
+        if hit is None and isinstance(ref, str) and ref.strip().isdigit():
+            iv = int(ref.strip())
+            hit = iv if iv in cand_refs else None
+        if hit is None:
+            _rej('chosen_ref 不在 candidate_refs')
+            continue
+        negs = r.get('negatives')
+        if not isinstance(negs, list) or not negs:
+            _rej('negatives 空')
+            continue
+        if not isinstance(r.get('query'), str) or not r['query'].strip():
+            _rej('query 空')
+            continue
+        out = dict(r)
+        out['chosen_ref'] = hit
+        if not out.get('positive'):
+            cands = r.get('candidates') or []
+            try:
+                out['positive'] = cands[cand_refs.index(hit)]
+            except (ValueError, IndexError):
+                out['positive'] = None
+        if not out.get('positive') or out['positive'] in negs:
+            _rej('positive 缺失或在 negatives 中')
+            continue
+        out['prov'] = 'teacher'
+        out['teacher_note'] = ('promoted: --promote-teacher 门检通过，'
+                               '入训前仍须过泄漏三闸+--allow-unverified')
+        promoted.append(out)
+    return promoted, rejected
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description='hard_cases.jsonl 复核清单——LLM 标注输入')
@@ -109,6 +217,16 @@ def main(argv=None):
                     help='review 清单条数上限（conf 升序取头部）')
     ap.add_argument('--emit', default=None,
                     help='review 清单 jsonl 落盘路径（缺省只打印摘要）')
+    ap.add_argument('--emit-teacher', default=None,
+                    help='teacher 待标注模板 jsonl 落盘路径'
+                         '（chosen_ref/positive 留空待 LLM 填）')
+    ap.add_argument('--promote-teacher', default=None,
+                    help='teacher_pending jsonl 转正确认门——校验 '
+                         'chosen_ref∈candidate_refs+negatives 非空才写 '
+                         'prov=teacher（配 --promote-out 落盘；'
+                         '缺省 dry-run 只报计数）')
+    ap.add_argument('--promote-out', default=None,
+                    help='--promote-teacher 产出的 teacher jsonl 路径')
     ap.add_argument('--json', action='store_true', help='摘要 JSON 输出')
     a = ap.parse_args(argv)
     rows, bad = load_rows(a.file)
@@ -140,6 +258,30 @@ def main(argv=None):
             ''.join(json.dumps(r, ensure_ascii=False) + '\n'
                     for r in rev), encoding='utf-8')
         print(f'review 清单 {len(rev)} 条 → {a.emit}')
+    if a.emit_teacher:
+        tr = teacher_rows(rows, limit=a.limit)
+        Path(a.emit_teacher).write_text(
+            ''.join(json.dumps(r, ensure_ascii=False) + '\n'
+                    for r in tr), encoding='utf-8')
+        print(f'teacher 待标注模板 {len(tr)} 条 → {a.emit_teacher}'
+              '（chosen_ref/positive 待 LLM 回填后过 '
+              '--promote-teacher 转正+泄漏三闸入训）')
+    if a.promote_teacher:
+        prows, pbad = load_rows(a.promote_teacher)
+        ok, no = promote_teacher(prows)
+        if a.promote_out:
+            Path(a.promote_out).write_text(
+                ''.join(json.dumps(r, ensure_ascii=False) + '\n'
+                        for r in ok), encoding='utf-8')
+        print(f'promote: {len(ok)} 行转正 prov=teacher'
+              + (f' → {a.promote_out}' if a.promote_out
+                 else '（dry-run 未落盘，配 --promote-out 写出）')
+              + f'，拒收 {len(no)} 行'
+              + (f'，{pbad} 行无法解析' if pbad else ''))
+        for r, why in no:
+            tag = (r or {}).get('goal') or (r or {}).get('query') \
+                if isinstance(r, dict) else r
+            print(f'  reject: {why} — {tag}')
 
 
 if __name__ == '__main__':

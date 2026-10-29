@@ -97,11 +97,13 @@ _IN_SNAP = False            # _snap_state 内部 _invoke 防递归录制
 
 
 def _snap_state(session: str) -> dict:
-    """执行后状态快照——url/页面签名，供 post_state 证据字段。
+    """执行后状态快照——url+refs_epoch 页签名，供 post_state 证据字段。
 
     仅在 DPX_RECORD_DECIDE 开启时取快照（in-process _invoke 调 eval
     location.href）——失败返回空 dict 不阻塞主链路；_IN_SNAP 守卫
-    避免嵌套 _invoke 自身再被录制。
+    避免嵌套 _invoke 自身再被录制。refs_epoch sig 取自 session
+    （_page_state 每次快照重签——URL 不变但控件集变化同样可判
+    post_state diff，给 decide_train.state_delta 提供非 URL 证据面）。
     """
     from dp_cli.decide_train import enabled
     if not enabled():
@@ -113,7 +115,16 @@ def _snap_state(session: str) -> dict:
         if code == 0 and isinstance(r, dict):
             url = (r.get('data') or {}).get('result')
             if isinstance(url, str):
-                return {'url': url}
+                snap = {'url': url}
+                try:
+                    from dp_cli.session import load_session
+                    sig = ((load_session(session) or {}).get('refs_epoch')
+                           or {}).get('sig')
+                    if sig:
+                        snap['refs_epoch'] = sig
+                except Exception:
+                    pass            # sig 缺失不阻塞——url 已是最小快照
+                return snap
     except Exception:
         pass
     finally:

@@ -2,6 +2,14 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.26] - 2026-10-30
+
+### 新增（agent 决策燃料+缓存+int8 默认）
+- **置信度三字段**：`confidence_tier`/`should_escalate`/`alternatives` 写入 decide result——先于 AGENT_UNSURE（拒答 detail 也携备选）；meta 短路标 `'rule'`、bge `conf_floor=0` 防整页误标
+- **决策缓存**：(session,url,epoch,goal) LRU128——epoch.sig 含 prop_bits 指纹结构性失效非 TTL；命中 ~0.06ms；daemon/serve/REPL 生效，`DPX_NO_CACHE=1` 关
+- **`model pull` 默认 int8**：`--fp32` 拉全量——如实口径：per-pair 分可摆 0.75、4/87 top1 换位非逐例无损
+- **daemon version 回填+meta 补齐+_TIER 按 margin_source 统一**（refuse/escalate 消解）
+
 ## [0.15.25] - 2026-10-30
 
 ### 新增（ORT/int8 推理后端——更快更省）

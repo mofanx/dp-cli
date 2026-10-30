@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.23] - 2026-10-29
+
+### 改进（补票——lexical union+覆盖收尾，0.15.22 漏带）
+- **lexical fallback union**：`_lexical_top` stdlib 字面匹配补缺并入 CE 召回（k+≤3，`DPX_NO_LEXICAL` 关闭）——embedding 召回盲区零成本补缺
+- **空 name 第8级回填**：name/id 机器属性拆词兜底+`aria-labelledby` 旁挂 label——站点 a11y 全缺时语义寻址留钩子
+- **P2 第七节**：候选池结构性边界登记（wontfix=canvas 视觉层非本域）
+
 ## [0.15.22] - 2026-10-29
 
 ### 改进（数据契约扩容——召回实验可测化）

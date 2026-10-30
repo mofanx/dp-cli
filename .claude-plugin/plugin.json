@@ -1,6 +1,6 @@
 {
   "name": "dp-cli",
-  "version": "0.15.22",
+  "version": "0.15.23",
   "description": "DrissionPage 命令行浏览器自动化 skill——控制真实已登录 Chrome、反检测、pw: 语义定位器、Playwright 用例固化",
   "author": {
     "name": "mofanx",

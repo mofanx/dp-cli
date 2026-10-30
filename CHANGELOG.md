@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.28] - 2026-10-31
+
+### 改进（eval-120 95.0→98.3 规则修+反哺飞轮闭合）
+- **三 meta 规则修**：动作词族/中置序数/符号按钮——miss 5→2（x03/x12 领域同义词 wontfix 如实登记）
+- **否定剥离**："不是X的"中置定语+"别/不要/不是A是B"前置段剥离
+- **`dpx decide-feedback`**：escalate 反哺回路——上层升级答对的正例回写 hard_cases（`--success` fail-closed+`prov=escalate_feedback` 标注）
+
 ## [0.15.27] - 2026-10-30
 
 ### 新增（v28 权重+盲区采集通道）

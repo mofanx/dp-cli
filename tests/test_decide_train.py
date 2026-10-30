@@ -235,6 +235,7 @@ def test_hard_case_low_conf_logged(tmp_path):
     assert r['url'] == 'https://x/login'
     assert r['engine_ref'] == 2 and r['conf'] == 0.42
     assert r['unsure'] is True and r['triggers'] == ['low_conf']
+    assert r['schema_v'] == 2
     assert [c['ref'] for c in r['candidates']] == [2, 5, 7]
     c0 = r['candidates'][0]
     assert c0['name'] == '登录' and c0['role'] == 'button'
@@ -290,6 +291,10 @@ def test_hard_case_state_fallback_load_refs(tmp_path, monkeypatch):
     assert len(rows) == 1
     assert rows[0]['url'] == 'https://x/inner'
     assert rows[0]['candidates'][0]['name'] == '登录'
+    # 无内嵌 state 时仍标 schema_v=2（写端版本），candidates 退
+    # 回 probs top3 计分集——v2 语义=全池"如可录得"
+    assert rows[0]['schema_v'] == 2
+    assert [c['ref'] for c in rows[0]['candidates']] == [2, 9]
 
 
 def test_hard_case_concurrent_writes_no_tear(tmp_path):
@@ -344,8 +349,129 @@ def test_hard_case_via_decide_command(tmp_path, monkeypatch):
     assert rows[0]['unsure'] is True
     assert rows[0]['goal'] == '点登录'
     assert rows[0]['url'] == 'https://x/login'
-    assert [c['ref'] for c in rows[0]['candidates']] == [2, 5]
+    # schema_v=2：candidates 录全池（state['options'] 3 条全录，
+    # 非 probs top-k 截断）——未计分的 ref7 在列但无 score
+    assert rows[0]['schema_v'] == 2
+    assert [c['ref'] for c in rows[0]['candidates']] == [2, 5, 7]
     assert rows[0]['candidates'][0]['name'] == '登录'
+    assert 'score' not in rows[0]['candidates'][2]
+
+
+def test_hard_case_full_pool_schema_v2(tmp_path):
+    """schema_v=2 全池契约：candidates 录 state['options'] 完整集
+    （>3 不被 top3 截断）——计分集带 score、未计分池候选 score
+    缺省、池序=ref 序；options_total 透传供"池外有遗"判定。"""
+    import dp_cli.decide_train as dt
+    state = {'state': {'url': 'https://x/list', 'title': 'L'},
+             'options': [{'ref': i, 'role': 'link' if i % 3 else 'button',
+                          'name': f'项{i}'} for i in range(1, 9)],
+             'epoch': 'e1', 'truncated': False, 'options_total': 9}
+    # 计分集含游离 ref50（不在池）——按分降序附尾不丢分
+    res = _hard_result(0.4, 0.05,
+                       probs={'target': {'7': 0.4, '3': 0.35,
+                                         '50': 0.2}})
+    dt._maybe_log_hard_case(res, 's1', goal='点某项', state=state)
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r['schema_v'] == 2 and r['options_total'] == 9
+    # 池序保留+游离计分 ref 附尾
+    assert [c['ref'] for c in r['candidates']] == list(range(1, 9)) + [50]
+    by_ref = {c['ref']: c for c in r['candidates']}
+    assert by_ref[3]['score'] == 0.35 and by_ref[7]['score'] == 0.4
+    assert 'score' not in by_ref[1]         # 未计分池候选 score 缺省
+    assert by_ref[50]['score'] == 0.2       # 游离计分 ref 不丢
+    for c in r['candidates']:
+        assert set(c) <= {'ref', 'name', 'role', 'score'}
+
+
+def test_hard_case_pool_cap(tmp_path):
+    """options 超 _HARD_POOL_CAP 截到 cap——病理页单行不爆炸。"""
+    import dp_cli.decide_train as dt
+    state = {'state': {'url': 'https://x/huge'},
+             'options': [{'ref': i, 'role': 'link', 'name': f'n{i}'}
+                         for i in range(1, dt._HARD_POOL_CAP + 51)],
+             'epoch': 'e', 'truncated': True,
+             'options_total': dt._HARD_POOL_CAP + 60}
+    dt._maybe_log_hard_case(_hard_result(0.3, 0.02), 's1',
+                            goal='x', state=state)
+    r = _hard_rows(tmp_path)[0]
+    assert r['schema_v'] == 2
+    assert len(r['candidates']) == dt._HARD_POOL_CAP
+    assert r['candidates'][-1]['ref'] == dt._HARD_POOL_CAP
+    assert r['options_total'] == dt._HARD_POOL_CAP + 60
+
+
+def test_review_v1_row_compat_and_schema_v_counter(tmp_path):
+    """旧 v1 行（无 schema_v 字段）解析兼容：load_rows/summarize/
+    teacher_rows 全通——summarize 按 v 计数分流。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import load_rows, summarize, teacher_rows
+    f = tmp_path / 'hc.jsonl'
+    f.write_text(
+        # v1 旧行：无 schema_v、candidates top3 截断形态
+        json.dumps({'goal': 'g1', 'conf': 0.4, 'margin': 0.3,
+                    'triggers': ['low_conf'], 'engine': 'reranker',
+                    'url': 'u1',
+                    'candidates': [{'ref': 1, 'role': 'link', 'name': 'a',
+                                    'score': 0.4}]}) + '\n'
+        # v2 新行：全池候选（未计分无 score）
+        + json.dumps({'goal': 'g2', 'conf': 0.3, 'margin': 0.05,
+                      'triggers': ['low_conf'], 'engine': 'reranker',
+                      'url': 'u2', 'schema_v': 2,
+                      'candidates': [
+                          {'ref': i, 'role': 'link', 'name': f'n{i}',
+                           **({'score': 0.3} if i == 2 else {})}
+                          for i in range(1, 6)]}) + '\n',
+        encoding='utf-8')
+    rows, bad = load_rows(f)
+    assert bad == 0 and len(rows) == 2
+    s = summarize(rows)
+    assert s['schema_v'] == {'v1': 1, 'v2': 1}
+    tr = teacher_rows(rows)
+    assert len(tr) == 2
+    # conf 升序：g2(0.3) 在前、g1(0.4) 在后
+    assert tr[0]['schema_v'] == 2 and len(tr[0]['candidates']) == 5
+    assert tr[1]['schema_v'] == 1 and tr[1]['candidate_refs'] == [1]
+
+
+def test_teacher_rows_v2_interference_sampling(tmp_path):
+    """v2 全池行 teacher 模板取样：> _TEACHER_CAND_MAX 时计分候选
+    +同名/同 role 高干扰优先——非纯前 N 截断（池尾同名 link 挤进
+    模板，前排无关 textbox 让位）。"""
+    import sys, json
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import (load_rows, teacher_rows,
+                                   _TEACHER_CAND_MAX)
+    cands = []
+    # 前排塞满异 role 干扰（textbox）——纯前 N 截断时池尾 link 会丢
+    for i in range(1, 41):
+        cands.append({'ref': i, 'role': 'textbox', 'name': f'tb{i}'})
+    # 计分集 3 个 link（分降序 12>7>3）
+    scored = {3: 0.2, 7: 0.3, 12: 0.4}
+    for ref, sc in scored.items():
+        cands[ref - 1] = {'ref': ref, 'role': 'link',
+                          'name': f'登录-{ref}', 'score': sc}
+    # 池尾：同名高干扰（"登录-12" 与计分集同名）+同 role link
+    cands[38] = {'ref': 39, 'role': 'link', 'name': '登录-12'}
+    cands[39] = {'ref': 40, 'role': 'link', 'name': '注册-40'}
+    f = tmp_path / 'hc.jsonl'
+    f.write_text(json.dumps(
+        {'goal': '点登录', 'url': 'u', 'conf': 0.3, 'margin': 0.05,
+         'triggers': ['low_conf'], 'engine': 'reranker', 'schema_v': 2,
+         'candidates': cands}), encoding='utf-8')
+    rows, _ = load_rows(f)
+    tr = teacher_rows(rows)
+    assert len(tr) == 1
+    refs = tr[0]['candidate_refs']
+    assert len(refs) == _TEACHER_CAND_MAX
+    # 计分候选按分降序排头
+    assert refs[:3] == [12, 7, 3]
+    # 同名高干扰（ref39 池尾）挤进模板——纯前 N 会丢
+    assert 39 in refs
+    # 同 role link（ref40）在异 role textbox 之前
+    assert refs.index(40) < refs.index(1)
 
 
 def test_review_hard_cases_summary(tmp_path):

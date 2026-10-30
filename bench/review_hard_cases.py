@@ -37,6 +37,7 @@ _CONF_BUCKETS = [(0.10, '<0.10'), (0.25, '0.10-0.25'),
 _MARGIN_BUCKETS = [(0.02, '<0.02'), (0.05, '0.02-0.05'),
                    (0.10, '0.05-0.10'),
                    (float('inf'), '>=0.10(纯 conf 触发)')]
+_TEACHER_CAND_MAX = 32   # teacher 模板候选上限——v2 全池行 LLM 输入防爆
 
 
 def _bucket(v, edges):
@@ -63,8 +64,9 @@ def load_rows(path):
 
 
 def summarize(rows):
-    """条数/conf 分布/触发形态/引擎分布/高频 goal+url（miss 形态代理）。"""
-    conf_b, marg_b, trig, eng, msrc = (Counter() for _ in range(5))
+    """条数/conf 分布/触发形态/引擎/schema_v 分布/高频 goal+url
+    （miss 形态代理）。"""
+    conf_b, marg_b, trig, eng, msrc, sv = (Counter() for _ in range(6))
     goals, urls, unsure = Counter(), Counter(), 0
     for r in rows:
         conf_b[_bucket(r.get('conf'), _CONF_BUCKETS)] += 1
@@ -73,6 +75,7 @@ def summarize(rows):
             trig[t] += 1
         eng[r.get('engine') or '?'] += 1
         msrc[r.get('margin_source') or '?'] += 1
+        sv[f"v{r.get('schema_v') or 1}"] += 1
         unsure += bool(r.get('unsure'))
         if r.get('goal'):
             goals[r['goal']] += 1
@@ -83,6 +86,7 @@ def summarize(rows):
             'margin_buckets': dict(marg_b),
             'triggers': dict(trig), 'engines': dict(eng),
             'margin_source': dict(msrc),
+            'schema_v': dict(sv),
             'top_goals': goals.most_common(10),
             'top_urls': urls.most_common(10)}
 
@@ -99,6 +103,7 @@ def review_rows(rows, limit=None):
     out = []
     for r in sorted(rows, key=_key):
         out.append({'goal': r.get('goal'), 'url': r.get('url'),
+                    'schema_v': r.get('schema_v'),
                     'engine_ref': r.get('engine_ref'),
                     'conf': r.get('conf'), 'margin': r.get('margin'),
                     'margin_source': r.get('margin_source'),
@@ -111,6 +116,33 @@ def review_rows(rows, limit=None):
     return out
 
 
+def _pick_teacher_cands(cands, max_n=_TEACHER_CAND_MAX):
+    """hard_case candidates → teacher 模板候选子集（v 分流取样）。
+
+    v1 行（无 schema_v=top3 截断）与小池行原样保留；v2 全池行
+    超 max_n 时按干扰度取样而非纯前 N：
+      1. 计分候选（score 非空）按分降序——歧义焦点必保
+      2. 池内未计分候选与计分集同名者——同标签高干扰优先
+      3. 与计分集同 role 者——同形态干扰次优先
+      4. 其余按池序补足至 max_n
+    """
+    if len(cands) <= max_n:
+        return list(cands)
+    scored = sorted((c for c in cands if c.get('score') is not None),
+                    key=lambda c: -c['score'])
+    rest = [c for c in cands if c.get('score') is None]
+    names = {c.get('name') for c in scored if c.get('name')}
+    roles = {c.get('role') for c in scored if c.get('role')}
+    same_name = [c for c in rest if c.get('name') in names]
+    same_role = [c for c in rest
+                 if c.get('name') not in names
+                 and c.get('role') in roles]
+    other = [c for c in rest
+             if c.get('name') not in names
+             and c.get('role') not in roles]
+    return (scored + same_name + same_role + other)[:max_n]
+
+
 def teacher_rows(rows, limit=None):
     """review 清单 → teacher 待标注模板行（hard_case→teacher 转正接口）。
 
@@ -120,13 +152,16 @@ def teacher_rows(rows, limit=None):
     'teacher' 再过泄漏三闸才可入训；未回填/未转正前 eligible()
     拒收（src 非 verified_real），绝不误入默认训练。candidates
     保留 ref+文本双形态供标注对照，engine_ref/conf/margin/
-    triggers 透传供标注参考（不作标签）。
+    triggers 透传供标注参考（不作标签）。schema_v=2 全池行候选
+    经 _pick_teacher_cands 干扰度取样至 _TEACHER_CAND_MAX——
+    计分候选+同名/同 role 高干扰优先，非纯前 N 截断。
     """
     out = []
     for r in review_rows(rows, limit=limit):
-        cands = r.get('candidates') or []
+        cands = _pick_teacher_cands(r.get('candidates') or [])
         out.append({'src': 'teacher_hardneg',
                     'prov': 'teacher_pending',   # 待标注态≠已标注 teacher_*
+                    'schema_v': r.get('schema_v') or 1,
                     'page': r.get('url'),
                     'goal': r.get('goal'),
                     'query': r.get('goal'),
@@ -247,7 +282,8 @@ def main(argv=None):
             print('触发形态:', s['triggers'],
                   f"（AGENT_UNSURE 行 {s['unsure']}）")
             print('引擎:', s['engines'],
-                  '| margin_source:', s['margin_source'])
+                  '| margin_source:', s['margin_source'],
+                  '| schema_v:', s['schema_v'])
             if s['top_goals']:
                 print('高频 goal:', s['top_goals'][:5])
             if s['top_urls']:

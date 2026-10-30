@@ -1,0 +1,2 @@
+{"query": "open the comments link of a story", "page": "https://news.ycombinator.com/newest", "reason": "T.name 含 link:comments(nav) 且 top1=comments 已命中判据——伪 miss/标注口径矛盾；per-story discuss 与 nav comments 两可，不猜标"}
+{"query": "按时长筛选视频", "page": "https://cn.bing.com/videos?q=大熊猫", "reason": "T.syn 含 link:短视频 且 top1=短视频 已命中判据——伪 miss；\"时长筛选\"语义目标(button 筛选器)与判据目标(link 视频)冲突，不猜标"}

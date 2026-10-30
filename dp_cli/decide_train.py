@@ -13,6 +13,9 @@ decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
 ~/.dp_cli/hard_cases.jsonl——调试/标注原料非训练承诺，
 与 decide_train.jsonl 并行两份职责，bench/review_hard_cases.py
 定期汇总输出 LLM 标注清单（--emit-teacher 出待标注模板）。
+schema_v=2 起 candidates 录全池（state['options'] 完整集，
+计分集带 score、未计分 score 缺省）；旧行无 schema_v 字段
+=v1 probs top3 截断版，下游解析按 v 分流。
 
 pre_state/post_state 双快照齐时行内附 post_delta 字段（
 state_delta() 判据：url/hash/refs_epoch/DOM sig 任一变化=有
@@ -91,6 +94,10 @@ def state_delta(pre: dict, post: dict) -> list:
 _HARD_FLAG = 'DPX_HARD_CASES'
 _HARD_CONF = 0.5         # conf 低于此值 → hard case
 _HARD_MARGIN = 0.1       # top2 分差低于此值 → hard case（歧义）
+_HARD_POOL_CAP = 300     # candidates 全池落盘上限——对齐
+                         # agent._EMBED_POOL_MAX 防病理页单行爆炸
+_HARD_SCHEMA_V = 2       # candidates 契约版本：无此字段的旧行=v1
+                         # （probs top3 截断）；v2=全池候选+计分标记
 _hard_lock = threading.Lock()
 
 
@@ -167,21 +174,53 @@ def _maybe_log_hard_case(result: dict, session: str, goal: str = None,
             except (TypeError, ValueError):
                 return 0.0
 
+        scored = {str(k): round(_prob(v), 4)
+                  for k, v in probs_t.items()}
+        opts = (state or {}).get('options') or []
         cands = []
-        for k, v in sorted(probs_t.items(),
-                           key=lambda kv: -_prob(kv[1]))[:3]:
-            m = meta.get(str(k)) or {}
-            cands.append({'ref': int(k) if str(k).isdigit() else k,
-                          'name': m.get('name', ''),
-                          'role': m.get('role', ''),
-                          'score': round(_prob(v), 4)})
-        if not cands and result.get('ref') is not None:
-            # 无 probs 引擎——引擎 pick 即唯一候选
-            m = meta.get(str(result['ref'])) or {}
-            cands.append({'ref': result['ref'],
-                          'name': m.get('name', ''),
-                          'role': m.get('role', ''), 'score': conf})
+        if opts:
+            # schema_v=2：candidates 录全池（state['options'] 完整集，
+            # recall_pool 扩池后上限 _HARD_POOL_CAP）——B_recall 桶
+            # （目标在池但被 embedding top-k 裁掉）召回分析的数据前提。
+            # 池序=ref 序保留；计分集内候选带 score，未计分池候选
+            # score 缺省（下游按 schema_v 分流：缺省字段旧行=v1 top3）。
+            seen = set()
+            for o in opts[:_HARD_POOL_CAP]:
+                rid = o.get('ref')
+                c = {'ref': rid,
+                     'name': o.get('name', ''),
+                     'role': o.get('role', '')}
+                s = scored.get(str(rid))
+                if s is not None:
+                    c['score'] = s
+                cands.append(c)
+                seen.add(str(rid))
+            # 计分集内但不在池里的游离 ref（异常形态）按分降序附尾
+            for k in sorted((k for k in scored if k not in seen),
+                            key=lambda k: -_prob(probs_t[k])):
+                m = meta.get(k) or {}
+                cands.append({'ref': int(k) if k.isdigit() else k,
+                              'name': m.get('name', ''),
+                              'role': m.get('role', ''),
+                              'score': scored[k]})
+        else:
+            # 无内嵌 state（state=None 录制形态）——退 v1 行为：
+            # probs top3 计分候选，无全池可录
+            for k, v in sorted(probs_t.items(),
+                               key=lambda kv: -_prob(kv[1]))[:3]:
+                m = meta.get(str(k)) or {}
+                cands.append({'ref': int(k) if str(k).isdigit() else k,
+                              'name': m.get('name', ''),
+                              'role': m.get('role', ''),
+                              'score': round(_prob(v), 4)})
+            if not cands and result.get('ref') is not None:
+                # 无 probs 引擎——引擎 pick 即唯一候选
+                m = meta.get(str(result['ref'])) or {}
+                cands.append({'ref': result['ref'],
+                              'name': m.get('name', ''),
+                              'role': m.get('role', ''), 'score': conf})
         row = {'ts': int(time.time()), 'session': session,
+               'schema_v': _HARD_SCHEMA_V,
                'goal': goal, 'url': _hard_url(session, state),
                'engine': result.get('engine'),
                'action': result.get('action'),
@@ -194,6 +233,11 @@ def _maybe_log_hard_case(result: dict, session: str, goal: str = None,
                'unsure': bool(unsure),
                'triggers': triggers,
                'candidates': cands}
+        if opts:
+            # 原始候选总数（截断前）——options_total>len(candidates)
+            # 即扩池仍被 _EMBED_POOL_MAX/本cap 截断，下游可知池外有遗
+            row['options_total'] = (state.get('options_total')
+                                    or len(opts))
         f = _hard_file()
         with _hard_lock:
             try:

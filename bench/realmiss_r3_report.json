@@ -1,0 +1,198 @@
+{
+ "experiment": "真机 hardneg R3——归因残余 18 组（A_top3 11 + B_recall 7）定向教师标注 → v27",
+ "source": {
+  "attribution": "/tmp/recall_attrib2_final2.json（18 组 A_top3/B_recall）",
+  "hard_cases": "~/.dp_cli/hard_cases.jsonl（goal+candidates 行内取）",
+  "pool": "/tmp/recall_attrib2.json pages.pool + final2.T 字段交叉核对正例"
+ },
+ "annotation": {
+  "file": "bench/realmiss_hardneg.jsonl",
+  "script": "bench/gen_realmiss_hardneg_r3.py",
+  "rows": 44,
+  "prov": "teacher_realmiss",
+  "groups_labeled": 16,
+  "groups_quarantined": 2,
+  "quarantine": [
+   {
+    "query": "open the comments link of a story",
+    "page": "news.ycombinator.com/newest",
+    "reason": "T.name 含 link:comments(nav) 且 top1=comments 已命中判据——伪 miss；per-story discuss 与 nav comments 两可不猜标"
+   },
+   {
+    "query": "按时长筛选视频",
+    "page": "cn.bing.com/videos",
+    "reason": "T.syn 含 link:短视频 且 top1=短视频 已命中判据——伪 miss；语义目标(button 筛选器)与判据目标(link 视频)冲突"
+   }
+  ],
+  "gate_note": "闸3 拦 1 条：zhihu '点击登录按钮' 与 login.html 同 query 跨页异正例冲突 → 改名 '点下登录那个按钮'"
+ },
+ "leakage_gates": {
+  "gate1_query_x_eval_goal": "0 命中（_hit exact+子串×120 eval goal）",
+  "gate2_miss_candidate_reuse": "0 命中（pos+neg × miss id 并集 28 组候选串，含 v26 新 miss m30/x15/x50）",
+  "gate3_dedup": "组内+vs merge_out_v24 query 0 重复（1 条改名后过）；pos∉negs 全过"
+ },
+ "merge": "merge_out_v24.json(407) + realmiss(44) → merge_out_v27.json(451)，merge_train --allow-unverified 剔除 0 撞车",
+ "train": {
+  "cmd": "HF_HOME=/media/yan/Data/hf_hub HF_HUB_OFFLINE=1 TRAIN_EPOCHS=1 python bench/train_reranker.py bench/merge_out_v27.json --model=BAAI/bge-reranker-base --out=/media/yan/Data/bge_v27_tuned --allow-unverified",
+  "pairs": 15637,
+  "steps": 1955,
+  "train_loss": 0.07615,
+  "wall_time_s": 2680
+ },
+ "eval120": {
+  "v24_baseline": {
+   "ALL": 91.7,
+   "elem": 88.5,
+   "meta": 100.0,
+   "miss_n": 10,
+   "miss_ids": [
+    "n05",
+    "m13",
+    "m15",
+    "m17",
+    "m25",
+    "m29",
+    "x01",
+    "x03",
+    "x04",
+    "x12"
+   ]
+  },
+  "v27_realmiss": {
+   "ALL": 88.3,
+   "elem": 83.9,
+   "meta": 100.0,
+   "miss_n": 14,
+   "miss_ids": [
+    "n05",
+    "m13",
+    "m15",
+    "m17",
+    "m25",
+    "m29",
+    "m30",
+    "x01",
+    "x03",
+    "x04",
+    "x12",
+    "x15",
+    "x47",
+    "x50"
+   ]
+  },
+  "delta": {
+   "ALL": -3.4,
+   "elem": -4.6,
+   "meta": 0.0
+  },
+  "miss_diff": {
+   "fixed": [],
+   "new": [
+    "m30",
+    "x15",
+    "x47",
+    "x50"
+   ],
+   "persistent": [
+    "n05",
+    "m13",
+    "m15",
+    "m17",
+    "m25",
+    "m29",
+    "x01",
+    "x03",
+    "x04",
+    "x12"
+   ],
+   "note": "baseline 10 miss 全保留+新增 4——44 行真机形态对 eval-120 是分布外扰动，无一条 miss 被修"
+  }
+ },
+ "realmachine_retest": {
+  "method": "同 URL dpx open → DPX_BGE_MODEL=/media/yan/Data/bge_v27_tuned dpx decide GOAL --engine reranker；ref 经 dpx snapshot 复核（live a11y 树与录制时 ref 有漂移，逐一比对名称）",
+  "groups": [
+   {
+    "goal": "点击登录按钮",
+    "url": "fixtures/login.html",
+    "target": "button Sign In",
+    "result": "FIXED",
+    "detail": "top1 ref4 Sign In conf=0.35 margin=0.22（原 top1=Username textbox）"
+   },
+   {
+    "goal": "点登录按钮",
+    "url": "zhihu.com/signin",
+    "target": "button 登录/注册",
+    "result": "FIXED",
+    "detail": "top1 ref13 登录/注册 conf=0.27 margin=0.16（原 top1=密码登录 tab）"
+   },
+   {
+    "goal": "重新搜机器学习",
+    "url": "cn.bing.com/search",
+    "target": "searchbox 在此处输入你的搜索",
+    "result": "FIXED",
+    "detail": "top1 ref5 searchbox conf=0.23（原 top1=返回到必应搜索，目标 rank3）"
+   },
+   {
+    "goal": "点作者简介链接",
+    "url": "book.douban.com/subject/2567698",
+    "target": "作者信息块 link",
+    "result": "PARTIAL",
+    "detail": "top1 ref32='link 重庆出版社'（作者信息块内出版社子链，录制时整块为单一'作者: 刘慈欣 出版社...'长链，live 树拆分为独立子链）；真作者链 ref31 刘慈欣被 recall 裁掉未计分——块级命中、元素级未中"
+   },
+   {
+    "goal": "点击开源软件栏目",
+    "url": "oschina.net",
+    "target": "link 软件",
+    "result": "STILL_MISS",
+    "detail": "top1 仍为 textbox 搜索资讯…(0.26)；link 软件(ref3)未进 probs top8——live 上退化为 recall 层裁掉，CE 训练救不到"
+   },
+   {
+    "goal": "点击按时间排序",
+    "url": "so.csdn.net",
+    "target": "clickable/span 最新",
+    "result": "STILL_MISS",
+    "detail": "AGENT_UNSURE：probs ~0.125 全均匀；live 树中'最新'为 span(ref196)，未计分——同 recall 层裁切"
+   },
+   {
+    "goal": "在组内搜穿搭",
+    "url": "douban.com/group/661193",
+    "target": "textbox 搜索本组讨论",
+    "result": "STILL_MISS",
+    "detail": "top1 ref158='link Triple'用户名(0.25)；live 树目标 box 漂至 ref182 未计分——recall 裁切"
+   },
+   {
+    "goal": "勾选只看高铁动车",
+    "url": "kyfw.12306.cn",
+    "target": "checkbox GC-高铁/城际",
+    "result": "STILL_MISS",
+    "detail": "top1 ref67=页脚公安备案 paragraph(0.21)；GC/D/智能动车 checkbox 全部未计分——recall 裁切（首轮偶发 ref 命中为页面态漂移假象，复跑确认 miss）"
+   }
+  ],
+  "b_recall_spotcheck": [
+   {
+    "goal": "切换到40天天气趋势",
+    "url": "weather.com.cn",
+    "result": "STILL_MISS",
+    "detail": "UNSURE probs~0.125 均匀；link 40天 未计分——印证 B_recall 是 embedding top8 裁切问题，CE 权重无法修复"
+   }
+  ],
+  "summary": "8 组 A_top3：FIXED 3 / PARTIAL 1 / STILL_MISS 4；B_recall 抽查 1 组仍 miss（预期内）"
+ },
+ "verdict": {
+  "net": "修 3(+0.5 partial) − 新 4 = -1 ~ -0.5 → 净负",
+  "classification": "负——如实报告",
+  "analysis": [
+   "有效部分：live 树与录制态一致的 3 组（login/zhihu/bing）全部翻转 top1——CE 判别层训练对'名字面引力赢正确 role'形态确实有效，margin 均 >0.1",
+   "失效部分：4 组 STILL_MISS 全部是 embedding top8 召回裁切（目标根本未进 CE 计分）——录制时判为 A_top3 的目标在 live 页已滑出 top8，说明 A_top3 与 B_recall 边界在真机上是流动的；reranker 微调对 recall 层 miss 无解",
+   "eval 侧：44 行（占 15637 pairs 0.28%）造成 4 条新 miss 且 0 修复——真机页面形态对 eval fixture 分布是净扰动",
+   "结论同 r26 互相印证：小规模真机标注增益不抵污染；且本轮暴露更强证据——A_top3 类 miss 的真实病根大半在 embedding 召回深度而非 CE 判别"
+  ],
+  "actionable": [
+   "修真机 miss 的正解在召回层：扩 DPX_EMBED_TOPK(8→12+) 或换 embedding 模型/加 name-lexical fallback，而非继续堆 CE 训练对",
+   "若再做教师轮次：只标'live 树稳定+目标确在 top8'的组，先跑 dpx decide 确认目标可计分再标注",
+   "quarantine 两组的判据口径问题（T.syn 宽松匹配致伪 miss）建议反馈到归因脚本"
+  ],
+  "stop": "净负即停——v27 不入默认链路，merge_out_v27/bge_v27_tuned 保留作对照存档"
+ },
+ "ts": "2026-10-29 23:24"
+}

@@ -26,7 +26,8 @@
   只能作历史实验，eval goal 撞车仍被拒，
   标注不会作为 clean 数据声明
 - **hard_case 被动采集默认开启**（`DPX_HARD_CASES` 缺省 `'1'`）：
-  decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
+  decide 低置信候选（conf<0.5 或 top2 margin<0.1，或录制行
+  post_delta=[] 且 conf≥0.8 的高置信零效果反查）写
   `~/.dp_cli/hard_cases.jsonl`，`DPX_HARD_CASES=0` 关闭。
   性质=本地调试/训练采集池，不外发；与 **opt-in** 的
   `DPX_RECORD_DECIDE`（缺省关，写 `decide_train.jsonl`）是两份

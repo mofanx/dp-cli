@@ -264,6 +264,78 @@ def test_hard_case_low_margin_logged(tmp_path):
     assert rows[1]['triggers'] == ['low_conf', 'low_margin']
 
 
+def test_hard_case_high_conf_no_effect(tmp_path):
+    """conf≥0.8 + post_delta=[]（执行后页面零变化=动作未生效
+    疑似自信错选）→ 'high_conf_no_effect' 落盘——补 conf=1.0
+    盲区采集通道；conf=1.0（meta-rules deterministic 形态）同闸。"""
+    import dp_cli.decide_train as dt
+    dt._maybe_log_hard_case(_hard_result(0.95, 0.6, post_delta=[]),
+                            's1', goal='点第二个', state=_HARD_STATE)
+    dt._maybe_log_hard_case(_hard_result(1.0, 0.9, post_delta=[]),
+                            's1', goal='点第二个', state=_HARD_STATE)
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 2
+    assert rows[0]['triggers'] == ['high_conf_no_effect']
+    assert rows[0]['conf'] == 0.95
+    assert rows[1]['triggers'] == ['high_conf_no_effect']
+    assert rows[1]['conf'] == 1.0
+
+
+def test_hard_case_no_effect_gate_edges(tmp_path):
+    """post_delta 契约边界：非空 diff（页面有变化）/字段缺失
+    （非录制形态）/conf<0.8 三形态均不触发——不误伤。"""
+    import dp_cli.decide_train as dt
+    # post_delta 非空=有执行后变化，无错选嫌疑
+    dt._maybe_log_hard_case(_hard_result(0.9, 0.6, post_delta=['url']),
+                            's1', state=_HARD_STATE)
+    # 无 post_delta 字段（decide 返回路径/单快照）不触发
+    dt._maybe_log_hard_case(_hard_result(0.9, 0.6), 's1',
+                            state=_HARD_STATE)
+    # conf<0.8 即使零变化也不触发（低置信另走 conf/margin 闸）
+    dt._maybe_log_hard_case(_hard_result(0.7, 0.6, post_delta=[]),
+                            's1', state=_HARD_STATE)
+    assert _hard_rows(tmp_path) == []
+
+
+def test_record_decide_row_no_effect_channel(tmp_path, monkeypatch):
+    """录制链路集成：decide result 挂 post_delta 过闸——双快照齐
+    且页面零变化+conf≥0.8 → hard_cases 落 high_conf_no_effect；
+    有 diff（动作生效）不落。"""
+    import dp_cli.decide_train as dt
+    import dp_cli.commands.serve as sv
+    import dp_cli.session as sess_mod
+    monkeypatch.setenv('DPX_RECORD_DECIDE', '1')
+    monkeypatch.setattr(sess_mod, 'load_refs', lambda s: {
+        '2': {'role': 'link', 'name': '第二个'}})
+    monkeypatch.setattr(dt, 'record', lambda *a, **k: None)
+    res = {'status': 'ok', 'data': {
+        'action': 'click', 'ref': 2, 'confidence': 1.0,
+        'engine': 'meta-rules', 'deterministic': True,
+        'margin': None, 'margin_source': 'conf_fallback'}}
+    # 快照全同 → post_delta=[] → conf=1.0 触发
+    monkeypatch.setattr(sv, '_snap_state',
+                        lambda s: {'url': 'https://x/', 'refs_epoch': 'e1'})
+    dt._record_decide_row('s1', ['decide', '点第二个'], dict(res),
+                          code=0,
+                          pre_state={'url': 'https://x/', 'refs_epoch': 'e1'})
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1 and rows[0]['triggers'] == ['high_conf_no_effect']
+    assert rows[0]['goal'] == '点第二个' and rows[0]['engine_ref'] == 2
+    # 页面有变化 → 无错选嫌疑不触发
+    monkeypatch.setattr(sv, '_snap_state',
+                        lambda s: {'url': 'https://x/next',
+                                   'refs_epoch': 'e2'})
+    dt._record_decide_row('s1', ['decide', '点第二个'], dict(res),
+                          code=0,
+                          pre_state={'url': 'https://x/', 'refs_epoch': 'e1'})
+    # 快照缺一（无 post）→ 无 post_delta 不触发
+    monkeypatch.setattr(sv, '_snap_state', lambda s: {})
+    dt._record_decide_row('s1', ['decide', '点第二个'], dict(res),
+                          code=0,
+                          pre_state={'url': 'https://x/', 'refs_epoch': 'e1'})
+    assert len(_hard_rows(tmp_path)) == 1
+
+
 def test_hard_case_opt_out(tmp_path, monkeypatch):
     """DPX_HARD_CASES=0 显式关闭——低置信也不落盘。"""
     import dp_cli.decide_train as dt

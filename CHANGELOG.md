@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增（v28 权重+盲区采集通道）
+- **eval-120 91.7→95.0**：zh-en 47 行跨语定向+hardneg 24 行一次实训，`model-v28` release 双 asset（fp32+int8），`model pull` 指向 v28
+- **conf=1.0 盲区反查**：`decide_train.py` 第三触发——conf≥0.8 且 post_delta=[]（执行后页面零变化）落盘 `high_conf_no_effect`，捕序数短路类自信错
+- 规则修：n05 尾序数+m29 否定剥离（零训练）
+
 ## [0.15.26] - 2026-10-30
 
 ### 新增（agent 决策燃料+缓存+int8 默认）

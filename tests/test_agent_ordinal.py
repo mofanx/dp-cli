@@ -77,6 +77,45 @@ def test_first_step_no_false_cut():
     assert _first_step('先登录') == '先登录'
 
 
+def test_first_step_negation_strip():
+    """m29 归因——'别点A点B' 的 A 段是反目标，剥掉只留 B 段打分。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('别点删除点归档') == '点归档'
+    assert _first_step('别点击删除，点归档') == '点归档'
+    assert _first_step('不要登录，去注册') == '去注册'
+    assert _first_step('千万别按取消按确认') == '按确认'
+
+
+def test_first_step_negation_no_false_strip():
+    """纯否定/无第二动作段不剥——'禁止点击这里' 剥离后反而更糟。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('禁止点击这里') == '禁止点击这里'
+    assert _first_step('别客气') == '别客气'
+    assert _first_step('不要删除任何文件') == '不要删除任何文件'
+    assert _first_step('点除了"取消"以外的确认按钮') == '点除了"取消"以外的确认按钮'
+
+
+def test_ordinal_tail_num():
+    """n05 归因——口语尾序数'地址二'即第2个，无'第'字前缀。"""
+    assert _ordinal_n('x', '选择收货地址二') == 2
+    assert _ordinal_n('x', '选方案三') == 3
+    assert _ordinal_n('x', '点目标九') == 9
+
+
+def test_ordinal_tail_num_no_false():
+    """尾数词词内/时间词不误中：十二/初三/星期二/礼拜五。"""
+    assert _ordinal_n('x', '输入十二') is None
+    assert _ordinal_n('x', '排到星期三再说') is None
+    assert _ordinal_n('x', '礼拜五发货') is None
+    assert _ordinal_n('x', '这批发票全部作废') is None
+
+
+def test_meta_ordinal_tail_num_ref():
+    """尾序数走 meta 短路直解 ref。"""
+    r = _meta_decide(_st(4), '选择收货地址二')
+    assert r and r['action'] == 'click' and r['ref'] == 2
+
+
 def test_blocked_form_field_not_wall():
     """候选含'验证码'输入框≠人机墙——表单字段不误判 blocked。"""
     from dp_cli.agent import _meta_decide

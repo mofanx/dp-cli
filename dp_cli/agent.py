@@ -448,6 +448,7 @@ def _bge_dirs():
         dirs.append(Path(env))
     dirs += [
         Path.home() / '.dp_cli' / 'bge_model',      # 用户部署位（model pull 落点）
+        Path('/media/yan/Data/bge_v28_tuned'),      # 开发机 v28 微调
         Path('/media/yan/Data/bge_v24_tuned'),      # 开发机 v24 微调
         Path('/media/yan/Data/bge_v19_tuned'),      # 开发机 v19 遗留
         Path('/media/yan/Data/bge_tuned'),          # 开发机更早实测权重
@@ -686,6 +687,19 @@ def _first_step(goal: str) -> str:
     g = goal.strip()
     # '先' 前缀剥掉——'先填A再点B'/'先填A' 统一走首步段切分
     g2 = re.sub(r'^\s*先', '', g)
+    # 否定前置段剥离——'别点A点B'/'不要A，去B' 的 A 段是反目标，
+    # 不剥则 reranker 被否定词的对象拉偏（eval-120 m29 '别点删除点
+    # 归档'→误中 Delete 归因）；剥离后只留 B 段打分。排除集含动作
+    # 动词字保证剥离段至少含一个非动词目标词（'禁止点击这里'类纯
+    # 否定不剥）。
+    m = re.match(r'^\s*(?:别|不要|不用|不需要|不必|无需|请勿|千万别|禁止)'
+                 r'\s*(?:点击|点|按|选|击|碰|删|勾|填|输|进|去)?'
+                 r'[^点按选击填输去，,、。；]+?[，,、]?\s*'
+                 r'(?=[点按选击填输去])', g2)
+    if m:
+        rest = g2[m.end():].strip('，,、 ')
+        if len(rest) >= 2:
+            return rest
     # '再/然后/接着/随后/之后' 作分步分隔符，首步段 ≥2 字才截
     # （防'再见'类词内误切——前段不足 2 字不截）
     m = re.match(r'^\s*(.+?)(?:再|然后|接着|随后|之后)', g2)
@@ -876,6 +890,13 @@ def _ordinal_n(g, goal):
         if len(tok) == 2 and tok[0] == '十':      # 十一..十九
             return 10 + _CN_NUM.get(tok[1], 0)
         return _CN_NUM.get(tok[-1]) or _CN_NUM.get(tok)
+    # 口语尾序数'地址二/方案三'——名词+句尾中文数词即第N个
+    # （eval-120 n05 '选择收货地址二' 归因）；lookbehind 防
+    # '十二/初三/星期一/礼拜五' 类数词词内/时间词误判
+    # （'一/两' 量词歧义大不收——'统一/一两' 会假阳）
+    m = re.search(r'(?<![\d十百千初期周拜第])([二三四五六七八九])\s*$', goal)
+    if m:
+        return _CN_NUM[m.group(1)]
     if '最后' in goal or re.search(r'\blast\b', g):
         return -1
     mw = re.search(r'\b(\d+)(?:st|nd|rd|th)\b', g)

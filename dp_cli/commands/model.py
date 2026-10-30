@@ -23,16 +23,16 @@ import click
 from dp_cli.output import ok, error, debug, _write_err
 
 _MODEL_URL = ('https://github.com/mofanx/dp-cli/releases/download/'
-              'model-v24/dpx-reranker-v24.tar.gz')
-_MODEL_SHA256 = ('0993818041626fff4a6303ad6602b72c95791164'
-                 'edf29fceff8328e049b9de08')
+              'model-v28/dpx-reranker-v28.tar.gz')
+_MODEL_SHA256 = ('e802da9ef2c34f7eb5ea5fdd4a8a69fb5b49497c5'
+                 'c5dc049994a470a38e6a4ae')
 # int8-only 变体：同 release 第二 asset，自包含 tokenizer——
 # 落位后 onnx/model_int8.onnx 被 _reranker_model ORT 分支首选
 _MODEL_URL_INT8 = ('https://github.com/mofanx/dp-cli/releases/download/'
-                   'model-v24/dpx-reranker-v24-int8.tar.gz')
-_MODEL_SHA256_INT8 = ('e9b78bc81c56c049f32c0de036dd22b3d9dd22243'
-                      '59d16cc8eaa45b61ecb927d')
-_ARCHIVE_ROOT = 'bge_v24_tuned'        # tar 内顶层目录名
+                   'model-v28/dpx-reranker-v28-int8.tar.gz')
+_MODEL_SHA256_INT8 = ('af8b6ba1f31d98548e60edca031a5670047b'
+                      '9d43ede96ba4b91dfcbb5f98dce2')
+_ARCHIVE_ROOT = 'bge_v28_tuned'        # tar 内顶层目录名
 _CHUNK = 4 * 1024 * 1024               # 4MB 读块
 _HTTP_TIMEOUT = 60                     # 单请求超时（含重定向后的数据流）
 

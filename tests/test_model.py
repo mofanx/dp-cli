@@ -35,10 +35,10 @@ def _make_tgz(files: dict) -> bytes:
 
 def _model_tgz(extra: dict = None) -> bytes:
     files = {
-        'bge_v24_tuned/config.json': '{}',
-        'bge_v24_tuned/tokenizer.json': '{}',
-        'bge_v24_tuned/model.safetensors': 'weights',
-        'bge_v24_tuned/onnx/model_int8.onnx': 'onnx',
+        'bge_v28_tuned/config.json': '{}',
+        'bge_v28_tuned/tokenizer.json': '{}',
+        'bge_v28_tuned/model.safetensors': 'weights',
+        'bge_v28_tuned/onnx/model_int8.onnx': 'onnx',
     }
     files.update(extra or {})
     return _make_tgz(files)
@@ -47,10 +47,10 @@ def _model_tgz(extra: dict = None) -> bytes:
 def _int8_tgz() -> bytes:
     """int8-only 自包含包：tokenizer+config+onnx/model_int8.onnx，无 safetensors。"""
     return _make_tgz({
-        'bge_v24_tuned/config.json': '{}',
-        'bge_v24_tuned/tokenizer.json': '{}',
-        'bge_v24_tuned/tokenizer_config.json': '{}',
-        'bge_v24_tuned/onnx/model_int8.onnx': 'int8onnx',
+        'bge_v28_tuned/config.json': '{}',
+        'bge_v28_tuned/tokenizer.json': '{}',
+        'bge_v28_tuned/tokenizer_config.json': '{}',
+        'bge_v28_tuned/onnx/model_int8.onnx': 'int8onnx',
     })
 
 
@@ -151,7 +151,7 @@ def test_pull_full_flow(fake_net):
     assert mod._is_complete(mdir)
     meta = json.loads((mdir / '.dp_install.json').read_text())
     assert meta['sha256'] == hashlib.sha256(fake_net['blob']).hexdigest()
-    assert meta['archive_root'] == 'bge_v24_tuned'
+    assert meta['archive_root'] == 'bge_v28_tuned'
     assert not (fake_net['dir'] / 'dpx-reranker.tar.gz.part').exists()
 
 

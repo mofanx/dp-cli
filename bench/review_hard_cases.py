@@ -2,7 +2,8 @@
 """hard_cases.jsonl 复核清单——主动学习 LLM 标注输入。
 
 decide 低置信候选由 dp_cli.decide_train._maybe_log_hard_case 被动
-落盘到 ~/.dp_cli/hard_cases.jsonl（conf<0.5 或 top2 margin<0.1，
+落盘到 ~/.dp_cli/hard_cases.jsonl（conf<0.5 或 top2 margin<0.1；
+另有 conf≥0.8+post_delta=[] 高置信零效果反查通道，
 默认开、DPX_HARD_CASES=0 关）。本脚本读 jsonl 汇总条数/conf 分布/
 触发形态/高频难点，输出 review 清单供 LLM 定期标注（标注后人工
 核验进 teacher/quarantine 流水线，不直接入训）。

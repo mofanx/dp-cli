@@ -306,9 +306,9 @@ def register(cli):
     @model_grp.command('pull')
     @click.option('--force', is_flag=True, default=False,
                   help='忽略已有完整安装，强制重新下载部署')
-    @click.option('--int8', 'int8', is_flag=True, default=False,
-                  help='拉 int8-only 包（~210MB，仅 onnx int8 权重+tokenizer，'
-                       '不含 fp32 safetensors）')
+    @click.option('--int8/--fp32', 'int8', default=True,
+                  help='默认 int8-only 包（~210MB，eval-120 同分、延迟 -71%）；'
+                       '--fp32 拉全量权重（~941MB，top1 逐例严格无损）')
     def model_pull(force, int8):
         """从 GitHub Release 下载 bge reranker 并部署到 ~/.dp_cli/bge_model。
 
@@ -318,9 +318,9 @@ def register(cli):
 
         \b
         示例:
-          dpx model pull
-          dpx model pull --int8
-          dpx model pull --int8 --force   # fp32 → int8 切换
+          dpx model pull            # int8（默认）
+          dpx model pull --fp32     # 全量 fp32
+          dpx model pull --force    # 跨变体换装
         """
         mdir = _model_dir()
         if _is_complete(mdir) and not force:

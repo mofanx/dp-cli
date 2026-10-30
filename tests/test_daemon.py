@@ -1125,3 +1125,38 @@ def test_run_daemon_meta_writes_sock_path(
     monkeypatch.setattr(daemon, '_IDLE_TTL', 0)  # 触发 idle 自退
     t.join(timeout=10)
     assert not t.is_alive()
+
+
+def test_run_daemon_meta_writes_version(
+        monkeypatch, tmp_path, sock_dir, capsys):
+    """run_daemon meta 落 version——daemon-status/_version_probe
+    消费链（t2 实测 version:null 修复）；_status 透出同值非空。"""
+    import json, threading, time
+    from dp_cli import daemon
+    if not daemon._HAS_UNIX_SOCK:
+        pytest.skip('POSIX only')
+    monkeypatch.setattr(daemon, '_sock_path',
+                        lambda s: sock_dir / f'{s}.sock')
+    monkeypatch.setattr(daemon, '_meta_path',
+                        lambda s: tmp_path / f'{s}.session')
+    monkeypatch.setattr(daemon, '_WATCH_TICK', 0.02)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
+    t = threading.Thread(target=daemon.run_daemon, args=('t',),
+                         daemon=True)
+    t.start()
+    meta = tmp_path / 't.session'
+    for _ in range(150):
+        if meta.exists():
+            break
+        time.sleep(0.02)
+    m = json.loads(meta.read_text())
+    assert m.get('version')                        # 非 null 非缺键
+    assert m['version'] == daemon._dpx_version()
+    # _status 同链回读——meta.sock_path 权威源直达，version 透出
+    daemon._status('t')
+    out = json.loads(capsys.readouterr().out)
+    assert out['data']['running'] is True
+    assert out['data']['version'] == m['version']
+    monkeypatch.setattr(daemon, '_IDLE_TTL', 0)   # 触发 idle 自退
+    t.join(timeout=10)
+    assert not t.is_alive()

@@ -4729,16 +4729,332 @@ def test_reranker_backend_fallback(monkeypatch, tmp_path):
     agent._RERANKER = None
 
 
-def test_conf_tier_boundaries():
+def test_engine_jev_env_missing(monkeypatch):
+    """jev env 未配——结构化 _error 非 NameError（JSON 输出契约）。"""
+    import dp_cli.agent as agent
+    monkeypatch.delenv('DPX_JEV_URL', raising=False)
+    resp = agent._engine_jev({'state': 'x', 'questions': {}})
+    assert '_error' in resp and 'DPX_JEV_URL' in resp['_error']
+    monkeypatch.setenv('DPX_JEV_URL', 'https://api.example/v1/chat')
+    monkeypatch.delenv('DPX_JEV_MODEL', raising=False)
+    resp = agent._engine_jev({})
+    assert '_error' in resp and 'DPX_JEV_MODEL' in resp['_error']
+
+
+def test_engine_jev_mock_http(monkeypatch):
+    """jev 假 HTTP 响应——choices.content JSON→同构 resp，请求体合规。"""
+    import json as _j
+    import dp_cli.agent as agent
+    monkeypatch.setenv('DPX_JEV_URL', 'https://api.example/v1/chat/completions')
+    monkeypatch.setenv('DPX_JEV_KEY', 'k1')
+    monkeypatch.setenv('DPX_JEV_MODEL', 'm2')
+    answer = {'action': 'click', 'target': 2, 'done': False,
+              'stuck': False, 'confidence': 0.9}
+    seen = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return _j.dumps(
+                {'choices': [{'message': {'content': _j.dumps(answer)}}]}
+            ).encode()
+
+    def fake_urlopen(req, timeout=None):
+        seen['url'] = req.full_url
+        seen['auth'] = req.headers.get('Authorization')
+        seen['timeout'] = timeout
+        body = _j.loads(req.data.decode())
+        seen['model'] = body['model']
+        seen['nmsg'] = len(body['messages'])
+        seen['temp'] = body['temperature']
+        return FakeResp()
+
+    monkeypatch.setattr('urllib.request.urlopen', fake_urlopen)
+    resp = agent._engine_jev({'state': 'URL: u', 'questions': {}})
+    assert resp == answer
+    assert seen['url'] == 'https://api.example/v1/chat/completions'
+    assert seen['auth'] == 'Bearer k1'
+    assert seen['model'] == 'm2'
+    assert seen['nmsg'] == 2 and seen['temp'] == 0
+    assert seen['timeout'] == 30.0
+
+
+def test_engine_jev_errors(monkeypatch):
+    """jev 超时/5xx/坏 JSON/缺 choices——全收敛 _error 不裸 raise。"""
+    import json as _j
+    import urllib.error
+    import dp_cli.agent as agent
+    monkeypatch.setenv('DPX_JEV_URL', 'https://api.example/v1/x')
+    monkeypatch.setenv('DPX_JEV_MODEL', 'm')
+
+    monkeypatch.setattr('urllib.request.urlopen',
+                        lambda req, timeout=None: (_ for _ in ()).throw(
+                            TimeoutError('timed out')))
+    resp = agent._engine_jev({})
+    assert '_error' in resp and '超时' in resp['_error']
+
+    def raise_500(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 500, 'err', {}, None)
+    monkeypatch.setattr('urllib.request.urlopen', raise_500)
+    resp = agent._engine_jev({})
+    assert '_error' in resp and 'HTTP 500' in resp['_error']
+
+    class BadResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'not json'
+
+    monkeypatch.setattr('urllib.request.urlopen',
+                        lambda req, timeout=None: BadResp())
+    resp = agent._engine_jev({})
+    assert '_error' in resp and '非 JSON' in resp['_error']
+
+    class EmptyResp(BadResp):
+        def read(self):
+            return _j.dumps({'choices': []}).encode()
+
+    monkeypatch.setattr('urllib.request.urlopen',
+                        lambda req, timeout=None: EmptyResp())
+    resp = agent._engine_jev({})
+    assert '_error' in resp and 'choices' in resp['_error']
+
+    class NoisyResp(BadResp):
+        def read(self):
+            return _j.dumps({'choices': [{'message': {
+                'content': '我建议：```json\n{"action":"click","ref":3}\n```'
+            }}]}).encode()
+
+    monkeypatch.setattr('urllib.request.urlopen',
+                        lambda req, timeout=None: NoisyResp())
+    resp = agent._engine_jev({})
+    assert resp['action'] == 'click' and resp['target'] == 3  # ref→target 归一
+
+
+def test_engine_jev_routing(monkeypatch):
+    """engine=jev 路由走 _engine_jev（非 reranker 分支）+target→action 补。"""
+    import dp_cli.agent as agent
+    calls = []
+    monkeypatch.setattr(
+        agent, '_engine_jev',
+        lambda req: calls.append('jev') or {'target': 1})
+    monkeypatch.setattr(
+        agent, '_engine_reranker',
+        lambda *a: calls.append('reranker') or {})
+    state = {'state': {'url': 'u', 'title': 't'},
+             'options': [{'ref': 1, 'role': 'button', 'name': 'Go'}]}
+    resp, request = agent._ask_questions(state, '点Go', 'jev', 's',
+                                         None, None)
+    assert calls == ['jev']                    # 未走 reranker/未缓存
+    assert resp['action'] == 'click'           # role→action 代码映射补齐
+    assert request['questions']['target']['type'] == 'choice'
+
+
+def test_act_tier_boundaries():
     """conf 三档+margin_source 契约：probs 可 act，单边/降级上限 confirm。"""
+    from dp_cli.agent import _act_tier
+    assert _act_tier(0.98, 'probs') == 'act'
+    assert _act_tier(0.98, 'single_side') == 'confirm'
+    assert _act_tier(0.98, 'conf_fallback') == 'confirm'
+    assert _act_tier(0.98, None) == 'confirm'
+    assert _act_tier(0.5, 'probs') == 'confirm'
+    assert _act_tier(0.2, 'probs') == 'refuse'
+    assert _act_tier(0.2, 'single_side') == 'refuse'
+
+
+@pytest.mark.unit
+def test_conf_tier_three_way_boundaries():
+    """confidence_tier high/medium/low 分档边界（conf+margin+unsure）。"""
     from dp_cli.agent import _conf_tier
-    assert _conf_tier(0.98, 'probs') == 'act'
-    assert _conf_tier(0.98, 'single_side') == 'confirm'
-    assert _conf_tier(0.98, 'conf_fallback') == 'confirm'
-    assert _conf_tier(0.98, None) == 'confirm'
-    assert _conf_tier(0.5, 'probs') == 'confirm'
-    assert _conf_tier(0.2, 'probs') == 'refuse'
-    assert _conf_tier(0.2, 'single_side') == 'refuse'
+    # high：conf≥0.7 且 margin≥0.1 双信号齐
+    assert _conf_tier(0.7, 0.1) == 'high'
+    assert _conf_tier(0.9, 0.5) == 'high'
+    # medium：单信号达标——conf 高 margin 低 / margin 高 conf 中
+    assert _conf_tier(0.8, 0.05) == 'medium'    # margin<0.1
+    assert _conf_tier(0.5, 0.5) == 'medium'     # conf<0.7
+    assert _conf_tier(0.35, 0.9) == 'medium'    # floor 边界上方
+    # low：unsure 命中或 conf<0.35 floor
+    assert _conf_tier(0.9, 0.9, unsure=True) == 'low'
+    assert _conf_tier(0.34, 0.9) == 'low'
+    assert _conf_tier(0.0, 0.0) == 'low'
+    # bge 形态：conf_floor=0 时 conf 不触发 low，只判 unsure
+    assert _conf_tier(0.2, 0.5, conf_floor=0.0) == 'medium'
+    assert _conf_tier(0.2, 0.5, unsure=True,
+                      conf_floor=0.0) == 'low'
+
+
+@pytest.mark.unit
+def test_decide_confidence_fields_and_alternatives(runner, monkeypatch):
+    """结构化置信度：tier/should_escalate/alternatives——probs 排序、
+    排除 top1、ranked 第2-3名上限。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+    import json as _j
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20, **kw: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'},
+                                        {'ref': 3, 'role': 'link',
+                                         'name': 'C'},
+                                        {'ref': 4, 'role': 'link',
+                                         'name': 'D'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    monkeypatch.setattr(am, '_RERANKER_FAM', None)
+
+    # conf=0.9 margin=0.5 → high；alternatives=rank2-3 排除 top1
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9,
+         'probs': {'target': {'1': 0.6, '2': 0.1, '3': 0.05,
+                              '4': 0.01}}}, {}))
+    r = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    assert r.exit_code == 0, r.output
+    d = _j.loads(r.output)['data']
+    assert d['confidence_tier'] == 'high'
+    assert d['should_escalate'] is False
+    alts = d['alternatives']
+    assert len(alts) == 2                       # ranked 第2-3名上限
+    assert [a['ref'] for a in alts] == [2, 3]   # 排除 top1，按分降序
+    assert alts[0]['name'] == 'B' and alts[0]['score'] == 0.1
+
+    # conf=0.5 → medium 不 escalate
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.5,
+         'probs': {'target': {'1': 0.6, '2': 0.1}}}, {}))
+    r2 = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    d2 = _j.loads(r2.output)['data']
+    assert d2['confidence_tier'] == 'medium'
+    assert d2['should_escalate'] is False
+
+    # low conf → AGENT_UNSURE 且 should_escalate/alternatives 仍入 detail
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.1,
+         'probs': {'target': {'1': 0.4, '2': 0.3, '3': 0.2}}}, {}))
+    r3 = runner.invoke(cli, ['decide', 'go', '--engine', 'external'])
+    assert 'AGENT_UNSURE' in r3.output
+    d3 = _j.loads(r3.output)
+    detail = _j.loads(d3['detail'])
+    assert detail['confidence_tier'] == 'low'
+    assert detail['should_escalate'] is True
+    assert [a['ref'] for a in detail['alternatives']] == [2, 3]
+
+
+@pytest.mark.unit
+def test_decide_alternatives_no_probs_lexical(runner, monkeypatch):
+    """external 无 probs：alternatives 仍出——lexical 序兜底。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+    import json as _j
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20, **kw: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'Submit Order'},
+                                        {'ref': 2, 'role': 'button',
+                                         'name': 'Submit Form'},
+                                        {'ref': 3, 'role': 'link',
+                                         'name': 'Order History'},
+                                        {'ref': 4, 'role': 'link',
+                                         'name': 'zzq unrelated'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    monkeypatch.setattr(am, '_RERANKER_FAM', None)
+    # 无 probs、conf 够高——conf_fallback margin=conf → 放行
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.9}, {}))
+    r = runner.invoke(cli, ['decide', 'submit order',
+                            '--engine', 'external'])
+    assert r.exit_code == 0, r.output
+    d = _j.loads(r.output)['data']
+    alts = d['alternatives']
+    assert alts                                  # 无 probs 仍出备选
+    assert all(a['ref'] != 1 for a in alts)      # top1 排除
+    assert all(set(a) == {'ref', 'name', 'score'} for a in alts)
+    # 'Submit Form'/'Order History' 字面近 goal，应在 lexical 序命中
+    assert {a['name'] for a in alts} & {'Submit Form', 'Order History'}
+
+
+@pytest.mark.unit
+def test_decide_refuse_escalates(runner, monkeypatch):
+    """t2 S14 实测修复：bge conf 0.05 过门（floor=0）→ tier=refuse 时
+    confidence_tier 恒 low+should_escalate=true——refuse 语义即
+    "置信不足该升级"，不再出现 refuse+medium+escalate=false 打架。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+    import json as _j
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20, **kw: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'},
+                                        {'ref': 2, 'role': 'link',
+                                         'name': 'B'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    # bge 形态：_conf_gate=0 → conf 0.05 不破 floor；margin 0.1 过
+    # min_margin → 不 unsure——修复前恰好产出 refuse+medium+false
+    monkeypatch.setattr(am, '_RERANKER_FAM', 'bge')
+    monkeypatch.setattr(am, '_ask_questions', lambda *a, **k: (
+        {'action': 'click', 'target': 1, 'confidence': 0.05,
+         'probs': {'target': {'1': 0.5, '2': 0.4}}}, {}))
+    r = runner.invoke(cli, ['decide', '点某物', '--engine', 'reranker'])
+    assert r.exit_code == 0, r.output
+    d = _j.loads(r.output)['data']
+    assert d['tier'] == 'refuse'
+    assert d['confidence_tier'] == 'low'
+    assert d['should_escalate'] is True
+
+
+@pytest.mark.unit
+def test_decide_meta_tier_rule(runner, monkeypatch):
+    """meta 规则短路路径：confidence_tier='rule'（非置信语义如实标）
+    +should_escalate/alternatives 键齐（消费者按键存在性统一取）。"""
+    from dp_cli.main import cli
+    import dp_cli.agent as am
+    import json as _j
+
+    monkeypatch.setattr(am, '_page_state',
+                        lambda p, s, max_opts=20, **kw: {
+                            'state': {'url': 'u', 'title': 't', 'sig': 'x'},
+                            'options': [{'ref': 1, 'role': 'button',
+                                         'name': 'A'}],
+                            'epoch': 'e1', 'truncated': False})
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: FakePage())
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'load_session', lambda s: {})
+    monkeypatch.setattr(am, 'save_session', lambda *a, **k: None)
+    # goal 含返回意图 → meta 短路 deterministic
+    r = runner.invoke(cli, ['decide', '返回上一页', '--engine', 'external'])
+    assert r.exit_code == 0, r.output
+    d = _j.loads(r.output)['data']
+    assert d['deterministic'] is True and d['action'] == 'back'
+    assert d['confidence_tier'] == 'rule'
+    assert d['should_escalate'] is False       # 三键齐——规则命中确定可信
+    assert d['alternatives'] == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,106 @@
+{
+  "report": "三引擎 decide e2e 基准——reranker(bge int8 ORT) vs jev(外部 LLM 模拟) vs meta 短路基线",
+  "date": "2026-10-30",
+  "env": {
+    "host": "ubuntu 26.04 wayland, CPU-only ORT",
+    "reranker": "~/.dp_cli/bge_model/onnx/model_int8.onnx (backend=ort)",
+    "llm_sim": "xAI grok-4-fast-non-reasoning via https://api.x.ai/v1 (temp=0)",
+    "browser": "headless chromium, file:// fixtures",
+    "note": "dpx editable 安装跑工作树代码；session 'bench' 走 daemon（sock 存在即自动路由），'benchcli' 无 daemon 直连"
+  },
+  "jev_feasibility": {
+    "native_path": "BROKEN",
+    "detail": "--engine jev 必然 NameError 崩溃：agent.py:903 调 _engine_jev()，但 `def _engine_jev(request):` 行缺失（commit 7b3cae0 重构 _engine_reranker 时吞行，函数体缩进块沦为其 return 后死代码，模块可导入故测试无感）。裸 traceback 泄漏，同时违反 JSON 输出契约。即便修复 def 行，端点 https://api.typesafe.ai/v1/decide 为占位符且 TYPESAFE_API_KEY 未配置——生产 jev 路径当前不可跑。",
+    "simulation": "按任务允许用 external 协议模拟：同一 request JSON（state+questions{action,target,done,stuck}）序列化为 chat prompt 喂真实 LLM API，答复经 dpx decide --engine external --answer/stdin 走完整生产管线（meta 短路/margin/tier/unsure 全保留）。协议同构是 external 引擎的设计语义（agent.py docstring：与 Jev API/LLM 同构协议）。",
+    "api_keys": "环境实测可用：xAI grok-3/grok-4-fast-non-reasoning/grok-3-mini、Aliyun qwen-max；aibix 中转 403(cloudflare 1010)；gemini-2.0-flash 已下架（提示 gemini-3.8-flash，超时未验证）"
+  },
+  "latency": {
+    "unit": "ms, wall clock, 8-candidate fixture page",
+    "reranker": {
+      "cli_cold_first_ever": 9221,
+      "cli_steady_p50": 8383, "cli_steady_min": 8235, "cli_steady_max": 8838,
+      "daemon_first_call": 7350,
+      "daemon_steady_uncached_p50": 235, "daemon_steady_uncached_range": [199, 267],
+      "daemon_cached_repeat": 145,
+      "engine_layer_known": "60-109 (int8 CE scoring; CHANGELOG 单对 12.2ms)",
+      "note": "CLI 单发每进程重载 ONNX+tokenizer+transformers ≈ 8.3s 进程税；daemon 常驻摊销后 ~235ms（snapshot~100ms+CE~100ms），同 (epoch,goal) 缓存命中 ~145ms"
+    },
+    "jev_sim": {
+      "cli_overhead_only_answer_preset": 305,
+      "cli_e2e_with_live_api": [3204, 2998, 2896],
+      "daemon_pipe_overhead_answer_preset": "115-197",
+      "api_only_eval87": {"p50": 1931, "p95": 3074, "min": 1441, "max": 7580},
+      "api_only_ambig12": {"range": [1821, 5555], "mean_approx": 2840},
+      "e2e_modeled_daemon": "≈ snapshot/管线 ~150 + API ~2000-5500 ≈ 2.2-5.7s",
+      "note": "external/jev 无模型加载，CLI 单发开销仅 ~0.3s；e2e 完全由 API 网络+推理主导。daemon 下 API 调用在 daemon 进程内阻塞 socket 客户端"
+    },
+    "meta_rules": {
+      "cli_single_shot": "280-310 (meta 短路在模型加载之前——CLI reranker+meta goal 同样 ~0.3s 免 8s 模型税)",
+      "daemon": "127-151 (snapshot only)"
+    },
+    "verdict": "daemon reranker ~235ms vs jev-sim e2e ~2.2-5.7s ≈ 10-24×；引擎层 60-109ms vs API p50 1931ms ≈ 18-32×。CLI 单发形态反转：reranker 8.3s（模型税）> jev-sim ~3s（API）——无常驻场景 jev 反而更快出结果，但都以秒计"
+  },
+  "accuracy": {
+    "eval_120": {
+      "reranker": {"all": 0.9167, "elem_bucket": 0.8851, "meta_bucket": 1.0,
+                   "miss_ids": ["n05","m13","m15","m17","m25","m29","x01","x03","x04","x12"],
+                   "source": "本任务复跑 bench/eval_decide.py ~/.dp_cli/bge_model 确认（ST fp32；ORT int8 已知零损失）"},
+      "llm_grok4fast": {"all": 0.95, "llm_bucket": 0.931, "meta_bucket": 1.0,
+                        "miss_ids": ["t05","n05","n13","m27","m28","x12"],
+                        "note": "同管线：meta 层短路 33 例两引擎一致；engine 桶对位 = llm 93.1% vs reranker 88.5%。LLM miss 6 例中 4 例为 action 类错（click↔select/type——模型直答 action 无 role→action 代码映射兜底），ref 错仅 n05/x12（与 reranker 共 miss）"},
+      "common_misses": ["n05", "x12"],
+      "delta": "llm +3.3pp all / +4.6pp engine-bucket"
+    },
+    "ambig_fixtures": {
+      "note": "bench/fixtures 实有 4 个 ambig_* 页（任务所述 5 页不存在）×3 goals = 12 例",
+      "pipeline": {
+        "reranker": "8/12 —— 2 例 AGENT_UNSURE margin 门拒答（'把键盘加入购物车' margin=0.00 真歧义拒答 tier=refuse；'删除这条记录' 两行同构 0.216/0.216 平局拒答）+ 2 例 meta 序数规则错杀（见下）",
+        "external_llm": "10/12 —— 仅 2 例 meta 序数短路同错（管线内 meta 先于引擎，两引擎都被覆盖）"
+      },
+      "raw_engine_top1_bypassing_meta": {
+        "reranker_raw": "10/12 —— '把键盘加入购物车' 字面最近名错选 ref2（三个同名'加入购物车'，需 card 上下文消歧→ref6）；'置顶第二条记录' 选 ref4 行位错",
+        "llm_raw": "12/12 —— 重名候选上下文消歧与序数+动作联合语义全对"
+      },
+      "meta_baseline": {
+        "coverage": "2/12 fired（'置顶第二条记录'→click:2 应为 click:8；'归档第一条记录'→click:1 应为 click:2）",
+        "accuracy_when_fired": "0/2 —— 序数定位规则把'第N条'映到第 N 个元素，无视意图动词与行内目标，元判断/语义深度场典型盲区"
+      },
+      "rows_file": "/tmp/ambig_e2e.json"
+    }
+  },
+  "token_cost": {
+    "reranker": {"tokens_per_call": 0, "usd_per_call": 0, "privacy": "DOM/goal 不出本机"},
+    "jev_sim": {
+      "request_json_chars": {"eval_mean": 614, "range": "577-726 (8-15 候选)", "cap": "external/jev 走 max_opts=_TOP_K=20，重页面上限 ~20 候选 → prompt 有界"},
+      "prompt_tokens_per_call": {"eval_mean": 493, "ambig_range": "539-564", "eval87_total": 42879},
+      "completion_tokens_per_call": "~28-31 (eval87 total 2417)",
+      "formula": "cost/call = prompt_tok × in_price + completion_tok × out_price",
+      "estimate_grok4fast": "≈ $0.20/M in + $0.50/M out → ~500×0.2e-6 + 30×0.5e-6 ≈ $0.000115/call ≈ 0.012 美分/次",
+      "scale_examples": "1000 decides/day ≈ $0.12/day ≈ $3.5/mo；重页面 20 候选 ~1-2K tok → ~$0.0003-0.0006/call",
+      "privacy": "goal+全部候选名+URL+title 出网到第三方 API"
+    }
+  },
+  "verdict": {
+    "reranker_wins": [
+      "速度场：daemon ~235ms vs ~2.2-5.7s（10-24×）；缓存命中 ~145ms；吞吐/高频步进场景唯一可行",
+      "成本场：0 token 0 $ vs ~0.5K tok+~$0.0001/call 起——万次级日调用差一个数量级运营成本",
+      "隐私场：页面候选/title/URL 全留本机——内网/合规/敏感会话必选",
+      "离线/可用性场：无外网依赖、无 key、无配额；API 抖动（本测单点 max 7580ms）不影响",
+      "校准弃权场：margin 门对真歧义给出 tier=refuse 诚实拒答（ambig 2 例），LLM 永远硬答——自主执行安全性上拒答优于猜错",
+      "动作映射稳定场：ref 命中后 role→action 代码映射，eval-120 无 action 类错；LLM 6 miss 中 4 个是 click↔select/type 判错"
+    ],
+    "jev_llm_wins": [
+      "语义深度场：eval-120 95.0% vs 91.7%（+3.3pp），engine 桶 93.1% vs 88.5%；重名/上下文消歧（'把键盘加入购物车'→ref6，reranker 选 ref2）raw 12/12 vs 10/12",
+      "元判断/序数复合意图场：'置顶第二条记录' LLM raw→ref8 正确，meta 序数规则与 reranker 均错——多约束 goal 的推理是 LLM 主场",
+      "元判断场前提：当前 meta 短路先于引擎，LLM 的正确答案在生产管线中被 meta 错杀覆盖（ambig 2/12）——要兑现 jev 优势需先修 meta 序数规则（意图动词参与）或放开引擎复核",
+      "冷启动无模型场：无 GPU/模型环境的机器上，external+API 300ms 开销即可用，reranker 首次 ~9s 且要 ~100MB 模型"
+    ],
+    "meta_baseline_position": "eval-120 内覆盖 33/120 且 100% 正确、~130ms 零成本——它管的域（done/blocked/back/wait/scroll/序数）内是最优'引擎'；但覆盖外弃权，且序数规则存在'第N条记录+动作动词'语义盲区（2/2 错杀），与 LLM 是互补非替代",
+    "synthesis": "生产形态建议维持 reranker 默认+meta 短路前置：成本/延迟/隐私全面占优且 91.7% 已可自治；jev 类外部 LLM 定位为 margin 门 refuse 后的 escalate 通道（真歧义/复合意图 ~2s 一次可接受）——ambig 数据支持此分工：reranker refuse 的 2 例 LLM 恰好给对；但需先修 _engine_jev def 丢失 bug 与 meta 序数规则覆盖引擎复核的问题"
+  },
+  "repro": {
+    "eval_llm": "/tmp/eval_llm.py → /tmp/eval_llm_result.json",
+    "ambig": "/tmp/ambig_e2e.py → /tmp/ambig_e2e.json",
+    "reranker_eval": "python bench/eval_decide.py ~/.dp_cli/bge_model"
+  }
+}

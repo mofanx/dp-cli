@@ -903,6 +903,9 @@ def run_daemon(session: str):
         'sock_path': str(sock_path) if transport == 'unix' else None,
         'transport': transport, 'endpoint': endpoint,
         'port': srv.getsockname()[1] if transport == 'tcp' else None,
+        # version 供 daemon-status/_version_probe 消费——漏写会让
+        # 版本探测链静默失效（t2 实测 version:null）
+        'version': _dpx_version(),
         'session': session, 'started_at': time.time(),
         'owner': os.environ.get('USER') or os.environ.get('USERNAME', '')}, ensure_ascii=False))
     stop_ev = threading.Event()

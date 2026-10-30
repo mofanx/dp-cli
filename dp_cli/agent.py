@@ -8,13 +8,15 @@ Jev 范式落地——决策模型只从**给定候选**里选，绝不生成 se
   external  默认——吐 JSON 请求，从 --answer/--answer-file/stdin 收答复，
             零依赖；与 julia1 predict / Jev API / LLM 同构协议
   julia     本地 Julia-1——julia1 predict 子进程调用（agent-setup 注册）
-  jev       TypeSafe API——TYPESAFE_API_KEY
+  jev       通用 OpenAI 兼容端点——DPX_JEV_URL/DPX_JEV_MODEL（+可选
+            DPX_JEV_KEY/DPX_JEV_TIMEOUT）env 配置，chat/completions 协议
 
 done：模型 done OR + 状态哈希变化检测（refs 版本戳）。
 stuck：snapshot diff + churn 去噪 + N 步连续门槛——确定性信号，
         不外包给概率模型。
 TYPE 动作只回 ref——value 由上层补，decide 不猜。
 """
+import copy
 import hashlib
 import json
 import os
@@ -22,6 +24,7 @@ import re
 import subprocess
 import sys
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 import click
@@ -564,23 +567,108 @@ def _engine_reranker(state, goal):
             'done': False, 'stuck': False}
 
 
+_JEV_SYS_PROMPT = (
+    '你是浏览器自动化决策引擎。用户消息是 JSON：'
+    'state（页面 URL/Title）+ questions（action/target/done/stuck 四问，'
+    'criteria 是候选表，键即元素编号）。只输出一个 JSON 对象，schema：'
+    '{"action":"click|type|select|scroll_up|scroll_down|back|wait|done'
+    '|blocked","target":<元素编号 int 或 null>,"done":<bool>,'
+    '"stuck":<bool>,"confidence":<0~1 float>}——'
+    'TYPE 动作同样只回 target，value 由上层补。不要输出任何解释。')
 
-    """TypeSafe Jev API——TYPESAFE_API_KEY。"""
-    key = os.environ.get('TYPESAFE_API_KEY')
-    if not key:
-        return {'_error': '缺 TYPESAFE_API_KEY 环境变量'}
+
+def _jev_parse_content(content):
+    """模型答复→dict——剥离 ```json 围栏/前后噪声，取首个完整 JSON 对象。"""
+    if isinstance(content, dict):
+        return content
+    if not isinstance(content, str):
+        return None
+    s = content.strip()
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, dict) else None
+    except json.JSONDecodeError:
+        pass
+    m = re.search(r'\{.*\}', s, re.DOTALL)
+    if m:
+        try:
+            v = json.loads(m.group(0))
+            return v if isinstance(v, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _engine_jev(request):
+    """通用 OpenAI chat/completions 兼容端点——DPX_JEV_* env 配置。
+
+    env：
+      DPX_JEV_URL      chat/completions 端点 URL（必填，未配→_error）
+      DPX_JEV_KEY      Bearer key（可选——本地端点可空）
+      DPX_JEV_MODEL    model 字段（必填）
+      DPX_JEV_TIMEOUT  秒，默认 30
+    request 即 _ask_questions 的三问 JSON——原样进 user message，要求
+    模型回同构 {action,target,done,stuck,confidence}；'ref' 键兼容
+    归一为 'target'。全部异常收敛 _error，不裸 raise（JSON 契约）。
+    """
+    url = (os.environ.get('DPX_JEV_URL') or '').strip()
+    if not url:
+        return {'_error': '缺 DPX_JEV_URL 环境变量——'
+                '配置 OpenAI 兼容 chat/completions 端点后重试'}
+    model = (os.environ.get('DPX_JEV_MODEL') or '').strip()
+    if not model:
+        return {'_error': '缺 DPX_JEV_MODEL 环境变量'}
+    try:
+        timeout = float(os.environ.get('DPX_JEV_TIMEOUT', '30'))
+    except ValueError:
+        timeout = 30.0
+    import socket
+    import urllib.error
     import urllib.request
+    headers = {'Content-Type': 'application/json'}
+    key = (os.environ.get('DPX_JEV_KEY') or '').strip()
+    if key:
+        headers['Authorization'] = f'Bearer {key}'
+    body = {'model': model, 'temperature': 0,
+            'messages': [
+                {'role': 'system', 'content': _JEV_SYS_PROMPT},
+                {'role': 'user',
+                 'content': json.dumps(request, ensure_ascii=False)}]}
     try:
         req = urllib.request.Request(
-            'https://api.typesafe.ai/v1/decide',
-            data=json.dumps(request).encode(),
-            headers={'Content-Type': 'application/json',
-                     'Authorization': f'Bearer {key}'},
-            method='POST')
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read().decode())
-    except Exception as e:
-        return {'_error': f'Jev API 失败: {e}'}
+            url, data=json.dumps(body).encode(),
+            headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            payload = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = ''
+        try:
+            detail = e.read().decode(errors='replace')[:200]
+        except Exception:
+            pass
+        return {'_error': f'Jev API HTTP {e.code}: {detail}'}
+    except urllib.error.URLError as e:
+        reason = getattr(e, 'reason', e)
+        if isinstance(reason, (TimeoutError, socket.timeout)) or \
+                'timed out' in str(reason).lower():
+            return {'_error': f'Jev API 超时（{timeout:g}s）'}
+        return {'_error': f'Jev API 连接失败: {reason}'}
+    except TimeoutError:
+        return {'_error': f'Jev API 超时（{timeout:g}s）'}
+    except json.JSONDecodeError as e:
+        return {'_error': f'Jev API 响应非 JSON: {e}'}
+    except OSError as e:
+        return {'_error': f'Jev API 连接失败: {e}'}
+    try:
+        content = payload['choices'][0]['message']['content']
+    except (KeyError, IndexError, TypeError) as e:
+        return {'_error': f'Jev API 响应缺 choices/message: {e}'}
+    resp = _jev_parse_content(content)
+    if resp is None:
+        return {'_error': 'Jev 答复非 JSON——模型未按 schema 输出'}
+    if 'target' not in resp and 'ref' in resp:
+        resp['target'] = resp['ref']
+    return resp
 
 
 _ROLE_ACTION = {'textbox': 'type', 'combobox': 'select', 'searchbox': 'type',
@@ -680,7 +768,7 @@ _TIER = {'probs': ('act', 'confirm', 'refuse'),
 _T_HI, _T_LO = 0.95, 0.40   # dev 集（38 disjoint）拟合：hit 簇 ≥0.90 / miss 簇密集 <0.40
 
 
-def _conf_tier(conf: float, margin_source: str | None = None) -> str:
+def _act_tier(conf: float, margin_source: str | None = None) -> str:
     """conf→act/confirm/refuse 三档——margin_source 契约对齐：
 
     probs        双侧真 margin——可给 act（高 conf 直采建议）
@@ -688,14 +776,84 @@ def _conf_tier(conf: float, margin_source: str | None = None) -> str:
     conf_fallback 静默降级——上限 confirm（conf 无校准保证）
 
     advisory 语义：act=高可信建议（仍不执行）/confirm=列 top-3 待确认/
-    refuse=建议放弃。dev 拟合阈值 _T_HI/_T_LO，miss conf 也可达 1.0
-    （softmax 过度自信）——tier 是表达档非正确率承诺。
+    refuse=建议放弃（置信不足该升级——调用点同步压
+    confidence_tier=low、should_escalate=true）。dev 拟合阈值
+    _T_HI/_T_LO，miss conf 也可达 1.0（softmax 过度自信）——
+    tier 是表达档非正确率承诺。
     """
     src = margin_source if margin_source in _TIER else 'conf_fallback'
     a, c, r = _TIER[src]
     if conf >= _T_HI:
         return a
     return c if conf >= _T_LO else r
+
+
+# confidence_tier 分档阈值——与 _CONF_FLOOR/min_margin 校准值同族：
+# high 双信号齐（conf/margin 分布重叠实测单一信号不可信），
+# low = unsure 门控命中或 conf 破底，其余 medium。
+_CT_HI_CONF = 0.70
+_CT_HI_MARGIN = 0.10
+
+
+def _conf_tier(conf: float, margin: float, unsure: bool = False,
+               conf_floor: float = _CONF_FLOOR) -> str:
+    """conf+margin→high/medium/low 结构化置信档（decide 响应字段）。
+
+    high    conf≥0.70 且 margin≥0.10
+    low     unsure 门控命中 OR conf<conf_floor（默认 _CONF_FLOOR=0.35；
+            调用方传 _conf_gate——bge conf 分布无区分度时 floor=0，
+            low 档只由 unsure/margin 触发，不误标整页）
+    medium  其余——可分但留疑，建议上层确认
+
+    tier 是表达档非正确率承诺（softmax 过度自信实测）。
+    """
+    if unsure or conf < conf_floor:
+        return 'low'
+    if conf >= _CT_HI_CONF and margin >= _CT_HI_MARGIN:
+        return 'high'
+    return 'medium'
+
+
+def _alternatives(state, goal, probs_t, top_ref, k=2):
+    """ranked 第2-3名备选 [{ref,name,score}]——AGENT_UNSURE 拒答场景
+    备选最有用，agent 可携候选集 escalate。
+
+    排序信号两路：probs['target'] 有→概率降序（score=归一概率）；
+    无 probs（jev/external 仅回 target）→_lexical_top 字面相似度
+    序兜底（score=相似度分）；再无信号空列表如实返回。
+    top1（引擎选中 ref）恒排除。
+    """
+    opts = state.get('options') or []
+    by_ref = {str(o['ref']): o for o in opts}
+
+    def _p(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    alts = []
+    if probs_t:
+        ranked = sorted(probs_t.items(), key=lambda kv: -_p(kv[1]))
+        for rk, sc in ranked:
+            if str(rk) == str(top_ref):
+                continue
+            o = by_ref.get(str(rk)) or {}
+            alts.append({'ref': int(rk) if str(rk).isdigit() else rk,
+                         'name': o.get('name', ''),
+                         'score': round(_p(sc), 4)})
+            if len(alts) >= k:
+                break
+        return alts
+    for i, s in _lexical_top(opts, goal, k + 1):
+        o = opts[i]
+        if str(o['ref']) == str(top_ref):
+            continue
+        alts.append({'ref': o['ref'], 'name': o.get('name', ''),
+                     'score': round(float(s), 4)})
+        if len(alts) >= k:
+            break
+    return alts
 
 
 _CN_NUM = {'一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5,
@@ -794,7 +952,49 @@ def _meta_decide(state, goal):
 
 
 
-def _ask_questions(state, goal, engine, session, answer, answer_file):
+# ── decide 决策缓存（reranker CE 重打分免重复）─────────────────
+# daemon/serve 常驻下，同 (session,url,epoch,goal) 二次 decide 免重编码：
+# CE 打分是 (goal,candidates) 的纯函数，refs_epoch 即页面 DOM 签名——
+# 页面变即 epoch 变、key 不同天然失效（守卫免写）；session 名进 key
+# 天然隔离。缓存的是引擎 resp（决策级：含 action 映射+probs/conf），
+# margin/tier/unsure/done/stuck 仍逐次现算——--min-conf/--min-margin/
+# --cascade 等输出参数不进 key 也始终生效。
+# 只适用 reranker：external 走 stdin 答复、jev 是远端 API，均不可缓存。
+# 如实边界：CLI 单发每次新进程永不命中——只有 daemon/serve/REPL
+# 常驻进程内缓存才生效。
+_DECIDE_CACHE_MAX = int(os.environ.get('DPX_DECIDE_CACHE_MAX', '128'))
+_DECIDE_CACHE = OrderedDict()
+
+
+def _decide_cache_key(session, state, goal, engine):
+    """缓存键 (session,url,epoch,goal,engine)——页面/session 变即失效。"""
+    return (session, (state.get('state') or {}).get('url') or '',
+            state.get('epoch') or '', goal, engine)
+
+
+def _decide_cache_get(key):
+    """LRU 命中返回 resp 深拷贝——DPX_NO_CACHE=1 整层关闭。"""
+    if os.environ.get('DPX_NO_CACHE'):
+        return None
+    resp = _DECIDE_CACHE.get(key)
+    if resp is None:
+        return None
+    _DECIDE_CACHE.move_to_end(key)
+    return copy.deepcopy(resp)
+
+
+def _decide_cache_put(key, resp):
+    """LRU 写入+超上限驱逐最旧——_error 答复不入缓存。"""
+    if os.environ.get('DPX_NO_CACHE') or '_error' in resp:
+        return
+    _DECIDE_CACHE[key] = copy.deepcopy(resp)
+    _DECIDE_CACHE.move_to_end(key)
+    while len(_DECIDE_CACHE) > _DECIDE_CACHE_MAX:
+        _DECIDE_CACHE.popitem(last=False)
+
+
+def _ask_questions(state, goal, engine, session, answer, answer_file,
+                   no_cache=False):
     """扇出三问（action/goal done/stuck）→ 规范答复。
 
     julia 引擎走归因修复形态：只问 target+done/stuck（实测 action 问
@@ -856,8 +1056,22 @@ def _ask_questions(state, goal, engine, session, answer, answer_file):
     if engine == 'external':
         return _engine_external(request, answer, answer_file), request
     if engine == 'jev':
-        return _engine_jev(request), request
+        resp = _engine_jev(request)
+        if 'action' not in resp and 'target' in resp:
+            try:
+                t = int(resp['target'])
+            except (TypeError, ValueError):
+                t = -1
+            role = next((o['role'] for o in state['options']
+                         if o['ref'] == t), '')
+            resp['action'] = _goal_action(goal, role)
+        return resp, request
     if engine == 'reranker':
+        ck = _decide_cache_key(session, state, goal, engine)
+        resp = None if no_cache else _decide_cache_get(ck)
+        if resp is not None:
+            resp['_cache_hit'] = True        # decide 翻译成 cached:true
+            return resp, request
         resp = _engine_reranker(state, goal)
         if 'action' not in resp and 'target' in resp:
             try:
@@ -867,6 +1081,8 @@ def _ask_questions(state, goal, engine, session, answer, answer_file):
             role = next((o['role'] for o in state['options']
                          if o['ref'] == t), '')
             resp['action'] = _goal_action(goal, role)
+        if not no_cache:
+            _decide_cache_put(ck, resp)
         return resp, request
     return {'_error': f'未知引擎: {engine}'}, request
 
@@ -921,9 +1137,11 @@ def register(cli):
                        '0.005 全拦且假拒 -74% vs 旧值 0.15）')
     @click.option('--cascade', is_flag=True,
                   help='级联模式：Julia 粗筛 top-3 候选集给上层终裁')
+    @click.option('--no-cache', is_flag=True,
+                  help='跳过决策缓存（reranker 引擎；DPX_NO_CACHE=1 等效）')
     @click.option('--top-k', default=_TOP_K, show_default=True)
     def decide(goal, session, engine, answer, answer_file,
-               min_conf, min_margin, cascade, top_k):
+               min_conf, min_margin, cascade, no_cache, top_k):
         """【experimental 未验证准确率】单步决策：扇出三问 → {op,ref,probs}。
 
         ⚠ 波次 0 实测：Julia-1 对浏览器控件任务准确率 ~40%，未达立项
@@ -934,7 +1152,8 @@ def register(cli):
         引擎:
           external  吐请求收答复（--answer/--answer-file/stdin），零依赖
           julia     本地 Julia-1（先 dpx agent-setup --engine julia）
-          jev       TypeSafe API（TYPESAFE_API_KEY）
+          jev       OpenAI 兼容端点（需 env：DPX_JEV_URL+DPX_JEV_MODEL，
+                    可选 DPX_JEV_KEY/DPX_JEV_TIMEOUT）
 
         \b
         示例:
@@ -943,9 +1162,22 @@ def register(cli):
           dpx decide "点登录" --engine julia
 
         \b
+        结构化置信度（result 字段）:
+          confidence_tier  high/medium/low——conf+margin 综合分档
+                           （meta 规则短路标 'rule'，非置信语义；
+                           tier=refuse 时恒压 low——置信不足即该升级）
+          should_escalate  unsure 或 confidence_tier=low → true——
+                           上层可据此自动 escalate（refuse 含其中）
+          alternatives     ranked 第2-3名备选 [{ref,name,score}]；
+                           probs 排序优先，无 probs 用 lexical 序；
+                           AGENT_UNSURE 时同样输出（detail JSON 内）
+
+        \b
         常驻推荐（reranker）:
           冷启模型加载 ~6s 只在首次——dpx daemon-start+DPX_DAEMON=1
-          或 dpx serve 常驻后单次 decide ~90ms。
+          或 dpx serve 常驻后单次 decide ~90ms。常驻进程内同
+          (页面 epoch, goal) 二次 decide 命中决策缓存免 CE 重打分
+          （cached:true 回显；--no-cache 或 DPX_NO_CACHE=1 关）。
         """
         page = _get_page(session)
         sess = load_session(session) or {}
@@ -961,6 +1193,11 @@ def register(cli):
             _record_hash(session, cur_sig)
             ok({'action': meta['action'], 'ref': meta.get('ref'),
                 'confidence': 1.0,
+                'confidence_tier': 'rule',   # 规则命中非置信语义，如实标
+                # 结构化置信三键与模型路径对齐——消费者按键存在性
+                # 统一取，不 KeyError（规则命中确定可信→不升级无备选）
+                'should_escalate': False,
+                'alternatives': [],
                 'deterministic': True, 'advisory': eng == 'reranker',
                 'reason': meta['reason'], 'epoch': cur_sig,
                 'options_count': len(state['options']),
@@ -971,11 +1208,13 @@ def register(cli):
         # 不自动执行（top-3 召回实测 100%，top-1 仅 60%）
         if cascade:
             resp, request = _ask_questions(
-                state, goal, eng, session, answer, answer_file)
+                state, goal, eng, session, answer, answer_file,
+                no_cache=no_cache)
             if '_error' in resp:
                 error('决策引擎失败', code='DECIDE_FAILED',
                       detail=resp['_error'])
                 return
+            cached = bool(resp.pop('_cache_hit', False))
             probs_t = (resp.get('probs') or {}).get('target') or {}
             ranked = sorted(probs_t.items(), key=lambda x: -x[1])[:3]
             if not ranked and resp.get('target'):
@@ -988,15 +1227,17 @@ def register(cli):
                          if str(o['ref']) == str(k)), {})}
                 for k, v in ranked],
                 'epoch': state['epoch'],
-                'engine': eng, 'goal': goal,
+                'engine': eng, 'goal': goal, 'cached': cached,
                 'note': '级联模式——请上层引擎对候选集终裁后执行'})
             return
         resp, request = _ask_questions(state, goal, eng, session,
-                                       answer, answer_file)
+                                       answer, answer_file,
+                                       no_cache=no_cache)
         if '_error' in resp:
             error('决策引擎失败', code='DECIDE_FAILED',
                   detail=resp['_error'])
             return
+        cached = bool(resp.pop('_cache_hit', False))
         action = str(resp.get('action') or resp.get('op') or '').lower()
         target = resp.get('target')
         done = bool(resp.get('done'))
@@ -1017,6 +1258,7 @@ def register(cli):
             'stuck': stuck_m or stuck_h, 'epoch': cur_sig,
             'options_count': len(state['options']),
             'truncated': state['truncated'], 'engine': eng,
+            'cached': cached,
         }
         if eng == 'reranker':
             result['advisory'] = True   # 只建议不执行——契约写入响应
@@ -1051,7 +1293,7 @@ def register(cli):
             # 无校准证据可达 act——封顶 confirm；MiniLM 保留 act 档
             tier_src = msrc if resp.get('backend') != 'bge-st' \
                 and msrc != 'conf_fallback' else msrc
-            result['tier'] = _conf_tier(conf, tier_src)
+            result['tier'] = _act_tier(conf, tier_src)
             if _RERANKER_FAM == 'bge':
                 # bge 引擎路径——conf/margin 分布重叠实测不可 act
                 if result['tier'] == 'act':
@@ -1061,6 +1303,25 @@ def register(cli):
         _conf_gate = min_conf if _RERANKER_FAM != 'bge' else 0.0
         _unsure = bool(not done and (conf and conf < _conf_gate
                                      or margin < min_margin))
+        # 结构化置信度三字段——agent 免自行拼"多确定+备选"：
+        # confidence_tier 三档分档复用 _conf_gate 校准（bge conf 分布
+        # 无区分度时 floor=0，low 只由 unsure 触发）；should_escalate
+        # 供上层自动 escalate；alternatives 为 ranked 第2-3名备选——
+        # 三字段先于 AGENT_UNSURE error 写入 result，拒答 detail 内
+        # 同样携带（拒答场景备选最有用）。
+        result['confidence_tier'] = _conf_tier(conf, margin, _unsure,
+                                               conf_floor=_conf_gate)
+        # refuse=置信不足建议放弃——与升级语义同源：tier=refuse 时
+        # confidence_tier 恒压 low，should_escalate 随之 true；
+        # 不修会出现 refuse+medium+escalate=false 两套置信表达打架
+        #（t2 S14 bge conf 0.05 过门实测——bge floor=0 不触发
+        # conf<floor，margin 过门不触发 unsure，refuse 漏标 low）
+        if result.get('tier') == 'refuse':
+            result['confidence_tier'] = 'low'
+        result['should_escalate'] = bool(
+            _unsure or result['confidence_tier'] == 'low')
+        result['alternatives'] = _alternatives(
+            state, goal, probs.get('target') or {}, target)
         # hard-case 被动落盘：conf<0.5 或 top2 margin<0.1 →
         # ~/.dp_cli/hard_cases.jsonl（默认开，DPX_HARD_CASES=0 关；
         # 调试数据非训练承诺，与 decide_train 录制并行两份职责。
@@ -1097,7 +1358,7 @@ def register(cli):
         Julia-1 运行时依赖（必须 pin，否则 encoder 崩溃）:
           pip install "transformers==5.0.0" torch safetensors
           # 权重: huggingface-cli download SupersonicLabs/Julia-1
-          dpx agent-setup --engine jev        # 用 TYPESAFE_API_KEY
+          dpx agent-setup --engine jev        # 用 DPX_JEV_URL/DPX_JEV_MODEL env
           dpx agent-setup --engine external   # 外部 loop 驱动
         """
         if eng == 'julia':

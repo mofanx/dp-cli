@@ -82,23 +82,27 @@ def fake_net(tmp_path, monkeypatch):
     # 测试环境静默防 JSON 解析被污染（真机仍是 stderr 正确语义）
     monkeypatch.setattr(mod, '_write_err', lambda s: None)
     blob = _model_tgz()
+    int8_blob = _int8_tgz()
     monkeypatch.setattr(mod, '_MODEL_SHA256',
                         hashlib.sha256(blob).hexdigest())
+    monkeypatch.setattr(mod, '_MODEL_SHA256_INT8',
+                        hashlib.sha256(int8_blob).hexdigest())
     calls = []
     urls = []
 
     def _fake(req, timeout=60):
         urls.append(req.full_url)
+        b = int8_blob if 'int8' in req.full_url else blob
         rng = req.get_header('Range')
         calls.append(rng)
         if rng:
             start = int(rng.split('=')[1].split('-')[0])
-            return _Resp(blob[start:], status=206)
-        return _Resp(blob, status=200)
+            return _Resp(b[start:], status=206)
+        return _Resp(b, status=200)
 
     monkeypatch.setattr(mod, '_urlopen', _fake)
     _patch_agent_dirs(monkeypatch, d / 'bge_model')
-    return {'dir': d, 'blob': blob, 'calls': calls, 'urls': urls}
+    return {'dir': d, 'blob': blob, 'int8_blob': int8_blob, 'calls': calls, 'urls': urls}
 
 
 @pytest.fixture
@@ -127,8 +131,8 @@ def _invoke(*args):
     return CliRunner().invoke(cli, list(args))
 
 
-def _pull_ok(env):
-    r = _invoke('model', 'pull')
+def _pull_ok(env, fp32=False):
+    r = _invoke('model', 'pull', '--fp32') if fp32 else _invoke('model', 'pull')
     assert r.exit_code == 0, r.output + str(r.exception or '')
     out = json.loads(r.output)
     assert out['status'] == 'ok', out
@@ -139,7 +143,7 @@ def _pull_ok(env):
 
 def test_pull_full_flow(fake_net):
     mdir = fake_net['dir'] / 'bge_model'
-    out = _pull_ok(fake_net)
+    out = _pull_ok(fake_net, fp32=True)
     d = out['data']
     assert d['installed'] is True and d['sha256']
     assert (mdir / 'config.json').exists()
@@ -153,7 +157,7 @@ def test_pull_full_flow(fake_net):
 
 def test_pull_sha_mismatch_rejects(fake_net, monkeypatch):
     monkeypatch.setattr(mod, '_MODEL_SHA256', '0' * 64)
-    r = _invoke('model', 'pull')
+    r = _invoke('model', 'pull', '--fp32')
     assert r.exit_code == 1
     out = json.loads(r.output)
     assert out['status'] == 'error'
@@ -175,7 +179,7 @@ def test_pull_resume_range(fake_net):
     part = fake_net['dir'] / 'dpx-reranker.tar.gz.part'
     fake_net['dir'].mkdir(parents=True, exist_ok=True)
     part.write_bytes(fake_net['blob'][:100])    # 已下 100B
-    _pull_ok(fake_net)
+    _pull_ok(fake_net, fp32=True)
     assert fake_net['calls'] == ['bytes=100-']  # Range 续传
     assert (fake_net['dir'] / 'bge_model' / 'config.json').exists()
 
@@ -190,7 +194,7 @@ def test_pull_200_restart_when_range_ignored(fake_net, monkeypatch):
         return _Resp(fake_net['blob'], status=200)
 
     monkeypatch.setattr(mod, '_urlopen', _no_range)
-    _pull_ok(fake_net)
+    _pull_ok(fake_net, fp32=True)
     assert (fake_net['dir'] / 'bge_model' / 'config.json').exists()
 
 
@@ -250,8 +254,8 @@ def test_pull_int8_uses_int8_asset(fake_net_variants):
 
 
 def test_pull_fp32_meta_int8_false(fake_net):
-    """fp32 pull 的 meta 显式记 int8:false——status 可区分变体。"""
-    _pull_ok(fake_net)
+    """--fp32 pull 的 meta 显式记 int8:false——status 可区分变体。"""
+    _pull_ok(fake_net, fp32=True)
     meta = json.loads(
         (fake_net['dir'] / 'bge_model' / '.dp_install.json').read_text())
     assert meta['int8'] is False
@@ -271,7 +275,7 @@ def test_pull_int8_sha_mismatch_rejects(fake_net_variants, monkeypatch):
 
 def test_pull_int8_skips_when_fp32_installed(fake_net_variants):
     """fp32 完整在位 → --int8 幂等 skip（跨变体切换需 --force）。"""
-    _pull_ok(fake_net_variants)
+    _pull_ok(fake_net_variants, fp32=True)
     assert fake_net_variants['urls'] == [mod._MODEL_URL]
     r = _invoke('model', 'pull', '--int8')
     out = json.loads(r.output)
@@ -290,7 +294,7 @@ def test_pull_fp32_skips_when_int8_installed(fake_net_variants):
 
 def test_pull_int8_force_overwrites_fp32(fake_net_variants):
     """--int8 --force：fp32 在位→备份换装 int8 包。"""
-    _pull_ok(fake_net_variants)
+    _pull_ok(fake_net_variants, fp32=True)
     mdir = fake_net_variants['dir'] / 'bge_model'
     assert (mdir / 'model.safetensors').exists()
     r = _invoke('model', 'pull', '--int8', '--force')

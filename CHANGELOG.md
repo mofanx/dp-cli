@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.25] - 2026-10-30
+
+### 新增（ORT/int8 推理后端——更快更省）
+- **ONNX int8 后端**：`sess.get_inputs()` 动态喂参自动启用——单对延迟 -71%（42.6→12.2ms）、常驻内存 -74%（370→97.5MB）、体积 -75%，eval-120 0.9167 零损失
+- **`dpx model pull --int8`**：挂 `model-v24` 双 asset（fp32+int8），217MB 包独立 part+双 sha256 校验
+- **`DPX_BGE_ONNX=0`**：逃生回 ST fp32 路径
+
 ## [0.15.24] - 2026-10-30
 
 ### 新增（模型分发闭环+daemon 常驻推荐）

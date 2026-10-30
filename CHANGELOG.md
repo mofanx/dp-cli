@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.22] - 2026-10-29
+
+### 改进（数据契约扩容——召回实验可测化）
+- **hard_cases schema_v=2**：candidates 录全池+options_total+cap300+游离 ref 附尾——B_recall 桶召回率结构性可测，v1 旧行兼容
+- **EMBED_TOPK 扫档**：8→20 边际递减不改默认；lexical fallback 补缺 11/11 指认
+- **训练线封存**：v25/v27 双否证，v24 终版
+
 ## [0.15.21] - 2026-10-29
 
 ### 修复（decide 覆盖桶根治——真机进池率 5/20→16/20）

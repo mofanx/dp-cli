@@ -36,7 +36,8 @@ _TIMEOUT_MARGIN = 15      # read 超时 margin（秒）
 _MAX_CONN = 32            # 并发处理闸——处理中连接数上限；
                           # 慢请求堆积撑爆 fd 的 DoS 面在此收口
 _SKIP_CMDS = {'serve', 'sh', 'batch', 'daemon-start', 'daemon-status',
-              'daemon-stop', 'install', 'catalog', 'mcp'}
+              'daemon-stop', 'install', 'catalog', 'mcp',
+              'model', 'model-status'}   # 本机模型管理——无 session 语义不转发
 # record-* 精确枚举（进程内录制状态，daemon 不可转发）——
 # 不用 record- 前缀匹配，避免误伤未来同名前缀的非进程内命令
 _RECORD_CMDS = {'record-start', 'record-stop', 'record-show',

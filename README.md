@@ -267,7 +267,7 @@ dpx extract "css:.item-card" \
 
 - **Record → replay loop** — `dpx record-start` / `dpx record-stop -f dp` produces a batch-replayable script; every line carries a `||` fallback locator chain (css/xpath alternatives), `dpx batch` degrades automatically
 - **Batch inline fallback** — `a || b || c` per line: first failing segment falls through to the next
-- **Agent primitives (experimental)** — `dpx agent-state` emits a Jev-style control table (state+options+epoch stamp); `dpx decide <goal>` is a single-step decision primitive with three pluggable engines (`external`/`julia`/`jev`), `--cascade` top-3 shortlist mode and `--min-margin` ambiguity gating; `dpx agent-setup` registers the engine per session. Wave-0 measured Julia-1 top-1 accuracy below the admission gate, so these ship as experimental
+- **Agent primitives (experimental)** — `dpx agent-state` emits a Jev-style control table (state+options+epoch stamp); `dpx decide <goal>` is a single-step decision primitive with pluggable engines (`external`/`julia`/`jev`/`reranker` — local BGE, `gh release download model-v24` for tuned weights), `--cascade` top-3 shortlist mode and `--min-margin` ambiguity gating; `dpx agent-setup` registers the engine per session. **For `reranker`, prefer daemon/serve residency**: the ~6s model load happens once — `dpx daemon-start` + `DPX_DAEMON=1` or `dpx serve` brings each `decide` to ~90ms. Wave-0 measured Julia-1 top-1 accuracy below the admission gate, so these ship as experimental
 
 > **daemon 路由是 opt-in**：`dpx daemon-start` 只起进程不接管路由——后续命令走 daemon 需 `DPX_DAEMON=1`（或 socket 已存在时自动采用）。`requests`/`request`/`listen` 的 daemon netlog 需 0.15.3+ daemon；`serve`/`sh`/`batch`/`mcp`/`record-*`/`daemon-*`/`install`/`catalog` 始终本地执行不转发。
 

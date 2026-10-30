@@ -130,6 +130,8 @@
 | 提取 | `read` | [url], [session], [selector], [fmt], [output], [boundary] |
 | 元信息 | `catalog` | [as_md], [as_json] |
 | 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |
+| 模型 | `model` |  |
+| 模型 | `model-status` | [do_load] |
 | 其他 | `agent-setup` | session, eng, cmd |
 | 其他 | `agent-state` | session, top_k |
 | 其他 | `daemon-start` | session |

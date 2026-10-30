@@ -44,6 +44,7 @@
 | `AUTOCONNECT_FAILED` | auto-connect 自动发现失败 |
 | `NAVIGATE_FAILED` | 页面导航失败 |
 | `HTTP_FAILED` | HTTP 请求失败（http-get/http-post） |
+| `MODEL_DOWNLOAD_FAILED` | 模型资产下载失败（.part 保留可断点续传） |
 
 ### not_found（退出码 4）
 
@@ -108,6 +109,7 @@
 | `RPC_FAILED` / `RPC_CALL_FAILED` | RPC 注册/列表/移除失败、RPC 调用执行失败 |
 | `HOOK_FAILED` | hook 注入/移除/导出失败 |
 | `BUSY` | daemon 并发连接数超限（处理中连接达上限，稍后重试） |
+| `MODEL_SHA_MISMATCH` / `MODEL_INSTALL_FAILED` | 模型资产 sha256 校验不一致 / 解压部署失败 |
 
 ## 兼容性说明
 

@@ -433,15 +433,20 @@ def _ort():
 
 
 def _bge_dirs():
-    """bge 候选目录——DPX_BGE_MODEL env 优先，其次微调权重，最后 zero-shot 基座。"""
+    """bge 候选目录——DPX_BGE_MODEL env 最高，其次用户部署位，最后开发机遗留路径。
+
+    `~/.dp_cli/bge_model` 是 `dpx model pull` 的官方落位（v24+）——必须排在
+    开发机遗留路径之前，否则用户 pull 完实际加载的还是旧微调权重。
+    """
     dirs = []
     env = os.environ.get('DPX_BGE_MODEL')
     if env:
         dirs.append(Path(env))
     dirs += [
-        Path('/media/yan/Data/bge_v19_tuned'),      # v19 微调（eval-68 72.1%）
-        Path.home() / '.dp_cli' / 'bge_model',      # 用户部署的 bge（ONNX/ST）
-        Path('/media/yan/Data/bge_tuned'),          # 本项目实测 bge 权重
+        Path.home() / '.dp_cli' / 'bge_model',      # 用户部署位（model pull 落点）
+        Path('/media/yan/Data/bge_v24_tuned'),      # 开发机 v24 微调
+        Path('/media/yan/Data/bge_v19_tuned'),      # 开发机 v19 遗留
+        Path('/media/yan/Data/bge_tuned'),          # 开发机更早实测权重
     ]
     return dirs
 
@@ -926,6 +931,11 @@ def register(cli):
           dpx decide "搜索 Python" --engine external \\
               --answer '{"action":"type","target":4,"done":false}'
           dpx decide "点登录" --engine julia
+
+        \b
+        常驻推荐（reranker）:
+          冷启模型加载 ~6s 只在首次——dpx daemon-start+DPX_DAEMON=1
+          或 dpx serve 常驻后单次 decide ~90ms。
         """
         page = _get_page(session)
         sess = load_session(session) or {}

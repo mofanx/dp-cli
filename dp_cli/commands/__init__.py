@@ -3,12 +3,12 @@ from dp_cli.commands import (
     browser, snapshot_cmd, element, keyboard,
     page, tab, storage, network, record, misc,
     assert_cmd, emulate, observe, batch, rpc, extract, hook, serve,
-    meta,
+    meta, model,
 )
 
 _MODULES = [browser, snapshot_cmd, element, keyboard, page, tab, storage, network, record, misc,
             assert_cmd, emulate, observe, batch, rpc, extract, hook, serve,
-            meta]
+            meta, model]
 
 
 def register_all(cli):

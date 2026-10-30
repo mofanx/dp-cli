@@ -130,6 +130,9 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'THROTTLE_FAILED':      (EXIT_RUNTIME, '网络/CPU 节流设置失败'),
     'FILE_CHOOSER_FAILED':  (EXIT_RUNTIME, '文件选择对话框处理失败'),
     'BUSY':                 (EXIT_RUNTIME, 'daemon 并发连接超限'),
+    'MODEL_DOWNLOAD_FAILED': (EXIT_CONNECT, '模型资产下载失败'),
+    'MODEL_SHA_MISMATCH':   (EXIT_RUNTIME, '模型资产 sha256 校验不一致'),
+    'MODEL_INSTALL_FAILED': (EXIT_RUNTIME, '模型解压/部署失败'),
 }
 
 

@@ -99,7 +99,7 @@ dpx catalog             # 实时命令 schema（无 skill 时自救）
 
 - **录制→回放闭环**：`dpx record-start`/`record-stop -f dp` 产出可直接 `dpx batch` 重放的脚本——每行自动挂 `||` 备用定位器回退链（css/xpath 备选），首选失效自动降级。
 - **batch 行内回退**：`a || b || c` 依次尝试直到一条成功，回报 `{fallback:{tried,used}}` 审计字段。
-- **agent 决策原语（experimental）**：`dpx agent-state` 输出 Jev 格式控件表（state+options+epoch 版本戳）；`dpx decide <目标>` 单步决策——三引擎（external/julia/jev）+ `--cascade` top-3 粗筛 + `--min-margin` 歧义门控；`dpx agent-setup` 引擎注册。波次 0 实测 Julia-1 准确率未达立项阈值，标 experimental。
+- **agent 决策原语（experimental）**：`dpx agent-state` 输出 Jev 格式控件表（state+options+epoch 版本戳）；`dpx decide <目标>` 单步决策——引擎 external/julia/jev/reranker（本地 BGE，`gh release download model-v24` 取官方权重）+ `--cascade` top-3 粗筛 + `--min-margin` 歧义门控；`dpx agent-setup` 引擎注册。**reranker 推荐 daemon/serve 常驻**：冷启模型加载 ~6s 只在首次，`dpx daemon-start`+`DPX_DAEMON=1` 或 `dpx serve` 后单次 decide ~90ms。波次 0 实测 Julia-1 准确率未达立项阈值，标 experimental。
 
 > **daemon 路由是 opt-in**：`dpx daemon-start` 只起进程不接管路由——后续命令走 daemon 需 `DPX_DAEMON=1`（或 socket 已存在时自动采用）。`requests`/`request`/`listen` 的 daemon netlog 需 0.15.3+ daemon；`serve`/`sh`/`batch`/`mcp`/`record-*`/`daemon-*`/`install`/`catalog` 始终本地执行不转发。
 

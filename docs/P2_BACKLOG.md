@@ -66,6 +66,22 @@
 | `agent.py` `_meta_decide` 序数短路 | 序数短路无页面健康守卫——sogou antispider 页"点击第一条搜索结果"确定性返 type ref=1（'搜'字命中 TYPE_INTENT），风控页上确定性动作比模型错选更危险 | 序数/序数选项短路前置 blocked/title 异常守卫；type 判定剔除目标为 link/button 角色的场景 | P2 📋已登记(待排期) |
 | `daemon.py`/`decide_train.py` `_record_decide_row` | argv 未剥 `_GLOBAL_FLAGS`——`dpx --compact decide` 录成 `chosen='--compact decide …'` 无 goal/engine_ref 垃圾行（本轮 77 条实锤，export 时静默 skip） | 录制前剥全局旗再判 `argv[0]=='decide'`；存量垃圾行 export 侧已天然过滤无需清洗 | P2 📋已登记(待排期) |
 
+## 七、decide 候选池结构性边界（v26b 真机复测归因，wontfix/契约登记）
+
+> 20 条"目标不在 top3"行真机复测：16/20 进池，剩 4 桶逐条归因——
+> 2 条实锤已修（bilibili 关注 extras `cursor+icon-child` 进池 rank1；
+> 12306 出发地回填进池 rank1），1 条半修（gov.cn 零命名→机器名兜底），
+> 1 桶目标真不存在（oschina 已下线 tab）。以下为结构性边界登记：
+
+| 现象 | 归因 | 处置 |
+|---|---|---|
+| oschina「打开问答社区」/「进入翻译资讯」目标缺席 | 站点改版 tab 真下线——真机模糊扫描 `a,li,button,[role=tab]` 全 DOM 对 '问答'/'翻译' 零命中（现 nav 为 开源资讯/软件资讯/硬件 & IoT/开源项目/开源模型），非召回缺陷 | 🚫wontfix：目标真不存在=拒答负例（正确行为是 miss/拒答）。bench 侧建议把此类行标注 expected_miss 而非计召回失败 |
+| canvas 控件（播放器画布/验证码画板/小游戏） | 结构性无 a11y 语义——CDP a11y tree 与 clickable 探测都无 DOM 语义可收 | 🚫wontfix 天生：无 DOM 语义源可补；唯一出路是视觉层（OCR/截图定位），不在 decide 候选池工程域 |
+| 跨域 iframe（v2ex turnstile/第三方登录框） | CDP `DOM.getDocument pierce`+clickable 探测均不穿透跨域 frame；frame 内元素主文档不可见 | 🚫wontfix（需独立 frame 工程）：per-frame 探测+跨 frame ref 命名空间+frame 内 JS 注入——单独排期 |
+| closed shadow root 控件 | `collectAll` 只递归 `el.shadowRoot`（open root）；closed root 对 JS/CDP 均不可枚举 | 🚫wontfix：平台结构性不可穿透，无降级可能 |
+| disabled 元素候选语义 | a11y 收 disabled 控件（fixture 实测 `button:提交(禁用)`/`textbox` 均在池）——召回层行为正确；但 `options` entry 只带 ref/role/name/current，**disabled 旗不透传**给 decide/CE，引擎可能选到 disabled 目标（点了无效，正确行为是拒/等） | 📋已登记(P2)：`_page_state` options 透传 `disabled`/`hidden` 属性子集到 option entry——动 Jev 契约+decide_train schema，需与训练数据契约同步排期 |
+| gov.cn 搜索框零命名（半修后仍 miss） | 站点 a11y 全缺：input 无 label/aria/placeholder/title/id、form 内零文本、兄弟 button 仅 `&nbsp;` 图标——`_fill_dom_names` 已扩末级 `name`/`id` 拆词兜底补出 `textbox:head Searchword`，但机器英文名↔中文 goal「搜索最新的就业政策」CE 桥接不到 top3（实测全部机器名变体 CE≈0.000，仅裸 '搜索' 0.033） | 半修+wontfix 边界：零命名→有命名是真实覆盖改进（英文/含英文词 goal 可命中）；top3 miss 属 CE 排序层语义鸿沟，非召回缺陷。更优解需 goal↔机器名翻译层或视觉兜底 |
+
 ## 汇总
 
 - **P2 合计 ~40 条**（去重后），五桶分布：状态残留 ~10 / 竞态 ~8 / 契约 ~9 / DoS ~6 / 韧性 ~7

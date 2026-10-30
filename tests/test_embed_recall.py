@@ -170,3 +170,101 @@ def test_page_state_recall_pool_expands(monkeypatch):
     st = agent._page_state(_P(), 's', max_opts=20, recall_pool=True)
     assert len(st['options']) == 55 and st['truncated'] is False
     assert st['options_total'] == 55
+
+
+# ── lexical fallback union（embed top-k ∪ lexical top3）───────────
+
+
+def _zh_opts(n, target_idx=None, target_name='提交订单'):
+    """中文 bench 形态——n 个同名噪声候选+一个字面名目标。"""
+    opts = [{'ref': i + 1, 'role': 'button', 'name': f'加入购物车 {i:02d}'}
+            for i in range(n)]
+    if target_idx is not None:
+        opts[target_idx]['name'] = target_name
+    return opts
+
+
+def test_lexical_top_scores_and_gates(monkeypatch):
+    """_lexical_top：字面名命中 score≥0.5 返回 [(idx,score)]；
+    无关名/低相似度被门控滤掉。"""
+    monkeypatch.delenv('DPX_NO_LEXICAL', raising=False)
+    opts = _zh_opts(40, target_idx=20)
+    hits = agent._lexical_top(opts, '提交订单')
+    assert hits and hits[0][0] == 20
+    assert hits[0][1] >= 0.5
+    assert all(i == 20 or s >= 0.5 for i, s in hits)
+    # 低相似度 goal——top3 全被门控滤掉
+    assert agent._lexical_top(opts, 'zzz 毫无关联 xy') == [] or \
+        all(s >= 0.5 for _, s in agent._lexical_top(opts, 'zzz 毫无关联 xy'))
+    # 英文 token 覆盖度路径
+    en = [{'ref': i + 1, 'role': 'link', 'name': f'item {i}'}
+          for i in range(10)]
+    en[5]['name'] = 'Submit Order'
+    hits = agent._lexical_top(en, 'click submit order')
+    assert hits[0][0] == 5                     # submit/order 覆盖 2/3
+
+
+def test_lexical_union_fills_embed_miss(monkeypatch):
+    """union 补缺：embed top-8 没召回字面名目标时，lexical top3 并入
+    → kept 8+1=9 进 CE。"""
+    monkeypatch.delenv('DPX_NO_LEXICAL', raising=False)
+    monkeypatch.setattr(agent, '_EMBED', _FakeEmbed())
+    opts = _zh_opts(40, target_idx=20)          # 'hit' 不在任何 name
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    o2, t2 = agent._recall_topk('提交订单', texts, opts, topk=8)
+    assert len(o2) == 9 and len(t2) == 9        # embed 8 + lexical 补 1
+    assert any(o['name'] == '提交订单' for o in o2)
+
+
+def test_lexical_union_dedup(monkeypatch):
+    """并集去重：lexical 命中的 idx 已在 embed top-k 内 → 不重复并入。"""
+    monkeypatch.delenv('DPX_NO_LEXICAL', raising=False)
+    monkeypatch.setattr(agent, '_EMBED', _FakeEmbed())
+    opts = _opts(40)
+    opts[3]['name'] = 'hit_target'              # embed+lexical 双命中
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    o2, t2 = agent._recall_topk('hit', texts, opts, topk=8)
+    assert len(o2) == 8                          # 去重后仍是 8
+    assert sum(o['name'] == 'hit_target' for o in o2) == 1
+
+
+def test_lexical_score_floor_blocks_noise(monkeypatch):
+    """score<0.5 门控：goal 与所有 name 字面无关 → lexical 零并入，
+    kept 仍是 embed 的 8。"""
+    monkeypatch.delenv('DPX_NO_LEXICAL', raising=False)
+    monkeypatch.setattr(agent, '_EMBED', _FakeEmbed())
+    opts = _opts(40)
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    o2, _ = agent._recall_topk('zzz 毫无关联', texts, opts, topk=8)
+    assert len(o2) == 8
+
+
+def test_lexical_alone_when_embed_missing(monkeypatch):
+    """embed 加载失败降级：lexical 独走召回——kept=lexical top3 子集；
+    lexical 也无命中时退回全量直排。"""
+    monkeypatch.delenv('DPX_NO_LEXICAL', raising=False)
+    monkeypatch.setattr(agent, '_EMBED', None)
+    monkeypatch.setattr(agent, '_EMBED_MISS', True)
+    opts = _zh_opts(40, target_idx=20)
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    o2, t2 = agent._recall_topk('提交订单', texts, opts)
+    assert len(o2) <= 3                          # 独走只留字面命中
+    assert any(o['name'] == '提交订单' for o in o2)
+    o3, _ = agent._recall_topk('zzz 毫无关联', texts, opts)
+    assert len(o3) == 40                         # 双路皆空→全量
+
+
+def test_dpx_no_lexical_disables_union(monkeypatch):
+    """DPX_NO_LEXICAL=1 逃生开关：lexical 整段跳过——embed 召回不补缺，
+    embed 缺失时退回全量直排（对照 DPX_NO_EMBED 惯例）。"""
+    monkeypatch.setattr(agent, '_EMBED', _FakeEmbed())
+    monkeypatch.setenv('DPX_NO_LEXICAL', '1')
+    opts = _zh_opts(40, target_idx=20)
+    texts = [f"{o['role']} {o['name']}" for o in opts]
+    o2, _ = agent._recall_topk('提交订单', texts, opts, topk=8)
+    assert len(o2) == 8                          # lexical 被关→不补缺
+    assert not any(o['name'] == '提交订单' for o in o2)
+    monkeypatch.setattr(agent, '_EMBED', None)
+    monkeypatch.setattr(agent, '_EMBED_MISS', True)
+    o3, _ = agent._recall_topk('提交订单', texts, opts)
+    assert len(o3) == 40                         # 开关下退回全量

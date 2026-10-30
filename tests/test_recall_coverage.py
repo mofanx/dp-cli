@@ -118,6 +118,24 @@ def test_page_state_fill_names_cdp_failure_tolerant(monkeypatch):
 
 
 @pytest.mark.unit
+def test_dom_name_js_machine_name_fallback():
+    """_DOM_NAME_JS 末级兜底：name/id 机器属性拆词——站点 a11y
+    全缺（gov.cn 搜索框 name="headSearchword" 零命名源）时给
+    语义寻址留钩子。断言级别存在+顺序（在 img alt 之后、return 前）
+    +拆词正则+长度/字母门控。"""
+    js = agent._DOM_NAME_JS
+    # 末级在 img alt 之后、return 之前
+    i_img = js.index("el.tagName === 'IMG'")
+    i_attr = js.index("attr('name') || (el.id || '')")
+    i_ret = js.index('return (n || ')
+    assert i_img < i_attr < i_ret
+    # camelCase/蛇形拆词正则
+    assert "([a-z0-9])([A-Z])" in js
+    # 门控：≥3 字符且含字母——防 name="t"/name="q" 噪声名
+    assert 'raw.length >= 3' in js
+
+
+@pytest.mark.unit
 def test_page_state_full_depth_snapshot(monkeypatch):
     """max_depth=None 全深度——depth=12 截断丢深层交互子树
     （baidu #kw/#su 实测只在全深度树出现）。"""

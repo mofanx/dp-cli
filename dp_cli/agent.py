@@ -74,8 +74,9 @@ def _page_state(page, session, max_opts=_TOP_K, recall_pool=False):
     - clickable_extras 并入候选：a11y 树漏收的真交互元素
       （div 频道 tab/div 按钮/隐藏 submit），探测白跑不合并即丢弃
     - 空 name DOM 回填：裸 input 无 label/placeholder 缺失时
-      从 aria-label/label[for]/相邻文本/value 补名（settings/zhihu/
-      12306/gov 实测）——语义寻址下 name='' 的候选等于不存在
+      从 aria-label/label[for]/相邻文本/value 补名，末级再以
+      name/id 机器属性拆词兜底（settings/zhihu/12306/gov 实测）
+      ——语义寻址下 name='' 的候选等于不存在
     """
     from dp_cli.snapshot.a11y import take_a11y_snapshot
     data = take_a11y_snapshot(page, max_depth=None)
@@ -169,8 +170,8 @@ def _extra_node(rec, name):
 
 
 # 空 name 回填 JS：aria-label → label[for]/closest label →
-# title/placeholder → 自有 innerText → 相邻文本节点 →
-# input[submit/button] value → img alt
+# aria-labelledby → title/placeholder → 自有 innerText → 相邻文本节点 →
+# input[submit/button] value → img alt → name/id 机器属性拆词
 _DOM_NAME_JS = r"""
 function () {
   const el = this;
@@ -226,6 +227,16 @@ function () {
       /^(submit|button|reset|checkbox|radio)$/i.test(el.type || ''))
     n = pick(el.value);
   if (!n && el.tagName === 'IMG') n = pick(el.alt);
+  if (!n) {
+    // 末级兜底：name/id 机器属性拆词——站点 a11y 全缺时给语义
+    // 寻址留钩子（gov.cn 搜索框 name="headSearchword"，无 label/
+    // placeholder/邻近文本）——camelCase/蛇形拆成可读词
+    const raw = attr('name') || (el.id || '');
+    if (raw.length >= 3 && /[A-Za-z一-鿿]/.test(raw)) {
+      n = pick(raw.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                  .replace(/[_\-.\[\]#:]+/g, ' '));
+    }
+  }
   return (n || '').slice(0, 120);
 }
 """
@@ -335,26 +346,76 @@ def _embed_model():
     return _EMBED
 
 
+_LEXICAL_K = 3           # lexical 补缺并入 CE 的上限（union k+≤3）
+_LEXICAL_FLOOR = 0.5     # lexical score 门控——低于此算噪声不并入
+
+
+def _goal_tokens(goal):
+    """goal 分词——ASCII 词与 CJK 连续段各成一个 token（中英通用）。"""
+    return re.findall(r'[a-z0-9_]+|[一-鿿]+', goal.lower())
+
+
+def _lexical_top(opts, goal, k=_LEXICAL_K):
+    """lexical 召回补缺——goal↔候选 name 字面匹配 top-k（stdlib 零依赖）。
+
+    score = max(token 覆盖度, name⊂goal 直含, SequenceMatcher 相似度)：
+      - 覆盖度：goal 分词后出现在 name 里的 token 占比
+        （'click submit order'→'Submit Order' 覆盖 2/3）
+      - 直含：候选 name 是 goal 子串（'提交订单'⊂'点提交订单'，
+        限 len≥2 防单字名误中）
+      - 相似度：difflib 编辑相似度兜底（'提交订单'↔'点击提交订单按钮'）
+    返回 [(idx, score)] score≥_LEXICAL_FLOOR 的 top-k，按分降序。
+    """
+    import difflib
+    g = goal.lower().strip()
+    toks = _goal_tokens(goal)
+    if not g or not toks:
+        return []
+    scored = []
+    for i, o in enumerate(opts):
+        n = (o.get('name') or '').lower().strip()
+        if not n:
+            continue
+        cov = sum(1 for t in toks if t in n) / len(toks)
+        s = max(cov, difflib.SequenceMatcher(None, g, n).ratio())
+        if len(n) >= 2 and n in g:
+            s = max(s, 1.0)
+        if s >= _LEXICAL_FLOOR:
+            scored.append((i, s))
+    scored.sort(key=lambda x: (-x[1], x[0]))
+    return scored[:k]
+
+
 def _recall_topk(goal, texts, opts, topk=None, total=None):
-    """embedding 余弦召回 topk——候选超阈值时先粗排再过 CrossEncoder。
+    """embedding 余弦召回 topk ∪ lexical top3——粗排后过 CrossEncoder。
 
     total=截断前原始候选数（state['options_total']）——触发判定看
     原始数而非截断后 len(opts)，否则 opts≤top_k<阈值时永不触发。
-    返回 (子集 opts, 子集 texts)；embedding 不可用返回原列表降级。"""
+    union 形态：embed kept_idx ∪ lexical top3 idx 去重——字面重名/
+    近名候选 embed 可能漏召（语义空间重名簇挤位），lexical 层
+    用 token 覆盖/子串/编辑相似度补进 CE（DPX_NO_LEXICAL=1 关）。
+    embedding 不可用时 lexical 独走——降级下仍是免费召回层；
+    lexical 也无命中才退回全量直排。返回 (子集 opts, 子集 texts)。"""
     topk = topk or _EMBED_TOPK
     if (total if total is not None else len(opts)) <= _EMBED_THRESHOLD:
         return opts, texts
     if len(opts) <= topk:
         return opts, texts                      # 池已≤topk，召回是恒等
+    keep = []
     m = _embed_model()
-    if m is None:
-        return opts, texts                    # 降级：全量直排
-    import numpy as np
-    ve = np.asarray(m.encode([goal] + texts,
-                             normalize_embeddings=True))
-    sims = (ve[1:] @ ve[0]).tolist()
-    idx = sorted(range(len(sims)), key=lambda i: -sims[i])[:topk]
-    return [opts[i] for i in idx], [texts[i] for i in idx]
+    if m is not None:
+        import numpy as np
+        ve = np.asarray(m.encode([goal] + texts,
+                                 normalize_embeddings=True))
+        sims = (ve[1:] @ ve[0]).tolist()
+        keep = sorted(range(len(sims)), key=lambda i: -sims[i])[:topk]
+    if not os.environ.get('DPX_NO_LEXICAL'):
+        for li, _s in _lexical_top(opts, goal):
+            if li not in keep:                  # 去重——embed 已留的不重入
+                keep.append(li)
+    if not keep:
+        return opts, texts                      # 双路皆空——全量直排兜底
+    return [opts[i] for i in keep], [texts[i] for i in keep]
 _RERANKER_FAM = None        # 'bge'|'minilm'——tier 封顶判据
 _ORT_MOD = None            # onnxruntime 可用性缓存（False=不可用）
 

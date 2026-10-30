@@ -2,7 +2,7 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.15.27] - 2026-10-30
 
 ### 新增（v28 权重+盲区采集通道）
 - **eval-120 91.7→95.0**：zh-en 47 行跨语定向+hardneg 24 行一次实训，`model-v28` release 双 asset（fp32+int8），`model pull` 指向 v28

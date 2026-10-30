@@ -65,9 +65,10 @@ def load_rows(path):
 
 
 def summarize(rows):
-    """条数/conf 分布/触发形态/引擎/schema_v 分布/高频 goal+url
-    （miss 形态代理）。"""
-    conf_b, marg_b, trig, eng, msrc, sv = (Counter() for _ in range(6))
+    """条数/conf 分布/触发形态/引擎/schema_v/prov 分布/高频
+    goal+url（miss 形态代理）。"""
+    conf_b, marg_b, trig, eng, msrc, sv, prov = (
+        Counter() for _ in range(7))
     goals, urls, unsure = Counter(), Counter(), 0
     for r in rows:
         conf_b[_bucket(r.get('conf'), _CONF_BUCKETS)] += 1
@@ -77,6 +78,7 @@ def summarize(rows):
         eng[r.get('engine') or '?'] += 1
         msrc[r.get('margin_source') or '?'] += 1
         sv[f"v{r.get('schema_v') or 1}"] += 1
+        prov[r.get('prov') or 'passive'] += 1   # 无 prov=被动落盘行
         unsure += bool(r.get('unsure'))
         if r.get('goal'):
             goals[r['goal']] += 1
@@ -87,7 +89,7 @@ def summarize(rows):
             'margin_buckets': dict(marg_b),
             'triggers': dict(trig), 'engines': dict(eng),
             'margin_source': dict(msrc),
-            'schema_v': dict(sv),
+            'schema_v': dict(sv), 'prov': dict(prov),
             'top_goals': goals.most_common(10),
             'top_urls': urls.most_common(10)}
 
@@ -110,6 +112,13 @@ def review_rows(rows, limit=None):
                     'margin_source': r.get('margin_source'),
                     'triggers': r.get('triggers'),
                     'unsure': r.get('unsure'),
+                    # escalate 反哺行透传（schema_v=2 可选字段）——
+                    # prov='escalate_feedback' 行带已确认 chosen_ref
+                    # +可选 post_state 证据，复核清单可辨来源
+                    'prov': r.get('prov'),
+                    'feedback': r.get('feedback'),
+                    'chosen_ref': r.get('chosen_ref'),
+                    'post_state': r.get('post_state'),
                     'candidates': r.get('candidates'),
                     'ts': r.get('ts'), 'session': r.get('session')})
         if limit and len(out) >= limit:

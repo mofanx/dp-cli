@@ -687,17 +687,29 @@ def _first_step(goal: str) -> str:
     g = goal.strip()
     # '先' 前缀剥掉——'先填A再点B'/'先填A' 统一走首步段切分
     g2 = re.sub(r'^\s*先', '', g)
-    # 否定前置段剥离——'别点A点B'/'不要A，去B' 的 A 段是反目标，
-    # 不剥则 reranker 被否定词的对象拉偏（eval-120 m29 '别点删除点
-    # 归档'→误中 Delete 归因）；剥离后只留 B 段打分。排除集含动作
-    # 动词字保证剥离段至少含一个非动词目标词（'禁止点击这里'类纯
-    # 否定不剥）。
-    m = re.match(r'^\s*(?:别|不要|不用|不需要|不必|无需|请勿|千万别|禁止)'
+    # '不是X的' 中置否定定语剥离——'选不是"取消"的那个' 的
+    # '不是"取消"的' 是修饰定语非正选目标，剥掉整段只留正选
+    # （eval-120 m30 miss 归因：'取消'字面量把 reranker 拉向
+    # 否定对象）。剥后正选段不足 2 字不动（'我不是故意的'类
+    # 防误伤）；剥过则尾部返回 g2 形态（否则仍回原 goal）。
+    _ns = re.sub(r'不是[^，,、。；]+?的', '', g2)
+    _ns_hit = _ns != g2 and len(_ns.strip('，,、 ')) >= 2
+    if _ns_hit:
+        g2 = _ns
+    # 否定前置段剥离——'别点A点B'/'不要A，去B'/'不是A是B'/'不要A要B'
+    # 的 A 段是反目标，不剥则 reranker 被否定词的对象拉偏
+    # （eval-120 m29 '别点删除点归档'→误中 Delete 归因）；剥离后
+    # 只留 B 段打分。排除集含动作动词字保证剥离段至少含一个非
+    # 动词目标词（'禁止点击这里'类纯否定不剥）；lookahead 含
+    # '是/要' 覆盖 '不是X是Y'/'不要X要Y' 对举句式，剥后连接字
+    # '是/要' 一并清掉只留正选。
+    m = re.match(r'^\s*(?:别|不要|不用|不需要|不必|无需|请勿|千万别|禁止'
+                 r'|不是)'
                  r'\s*(?:点击|点|按|选|击|碰|删|勾|填|输|进|去)?'
                  r'[^点按选击填输去，,、。；]+?[，,、]?\s*'
-                 r'(?=[点按选击填输去])', g2)
+                 r'(?=[点按选击填输去是要])', g2)
     if m:
-        rest = g2[m.end():].strip('，,、 ')
+        rest = g2[m.end():].strip('，,、 是要')
         if len(rest) >= 2:
             return rest
     # '再/然后/接着/随后/之后' 作分步分隔符，首步段 ≥2 字才截
@@ -708,7 +720,9 @@ def _first_step(goal: str) -> str:
     m = re.match(r'^\s*(.+?)\s+then\b', g, re.IGNORECASE)
     if m and len(m.group(1).strip('，,、 ')) >= 2:
         return m.group(1).strip('，,、 ')
-    return g
+    # '不是X的' 剥离命中但无其他切分规则——返回净化后的 g2
+    # （'选不是"取消"的那个'→'选那个'）；未剥过仍回原 goal
+    return g2 if _ns_hit else g
 
 # meta 决策=状态判断非语义排序——规则判定，不外包给概率模型
 # （实测：语义学习对 done/blocked/scroll 零增益，meta 桶 42.9% 纹丝不动）
@@ -735,6 +749,23 @@ _WAIT_KW = ('等待', '加载', 'wait', 'load', 'settle', '稍等',
 _SCROLL_UP_KW = ('顶部', '向上', 'top', 'scroll up')
 _SCROLL_KW = ('下方', '页底', '更多', '滚动', '向下', 'scroll', 'more',
               'below', 'find', '找到', '查看全部')
+
+# 动作词族——goal 词与候选 name 的同族映射（词界信号非语义相似）。
+# 族内词互视为同义：goal 命中任一词、候选名命中任一词即同族。
+# 只收高确定性动作域（误族=误选元素，族词歧义大的一律不收）
+_ACTION_FAMILY = ({'结算', '结账', '买单', '付款', '支付', '下单',
+                   '收银', 'checkout'},
+                  )
+# 字号符号按钮——goal 调大/调小意图 ↔ name 规范符号形态。
+# 只收 'a+'/'a-'/'+'/'-' 等 canonical 形态——'C++'/'100+' 类
+# 内容名不误中（eval-120 m14：'A-'/'A+' CE 分差 0.0004 不可分，
+# 语义在符号上模型学不到）
+_FONT_UP_KW = ('调大', '放大', '加大', '变大', '增大',
+               'larger', 'bigger', 'zoom in')
+_FONT_DN_KW = ('调小', '缩小', '变小', '减小',
+               'smaller', 'zoom out')
+_FONT_PLUS_NAME = {'a+', '+', '＋'}
+_FONT_MINUS_NAME = {'a-', '-', '−', '－'}
 
 
 def _kw_hit(kw, g, goal):
@@ -897,6 +928,14 @@ def _ordinal_n(g, goal):
     m = re.search(r'(?<![\d十百千初期周拜第])([二三四五六七八九])\s*$', goal)
     if m:
         return _CN_NUM[m.group(1)]
+    # 口语中置序数'地址二设成X/方案三改成Y'——数词+动作动词字的中段
+    # 形态（eval-120 m11 '把地址二设成收货地址' 归因：尾序数 \s*$ 锚
+    # 只收句尾，漏中段）。动作动词 lookahead 守词界防'二话不说/
+    # 二维码/三好学生'类数词词内误中——后接非动作字不判序数
+    m = re.search(r'(?<![\d十百千初期周拜第])([二三四五六七八九])'
+                  r'(?=[设选定改调换作为当])', goal)
+    if m:
+        return _CN_NUM[m.group(1)]
     if '最后' in goal or re.search(r'\blast\b', g):
         return -1
     mw = re.search(r'\b(\d+)(?:st|nd|rd|th)\b', g)
@@ -914,7 +953,9 @@ def _meta_decide(state, goal):
     规则（与状态信号对应）：
       blocked  选项/title 含验证码特征词
       done     无候选 OR（goal 含完成意图 AND title/url 含完成态词）
+      ordinal  goal 含序数定位（第N个/尾数词/中置数词+动词）→ 直解 ref
       scroll   goal 含滚动/查找意图且目标名不在候选内
+      元素直解 动作词族唯一命中 / 字号符号按钮唯一命中
     """
     opts = state['options']
     title = (state['state'].get('title') or '').lower()
@@ -967,6 +1008,38 @@ def _meta_decide(state, goal):
     if sd_hit and not any(_kw_hit(k, names, names) for k in sd_hit):
         return {'action': 'scroll_down', 'deterministic': True,
                 'reason': 'goal 含向下滚动/查找意图'}
+    # ── 确定性元素直解（词界/符号信号，非语义排序）──
+    # goal 侧统一吃 _first_step 截断形态——'别点A点B' 的 A 段否定词
+    # 不得命中族词（'不要点结算点取消' 不剥会误选结算按钮）
+    g_fs = _first_step(goal).lower()
+    # 动作词族唯一命中——'结算购物车'→'去结算'：goal 与 name 字面
+    # 同族是强词界信号，而 'Continue shopping' 只是语义近把模型
+    # 拉偏（eval-120 m09 归因）。唯一性是安全带——同族多候选=
+    # 真歧义，留模型排序不短路
+    for fam in _ACTION_FAMILY:
+        if not any(_kw_hit(k, g_fs, g_fs) for k in fam):
+            continue
+        hits = [o for o in opts
+                if any(_kw_hit(k, (o.get('name') or '').lower(),
+                               o.get('name') or '') for k in fam)]
+        if len(hits) == 1:
+            o = hits[0]
+            return {'action': _goal_action(goal, o['role']),
+                    'ref': o['ref'], 'deterministic': True,
+                    'reason': f'goal 动作词族唯一命中（{o["name"]}）'}
+    # 字号符号按钮——'调大一号'类 goal 语义全在 +/- 符号上，name
+    # 字面为零模型学不到（eval-120 m14：'A-'/'A+' 分差 0.0004）。
+    # 只收规范形态防 'C++'/'100+' 内容名误中；唯一性同上
+    for kws, syms in ((_FONT_UP_KW, _FONT_PLUS_NAME),
+                      (_FONT_DN_KW, _FONT_MINUS_NAME)):
+        if not any(_kw_hit(k, g_fs, g_fs) for k in kws):
+            continue
+        hits = [o for o in opts
+                if (o.get('name') or '').strip().lower() in syms]
+        if len(hits) == 1:
+            return {'action': 'click', 'ref': hits[0]['ref'],
+                    'deterministic': True,
+                    'reason': 'goal 字号意图+规范符号按钮唯一命中'}
     return None
 
 
@@ -1420,3 +1493,62 @@ def register(cli):
                msg=f'{len(rows)} 条训练对已导出')
         else:
             click.echo(payload)
+
+    @cli.command('decide-feedback')
+    @click.argument('goal')
+    @session_option
+    @click.option('--chosen-ref', type=int, required=True,
+                  help='上层升级后实际选用并执行成功的 ref')
+    @click.option('--success', is_flag=True, default=False,
+                  help='执行成功证据旗——fail-closed：缺省不落盘')
+    @click.option('--post-state', default=None,
+                  help='执行后状态证据 JSON（可选，如 '
+                       '\'{"url":"https://…"}\'）')
+    def decide_feedback(goal, session, chosen_ref, success, post_state):
+        """escalate 反哺回写：decide 升级后上层自答成功的正例落盘。
+
+        闭环场景：`dpx decide` 返回 should_escalate=true
+        （confidence_tier=low / tier=refuse）→ 上层调 LLM/换策略
+        自行答出 chosen_ref → 执行成功（页面有变化）→ 本命令把
+        正例回写 ~/.dp_cli/hard_cases.jsonl（prov='escalate_feedback'
+        +feedback='escalated'，schema_v=2 可选字段，review_hard_cases
+        透传）——升级后答对的经验不再丢，攒成主动学习原料。
+
+        fail-closed：--success 证据旗缺省不落盘——"答对"须带
+        执行成功证据；--post-state 可附执行后快照佐证。
+        serve 渠道等价请求：{"argv":["decide-feedback","<goal>",
+        "--chosen-ref","N","--success"]}。
+
+        \b
+        示例:
+          dpx decide-feedback "点归档" --chosen-ref 3 --success \\
+              --post-state '{"url":"https://x/inbox"}'
+        """
+        ps = None
+        if post_state:
+            try:
+                ps = json.loads(post_state)
+            except json.JSONDecodeError as e:
+                error(f'--post-state 非合法 JSON: {e}',
+                      code='INVALID_ARGS')
+                return
+            if not isinstance(ps, dict):
+                error('--post-state 须为 JSON 对象',
+                      code='INVALID_ARGS')
+                return
+        if not success:
+            error('缺 --success 证据旗——无执行成功证据不反哺落盘',
+                  code='FEEDBACK_REJECTED')
+            return
+        from dp_cli.decide_train import log_escalate_feedback
+        if log_escalate_feedback(session, goal, chosen_ref,
+                                 escalate=True, success=True,
+                                 post_state=ps):
+            ok({'logged': True, 'goal': goal,
+                'chosen_ref': chosen_ref,
+                'prov': 'escalate_feedback',
+                'feedback': 'escalated'},
+               msg='escalate 反馈已落盘')
+        else:
+            error('反馈未落盘（DPX_HARD_CASES=0 已关或参数不足）',
+                  code='FEEDBACK_REJECTED')

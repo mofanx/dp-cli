@@ -8,7 +8,7 @@
 | 形态 | 来源 | 字段 | 判据 | 入库条件 | prov | 证据级别 |
 |---|---|---|---|---|---|---|
 | verified_real | drive_verified_*.jsonl 采集器 / decide_train.jsonl 经 `promote_recorded` 提升 | `query` `ref`(→evidence.chosen_ref) `action.argv` `evidence:{url,before_refs,chosen_ref,action:{argv,exit,result},before:{expr,result},after:{expr,expected,result}}` `positive` `negatives` `post_state`（录制行） | `eligible()` = `src=='verified_real'` + `page` 是 http/https + `has_outcome_evidence()`（before/after 同 expr、exit=0、三段 status=ok、old≠expected 且 new==expected、positive/negatives 与 before_refs 渲染一致、argv 指向 chosen_ref） | 真实执行 + 断言证据：采集器现场断言，或录制行 pre/post 快照 **url diff** 推导断言（`prov='record_derived'`，merge 须 `--allow-derived` 显式放行） | `verified_real`（现场断言）/ `record_derived`（快照推导） | **标签级**——执行后证据背书，唯一默认可入训形态 |
-| hard_case | `decide_train._maybe_log_hard_case` 被动落盘 ~/.dp_cli/hard_cases.jsonl（**默认开启**——`DPX_HARD_CASES` 缺省 `'1'`，`=0` 显式关） | `ts` `session` `goal` `url` `engine` `action` `engine_ref` `conf` `margin` `margin_source` `tier` `unsure` `triggers` `schema_v` `options_total` `candidates[{ref,name,role,score?}]`——**schema_v=2 起 candidates 录全池**（`state['options']` 完整集，cap `_HARD_POOL_CAP=300` 对齐 `_EMBED_POOL_MAX`；计分集候选带 `score`、池内未计分 `score` 缺省）；**无 `schema_v` 字段的旧行=v1**（probs top3 截断），下游解析按 v 分流 | `conf<0.5`（low_conf）或 top2 `margin<0.1`（low_margin）或 `conf≥0.8` 且录制行 `post_delta=[]`（high_conf_no_effect——`_record_decide_row` 双快照齐才挂字段，字段缺失不触发；补 conf=1.0 自信错选采集盲区） | **本身不是标签是待标注池**——须经 `review_hard_cases.py --emit-teacher` 出模板（v2 行候选经 `_pick_teacher_cands` 干扰度取样至 `_TEACHER_CAND_MAX=32`：计分候选+同名/同 role 高干扰优先而非纯前 N）、LLM 填 chosen_ref/negatives、**`--promote-teacher` 显式确认门**校验转正 `prov='teacher'`、再过泄漏三闸才可入训；`export_pairs` 不读此文件 | `hard_case`（落盘行无 prov 字段；转模板后 `teacher_pending`） | **采集池级**——低置信信号，仅作主动学习原料 |
+| hard_case | `decide_train._maybe_log_hard_case` 被动落盘 ~/.dp_cli/hard_cases.jsonl（**默认开启**——`DPX_HARD_CASES` 缺省 `'1'`，`=0` 显式关）；另有 **escalate 反哺主动回写**通道 `decide-feedback`/`log_escalate_feedback` | `ts` `session` `goal` `url` `engine` `action` `engine_ref` `conf` `margin` `margin_source` `tier` `unsure` `triggers` `schema_v` `options_total` `candidates[{ref,name,role,score?}]`——**schema_v=2 起 candidates 录全池**（`state['options']` 完整集，cap `_HARD_POOL_CAP=300` 对齐 `_EMBED_POOL_MAX`；计分集候选带 `score`、池内未计分 `score` 缺省）；**无 `schema_v` 字段的旧行=v1**（probs top3 截断），下游解析按 v 分流。schema_v=2 可选字段：`prov` `feedback` `chosen_ref` `post_state`——escalate 反哺行专用，`review_hard_cases` 透传 | `conf<0.5`（low_conf）或 top2 `margin<0.1`（low_margin）或 `conf≥0.8` 且录制行 `post_delta=[]`（high_conf_no_effect——`_record_decide_row` 双快照齐才挂字段，字段缺失不触发；补 conf=1.0 自信错选采集盲区）或 `escalate_feedback`（主动回写：`dpx decide-feedback` 收 `{goal, chosen_ref, escalate:true, success:true, post_state?}`——decide `should_escalate` 升级后上层自答且**执行成功**的正例；**fail-closed：无 success 证据旗不落盘**） | **本身不是标签是待标注池**——须经 `review_hard_cases.py --emit-teacher` 出模板（v2 行候选经 `_pick_teacher_cands` 干扰度取样至 `_TEACHER_CAND_MAX=32`：计分候选+同名/同 role 高干扰优先而非纯前 N）、LLM 填 chosen_ref/negatives、**`--promote-teacher` 显式确认门**校验转正 `prov='teacher'`、再过泄漏三闸才可入训；`export_pairs` 不读此文件 | `hard_case`（被动落盘行无 prov 字段；转模板后 `teacher_pending`）；`escalate_feedback`（反哺回写行 prov 标记+`feedback='escalated'`） | **采集池级**——低置信信号与升级后答对正例，仅作主动学习原料 |
 | teacher | gen_teacher_*.py 生成 teacher_hardneg*.jsonl / hard_case 模板经 LLM 回填 + `--promote-teacher` 转正 | `query`(`goal`) `positive` `negatives` `candidates` `chosen_ref`（hard_case 转正模板特有，标注位） `page` `teacher_note` | LLM/教师标注 + 三道质量闸：闸1 query×EVAL_CASES 全 goal exact+子串泄漏检测；闸2 miss case 候选串零复用（pos+neg 双查）；闸3 方向对称闸（方向族 pos/neg 双向成对，单极性无镜像断言失败）+ query 去重 + pos∉negs；**hard_case 转正先过 `promote_teacher` 门**：chosen_ref 已填且 ∈ candidate_refs、negatives 非空、query 非空、pos∉negs 四条件齐备才写 `prov='teacher'` | `src='teacher_hardneg'` 过不了 `eligible()`——默认拒收，须 `--allow-unverified`（merge_train/train_reranker）显式放行；未回填/未转正模板行 `prov='teacher_pending'` 同样拒收；**手动改 prov 不绕过门检**——缺 chosen_ref/negatives 的伪标注过不了 `--promote-teacher`，也不该进任何 merge 源 | `teacher`（hard_case 转正）`teacher_hardneg` `teacher_hardneg_r2` …（`teacher*` 家族）；待标注态 `teacher_pending` | **弱标注级**——人工/教师标注但无执行证据，显式旗标放行才入训 |
 
 ## 证据层级与"何时进训练"
@@ -43,6 +43,16 @@
   `~/.dp_cli/sessions/decide_train.jsonl`）；hard_case 采集池是
   **默认开**——一个主动录制交互命令、一个被动攒低置信候选，
   两文件并行互不替代。
+- **escalate 反哺回写（`dpx decide-feedback`）**：decide 返回
+  `should_escalate=true`（confidence_tier=low / tier=refuse）后
+  上层自行答出并**执行成功**的 `chosen_ref`，由调用方显式回写
+  `prov='escalate_feedback'`+`feedback='escalated'` 行——同一
+  hard_cases.jsonl、同一总闸与文件锁。**fail-closed**：`--success`
+  证据旗缺省不落盘（`--post-state` 可附执行后快照佐证）；
+  serve 渠道等价请求 `{"argv":["decide-feedback","<goal>",
+  "--chosen-ref","N","--success"]}`。反哺行是"升级后答对"的
+  弱证据原料——`chosen_ref` 由上层声明非引擎核验，仍属采集池
+  须过 teacher 门才可入训。
 - **teacher_pending→teacher 显式确认门**：`--emit-teacher` 产出的
   模板行 `prov='teacher_pending'` 是待标注态。LLM 回填后必须经
   `review_hard_cases.py --promote-teacher IN --promote-out OUT`

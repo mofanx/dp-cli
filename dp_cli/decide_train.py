@@ -17,6 +17,10 @@ decide 低置信候选（conf<0.5 或 top2 margin<0.1）写
 _record_decide_row 双快照齐才挂——执行后页面零变化）且
 conf≥0.8 → triggers 'high_conf_no_effect'，补 conf=1.0
 自信错选采集盲区；post_delta 字段缺失不触发防误伤。
+escalate 反哺通道：decide 升级（should_escalate）后上层自答
+成功 → decide-feedback 命令/log_escalate_feedback 回写
+prov='escalate_feedback'+feedback='escalated' 行（fail-closed
+须 success 证据旗，见 bench/DATA_SCHEMA.md）。
 schema_v=2 起 candidates 录全池（state['options'] 完整集，
 计分集带 score、未计分 score 缺省）；旧行无 schema_v 字段
 =v1 probs top3 截断版，下游解析按 v 分流。
@@ -118,6 +122,23 @@ def _hard_file() -> Path:
 
 def _hard_lock_path() -> Path:
     return Path.home() / '.dp_cli' / 'hard_cases.lock'
+
+
+def _hard_append(row: dict) -> None:
+    """hard_cases.jsonl 追加一行——进程内线程锁 + 跨进程
+    spawn-lock 双保险（netlog 同款），serve/daemon/CLI 并存写
+    不撕裂；OSError/锁超时静默不阻塞调用方。"""
+    f = _hard_file()
+    with _hard_lock:
+        try:
+            from dp_cli.daemon import _acquire_spawn_lock
+            f.parent.mkdir(parents=True, exist_ok=True)
+            with _acquire_spawn_lock(_hard_lock_path(), timeout=5):
+                with f.open('a', encoding='utf-8') as fp:
+                    fp.write(json.dumps(row, ensure_ascii=False) + '\n')
+                _maybe_trim(f)
+        except (OSError, TimeoutError):
+            pass
 
 
 def _ref_meta(session: str, state: dict = None) -> dict:
@@ -254,24 +275,57 @@ def _maybe_log_hard_case(result: dict, session: str, goal: str = None,
             # 即扩池仍被 _EMBED_POOL_MAX/本cap 截断，下游可知池外有遗
             row['options_total'] = (state.get('options_total')
                                     or len(opts))
-        f = _hard_file()
-        with _hard_lock:
-            try:
-                from dp_cli.daemon import _acquire_spawn_lock
-                f.parent.mkdir(parents=True, exist_ok=True)
-                with _acquire_spawn_lock(_hard_lock_path(), timeout=5):
-                    with f.open('a', encoding='utf-8') as fp:
-                        fp.write(json.dumps(row, ensure_ascii=False)
-                                 + '\n')
-                    _maybe_trim(f)
-            except (OSError, TimeoutError):
-                pass
+        _hard_append(row)
     except Exception as e:
         try:
             from dp_cli.output import debug
             debug('hard-case 落盘异常（已忽略）', e)
         except Exception:
             pass
+
+
+def log_escalate_feedback(session: str, goal: str, chosen_ref,
+                          escalate: bool = True,
+                          success: bool = False,
+                          post_state: dict = None) -> bool:
+    """escalate 反哺回写——decide 升级后上层自答成功的正例落盘。
+
+    场景闭环：decide 返回 should_escalate=true（tier=low/refuse）
+    → 上层（LLM/换策略）自行答出 chosen_ref 并执行成功
+    （post_delta 非空为可选证据）→ 本函数把该正例回写
+    hard_cases.jsonl：prov='escalate_feedback' +
+    feedback='escalated' 标记（schema_v=2 契约内可选字段，
+    review_hard_cases 透传）——把"升级后答对"从黑洞变成
+    主动学习原料（上层答错的不写，由低置信落盘原通道覆盖）。
+
+    fail-closed：success 非真或 escalate 非真一律不落——无执行
+    成功证据的"答对"不成立；goal 空/chosen_ref 空同样拒收。
+    DPX_HARD_CASES=0 总闸对本通道同效。返回 True=已落盘。
+    """
+    if not (escalate and success):
+        return False
+    if not isinstance(goal, str) or not goal.strip():
+        return False
+    if chosen_ref is None:
+        return False
+    if not hard_cases_enabled():
+        return False
+    row = {'ts': int(time.time()), 'session': session,
+           'schema_v': _HARD_SCHEMA_V,
+           'prov': 'escalate_feedback',      # 来源标记——与被动
+                                            # 落盘行（无 prov）区分
+           'feedback': 'escalated',          # 升级后答对语义标
+           'goal': goal, 'url': _hard_url(session, None),
+           'chosen_ref': chosen_ref,         # 上层升级后实选 ref
+           'triggers': ['escalate_feedback'],
+           'candidates': []}                 # 反馈形态无候选池快照
+    if isinstance(post_state, dict) and post_state:
+        row['post_state'] = post_state       # 可选执行后证据
+    try:
+        _hard_append(row)
+        return True
+    except Exception:
+        return False                         # 旁路绝不炸调用方
 
 
 def record(session: str, argv: list, refs: dict,

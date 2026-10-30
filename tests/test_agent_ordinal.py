@@ -86,6 +86,26 @@ def test_first_step_negation_strip():
     assert _first_step('千万别按取消按确认') == '按确认'
 
 
+def test_first_step_negation_bushi_yaoshi_forms():
+    """'不是X是Y'/'不要X要Y' 对举句式——lookahead 含 是/要，
+    剥掉否定段+连接字只留正选（m 系同形态一并覆盖）。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('不是删除是归档') == '归档'
+    assert _first_step('不要删除要归档') == '归档'
+    assert _first_step('别点左边是右边') == '右边'
+    assert _first_step('不是点取消是点确认') == '点确认'
+
+
+def test_first_step_negation_mid_clause_strip():
+    """m30 归因——'选不是"取消"的那个' 中置否定定语剥离，
+    '取消'字面量不再把 reranker 拉向否定对象。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('选不是"取消"的那个') == '选那个'
+    assert _first_step('点不是红色的那个按钮') == '点那个按钮'
+    # 否定定语剥掉后与再-切分串联：先剥定语再截首步
+    assert _first_step('选不是"取消"的那个再点提交') == '选那个'
+
+
 def test_first_step_negation_no_false_strip():
     """纯否定/无第二动作段不剥——'禁止点击这里' 剥离后反而更糟。"""
     from dp_cli.agent import _first_step
@@ -93,6 +113,13 @@ def test_first_step_negation_no_false_strip():
     assert _first_step('别客气') == '别客气'
     assert _first_step('不要删除任何文件') == '不要删除任何文件'
     assert _first_step('点除了"取消"以外的确认按钮') == '点除了"取消"以外的确认按钮'
+
+
+def test_first_step_bushi_clause_no_false_strip():
+    """'不是X的'剥空防误伤——剥后正选段不足 2 字回原 goal。"""
+    from dp_cli.agent import _first_step
+    assert _first_step('我不是故意的') == '我不是故意的'
+    assert _first_step('不是我的错') == '不是我的错'
 
 
 def test_ordinal_tail_num():
@@ -270,3 +297,111 @@ def test_goal_action_textbox_no_intent_click():
     # 非 type 族角色不受影响
     assert _goal_action('reply to this thread', 'combobox') == 'select'
     assert _goal_action('reply to this thread', 'button') == 'click'
+
+
+# ── 中置口语序数（m11 归因）──────────────────────────────
+
+def test_ordinal_mid_clause_num():
+    """m11 归因——'地址二设成X' 中段序数：数词+动作动词字。"""
+    assert _ordinal_n('x', '把地址二设成收货地址') == 2
+    assert _ordinal_n('x', '把方案三改成默认') == 3
+    assert _ordinal_n('x', '选地址四作为备用') == 4
+    assert _ordinal_n('x', '把标签五调换位置') == 5
+
+
+def test_ordinal_mid_clause_no_false():
+    """中段数词后接非动作字不误中——熟语/量词/时间词。"""
+    assert _ordinal_n('x', '二话不说直接点') is None      # '二话'
+    assert _ordinal_n('x', '扫二维码登录') is None         # '二维'
+    assert _ordinal_n('x', '初三开学了') is None           # 时间词
+    assert _ordinal_n('x', '三好学生名单') is None         # '三好'
+
+
+def test_meta_ordinal_mid_clause_ref():
+    """m11 形态——中置序数走 meta 短路直解第N个候选。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'radio', 'name': '公司'},
+                      {'ref': 2, 'role': 'radio', 'name': '家'},
+                      {'ref': 3, 'role': 'radio', 'name': '学校'},
+                      {'ref': 4, 'role': 'button', 'name': '确认'}],
+          'state': {'title': 'Address picker', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '把地址二设成收货地址')
+    assert r and r['action'] == 'click' and r['ref'] == 2
+
+
+# ── 动作词族唯一命中（m09 归因）──────────────────────────
+
+def test_meta_action_family_checkout():
+    """m09 归因——'结算购物车' 被 'Continue shopping' 语义拉偏；
+    '结算'↔'去结算' 同族词唯一命中直解 ref。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'link', 'name': 'Continue shopping'},
+                      {'ref': 2, 'role': 'button', 'name': 'Clear'},
+                      {'ref': 3, 'role': 'link', 'name': 'Wishlist'},
+                      {'ref': 4, 'role': 'button', 'name': '去结算'}],
+          'state': {'title': 'Cart page', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '结算购物车')
+    assert r and r['action'] == 'click' and r['ref'] == 4
+    r = _meta_decide(st, '我要结账')          # 族内互视为同义
+    assert r and r['action'] == 'click' and r['ref'] == 4
+
+
+def test_meta_action_family_unique_guard():
+    """同族多候选=真歧义→不短路交模型；goal 无族词也不触发。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'button', 'name': '去结算'},
+                      {'ref': 2, 'role': 'link', 'name': '结算规则'},
+                      {'ref': 3, 'role': 'link', 'name': '返回'}],
+          'state': {'title': 'Page', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st, '去结算') is None            # 双命中歧义
+    st2 = {'options': [{'ref': 1, 'role': 'button', 'name': '去结算'}],
+           'state': {'title': 'Page', 'url': 'https://x'},
+           'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st2, '随便逛逛') is None          # goal 无族词
+
+
+def test_meta_action_family_negated_goal_no_fire():
+    """'别点结算点取消'——_first_step 剥否定段后 '结算' 不命中。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'button', 'name': '去结算'},
+                      {'ref': 2, 'role': 'button', 'name': '取消订单'}],
+          'state': {'title': 'Cart', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '别点结算点取消')
+    assert not (r and r.get('ref') == 1)
+
+
+# ── 字号符号按钮（m14 归因）─────────────────────────────
+
+def test_meta_font_size_symbol_buttons():
+    """m14 归因——A+/A- 符号按钮无语义可分，规范形态直解。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'button', 'name': 'A-'},
+                      {'ref': 2, 'role': 'button', 'name': 'Theme'},
+                      {'ref': 3, 'role': 'button', 'name': 'A+'},
+                      {'ref': 4, 'role': 'button', 'name': 'Print'}],
+          'state': {'title': 'Reader', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    r = _meta_decide(st, '把字体调大一号')
+    assert r and r['action'] == 'click' and r['ref'] == 3
+    r = _meta_decide(st, '字体缩小一点')
+    assert r and r['action'] == 'click' and r['ref'] == 1
+    r = _meta_decide(st, 'make text larger')
+    assert r and r['ref'] == 3
+
+
+def test_meta_font_symbol_no_false_fire():
+    """非规范符号名/无字号意图不误中——'C++'/'放大'按钮形态。"""
+    from dp_cli.agent import _meta_decide
+    st = {'options': [{'ref': 1, 'role': 'link', 'name': 'C++ 教程'},
+                      {'ref': 2, 'role': 'button', 'name': '放大'}],
+          'state': {'title': 'Page', 'url': 'https://x'},
+          'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st, '把字体调大一号') is None     # 无规范符号名
+    st2 = {'options': [{'ref': 1, 'role': 'button', 'name': 'A+'}],
+           'state': {'title': 'Page', 'url': 'https://x'},
+           'epoch': 'x', 'truncated': False}
+    assert _meta_decide(st2, '查看图文详情') is None       # 无调大意图

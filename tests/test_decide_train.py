@@ -777,3 +777,93 @@ def test_promote_teacher_cli_and_merge_gate(tmp_path):
     merge([str(msrc)], str(tmp_path / 'mout.json'))
     assert json.loads(
         (tmp_path / 'mout.json').read_text(encoding='utf-8')) == []
+
+
+# ── escalate 反哺回写（decide-feedback → prov='escalate_feedback'）──
+
+def test_escalate_feedback_logged(tmp_path):
+    """escalate 反哺行落盘：success:true+escalate → prov/feedback/
+    chosen_ref/schema_v 标记齐，post_state 证据透传。"""
+    import dp_cli.decide_train as dt
+    assert dt.log_escalate_feedback(
+        's1', '点归档', 3, escalate=True, success=True,
+        post_state={'url': 'https://x/inbox'}) is True
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r['prov'] == 'escalate_feedback'
+    assert r['feedback'] == 'escalated'
+    assert r['triggers'] == ['escalate_feedback']
+    assert r['goal'] == '点归档' and r['chosen_ref'] == 3
+    assert r['schema_v'] == 2 and r['session'] == 's1'
+    assert r['post_state'] == {'url': 'https://x/inbox'}
+
+
+def test_escalate_feedback_fail_closed(tmp_path):
+    """fail-closed：无 success 旗 / 非 escalate / 缺 goal/ref
+    一律不落——无执行成功证据的'答对'不成立。"""
+    import dp_cli.decide_train as dt
+    assert dt.log_escalate_feedback(
+        's1', '点归档', 3, escalate=True, success=False) is False
+    assert dt.log_escalate_feedback(
+        's1', '点归档', 3, escalate=False, success=True) is False
+    assert dt.log_escalate_feedback(
+        's1', '点归档', None, escalate=True, success=True) is False
+    assert dt.log_escalate_feedback(
+        's1', '', 3, escalate=True, success=True) is False
+    assert _hard_rows(tmp_path) == []
+
+
+def test_escalate_feedback_opt_out(tmp_path, monkeypatch):
+    """DPX_HARD_CASES=0 总闸对反哺通道同效——success 齐也不落。"""
+    import dp_cli.decide_train as dt
+    monkeypatch.setenv('DPX_HARD_CASES', '0')
+    assert dt.log_escalate_feedback(
+        's1', '点归档', 3, escalate=True, success=True) is False
+    assert _hard_rows(tmp_path) == []
+
+
+def test_escalate_feedback_review_passthrough(tmp_path):
+    """review_hard_cases 透传 prov/feedback/chosen_ref/post_state
+    ——复核清单可辨反哺行来源；summarize prov 分桶。"""
+    import sys
+    sys.path.insert(0, 'bench')
+    from review_hard_cases import load_rows, review_rows, summarize
+    import dp_cli.decide_train as dt
+    dt.log_escalate_feedback('s1', '点归档', 3, escalate=True,
+                             success=True,
+                             post_state={'url': 'https://x/inbox'})
+    rows, _ = load_rows(tmp_path / '.dp_cli' / 'hard_cases.jsonl')
+    s = summarize(rows)
+    assert s['prov'] == {'escalate_feedback': 1}
+    rv = review_rows(rows)
+    assert rv[0]['prov'] == 'escalate_feedback'
+    assert rv[0]['feedback'] == 'escalated'
+    assert rv[0]['chosen_ref'] == 3
+    assert rv[0]['post_state'] == {'url': 'https://x/inbox'}
+
+
+def test_decide_feedback_command(tmp_path):
+    """CLI 单挂点：dpx decide-feedback --success 落反哺行；
+    缺 --success 旗 FEEDBACK_REJECTED 不落（fail-closed）。"""
+    import json
+    from click.testing import CliRunner
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['decide-feedback', '点归档', '--chosen-ref', '3',
+              '--success', '--post-state', '{"url":"https://x/inbox"}'])
+    assert r.exit_code == 0, r.output
+    assert json.loads(r.output)['data']['prov'] == 'escalate_feedback'
+    rows = _hard_rows(tmp_path)
+    assert len(rows) == 1 and rows[0]['prov'] == 'escalate_feedback'
+    assert rows[0]['post_state']['url'] == 'https://x/inbox'
+    # 缺 --success → 拒收不落
+    r2 = CliRunner().invoke(
+        cli, ['decide-feedback', '点归档', '--chosen-ref', '3'])
+    assert 'FEEDBACK_REJECTED' in r2.output
+    # 畸形 post-state → INVALID_ARGS 不落
+    r3 = CliRunner().invoke(
+        cli, ['decide-feedback', '点归档', '--chosen-ref', '3',
+              '--success', '--post-state', '{bad'])
+    assert 'INVALID_ARGS' in r3.output
+    assert len(_hard_rows(tmp_path)) == 1

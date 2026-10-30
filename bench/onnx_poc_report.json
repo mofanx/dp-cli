@@ -1,0 +1,92 @@
+{
+  "model": "/home/yan/.dp_cli/bge_model",
+  "onnx_dir": "/media/yan/Data/dpx_onnx_poc",
+  "n_cases": 120,
+  "engines": {
+    "st_fp32": {
+      "pair_p50_ms": 42.6,
+      "case_p50_ms": 139.5,
+      "throughput_pairs_s": 69.1,
+      "n_pairs": 1182
+    },
+    "ort_fp32": {
+      "pair_p50_ms": 25.7,
+      "case_p50_ms": 158.3,
+      "throughput_pairs_s": 44.7
+    },
+    "ort_int8": {
+      "pair_p50_ms": 12.2,
+      "case_p50_ms": 131.3,
+      "throughput_pairs_s": 73.8
+    }
+  },
+  "accuracy": {
+    "st_fp32": {
+      "full": 0.9167
+    },
+    "ort_fp32": {
+      "full": 0.9167
+    },
+    "ort_int8": {
+      "full": 0.9167
+    },
+    "score_diff": {
+      "note": "ST predict=sigmoid 概率；ORT=raw logits（sigmoid 化对比）",
+      "ort_fp32_vs_st_sigmoid_absdiff_mean": 0.0,
+      "ort_fp32_vs_st_sigmoid_absdiff_max": 0.0,
+      "int8_vs_st_sigmoid_absdiff_mean": 0.00756,
+      "int8_vs_st_sigmoid_absdiff_max": 0.74966,
+      "int8_vs_fp32_rawlogit_absdiff_mean": 0.4975,
+      "int8_vs_fp32_rawlogit_absdiff_max": 3.9142,
+      "top1_flip_cases_int8": "4/87",
+      "top1_flip_cases_ort_fp32": "0/87"
+    }
+  },
+  "files": {
+    "safetensors": 1112.2,
+    "onnx_fp32": 1112.4,
+    "onnx_int8": 278.8
+  },
+  "n_pairs": 1182,
+  "rss": {
+    "baseline_mb": 28.6,
+    "st_loaded_mb": 890.8,
+    "after_st_del_mb": 863.7,
+    "ort_fp32_loaded_mb": 2211.2,
+    "ort_fp32_load_delta_mb": 1279.9,
+    "after_ort_fp32_del_mb": 1264.9,
+    "ort_int8_loaded_mb": 1265.1,
+    "ort_int8_load_delta_mb": 0.2,
+    "after_ort_int8_del_mb": 1264.0,
+    "ort_fp32_subproc_load_delta_mb": 332.1,
+    "ort_int8_subproc_load_delta_mb": 97.5,
+    "st_subproc_load_delta_mb": 370.1
+  },
+  "verdict": {
+    "decision": "LAND (int8)",
+    "rationale": [
+      "eval-120 精度三引擎全 0.9167，int8 无损（>1pp 否决线远未触及）",
+      "体积 1112→279MB (-75%)；常驻内存子进程 delta +97.5MB vs ST +370MB",
+      "单对 p50 延迟 42.6→12.2ms (-71%)；批量吞吐 73.8 vs 69.1 pairs/s 持平略升",
+      "ort_fp32 无价值：吞吐 44.7 pairs/s 反而低于 ST，体积不变——只上 int8"
+    ],
+    "blockers_for_landing": [
+      "agent.py _engine_reranker ORT 分支硬编码 token_type_ids——XLMRoberta tokenizer 不出该键，bge-ONNX 路径现在必 KeyError，落地前必修",
+      "ORT 出 raw logits 而 ST predict 出 sigmoid 概率——softmax/probs 语义对两者等价（单调），但 conf/margin 校准基线（0.786 等）是按 sigmoid 值域定的?需确认生产 conf 走的是 softmax 后概率（_engine_reranker 是），则无碍",
+      "optimum-cli 2.1.0 与 transformers 5.20.2 不兼容（get_parameter_dtype 已删）——导出只能手动 torch.onnx.export(dynamo=False, opset=17)",
+      "量化/导出写临时文件到 TMPDIR——tmpfs 小的机器需指 TMPDIR 到大盘"
+    ],
+    "reproduce": {
+      "export": "torch.onnx.export dynamo=False opset=17 → fp32/model.onnx (17.7s)",
+      "quantize": "onnxruntime.quantization.quantize_dynamic QInt8 (35.4s)",
+      "bench": "python bench/onnx_poc.py"
+    },
+    "env": {
+      "optimum": "2.1.0",
+      "onnxruntime": "1.31.0",
+      "onnx": "1.23.2",
+      "transformers": "5.20.2",
+      "torch": "2.14.1+cpu"
+    }
+  }
+}

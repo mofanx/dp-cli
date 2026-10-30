@@ -417,6 +417,7 @@ def _recall_topk(goal, texts, opts, topk=None, total=None):
         return opts, texts                      # 双路皆空——全量直排兜底
     return [opts[i] for i in keep], [texts[i] for i in keep]
 _RERANKER_FAM = None        # 'bge'|'minilm'——tier 封顶判据
+_RERANKER_SRC = None        # ort 实际加载的 onnx 文件名（model-status 回显）
 _ORT_MOD = None            # onnxruntime 可用性缓存（False=不可用）
 
 
@@ -458,11 +459,12 @@ def _reranker_model():
     bge zero-shot 73.7% 是实测上限；MiniLM 自训（22.7M/23MB INT8）
     保留为无 bge 环境的轻量降级路径。
     """
-    global _RERANKER, _RERANKER_FAM
+    global _RERANKER, _RERANKER_FAM, _RERANKER_SRC
     if _RERANKER is not None:
         return _RERANKER
     tuned = Path.home() / '.dp_cli' / 'decide_model'
-    ort = _ort()
+    # DPX_BGE_ONNX=0 逃生开关——关 ORT 路径直走 ST（对照 DPX_NO_LEXICAL 惯例）
+    ort = None if os.environ.get('DPX_BGE_ONNX', '1') == '0' else _ort()
     if ort:
         for d in _bge_dirs():
             for cand in ['model_int8.onnx', 'model.onnx']:
@@ -470,11 +472,15 @@ def _reranker_model():
                 if f.exists():
                     try:
                         from transformers import AutoTokenizer
-                        _RERANKER = ('ort', ort.InferenceSession(str(f)),
+                        _RERANKER = ('ort', ort.InferenceSession(
+                                         str(f),
+                                         providers=['CPUExecutionProvider']),
                                      AutoTokenizer.from_pretrained(str(d)))
+                        _RERANKER_FAM = 'bge'
+                        _RERANKER_SRC = cand
                         return _RERANKER
                     except Exception:
-                        break       # ort/transformers 损坏——继续降级
+                        continue    # int8 损坏→fp32→下个目录→ST 逐级降级
     try:
         from sentence_transformers import CrossEncoder
     except ImportError:
@@ -501,12 +507,15 @@ def _reranker_model():
             if f.exists():
                 try:
                     from transformers import AutoTokenizer
-                    _RERANKER = ('ort', ort.InferenceSession(str(f)),
+                    _RERANKER = ('ort', ort.InferenceSession(
+                                     str(f),
+                                     providers=['CPUExecutionProvider']),
                                  AutoTokenizer.from_pretrained(str(tuned)))
                     _RERANKER_FAM = 'minilm'
+                    _RERANKER_SRC = cand
                     return _RERANKER
                 except Exception:
-                    break
+                    continue            # int8 损坏→fp32→ST 兜底
     if not CrossEncoder:
         return {'_error': '缺 sentence-transformers——'
                 '`pip install dp-cli[agent]`'}
@@ -536,9 +545,10 @@ def _engine_reranker(state, goal):
         _, sess, tok = m
         enc = tok([q] * len(texts), texts, return_tensors='np',
                   padding=True, truncation=True, max_length=128)
-        scores = sess.run(['logits'], {k: enc[k] for k in
-                          ['input_ids', 'attention_mask',
-                           'token_type_ids']})[0].ravel().tolist()
+        # 按 session 实际输入名喂参——XLM-R tokenizer 不出 token_type_ids
+        # （硬编码会 KeyError）；BERT 系含 token_type_ids 的模型自动兼容
+        feed = {i.name: enc[i.name] for i in sess.get_inputs()}
+        scores = sess.run(['logits'], feed)[0].ravel().tolist()
     else:
         scores = m[1].predict([[q, t] for t in texts])
     mx = max(float(s) for s in scores)
@@ -1010,6 +1020,8 @@ def register(cli):
         }
         if eng == 'reranker':
             result['advisory'] = True   # 只建议不执行——契约写入响应
+            if resp.get('backend'):
+                result['backend'] = resp['backend']   # 'ort'/'st' 实载回显
         # TYPE 动作只回 ref——value 由上层补
         if action in ('type', 'type_text', 'fill'):
             result['needs_value'] = True

@@ -26,6 +26,12 @@ _MODEL_URL = ('https://github.com/mofanx/dp-cli/releases/download/'
               'model-v24/dpx-reranker-v24.tar.gz')
 _MODEL_SHA256 = ('0993818041626fff4a6303ad6602b72c95791164'
                  'edf29fceff8328e049b9de08')
+# int8-only 变体：同 release 第二 asset，自包含 tokenizer——
+# 落位后 onnx/model_int8.onnx 被 _reranker_model ORT 分支首选
+_MODEL_URL_INT8 = ('https://github.com/mofanx/dp-cli/releases/download/'
+                   'model-v24/dpx-reranker-v24-int8.tar.gz')
+_MODEL_SHA256_INT8 = ('e9b78bc81c56c049f32c0de036dd22b3d9dd22243'
+                      '59d16cc8eaa45b61ecb927d')
 _ARCHIVE_ROOT = 'bge_v24_tuned'        # tar 内顶层目录名
 _CHUNK = 4 * 1024 * 1024               # 4MB 读块
 _HTTP_TIMEOUT = 60                     # 单请求超时（含重定向后的数据流）
@@ -44,8 +50,16 @@ def _decide_dir() -> Path:
     return _dp_dir() / 'decide_model'
 
 
-def _part_file() -> Path:
-    return _dp_dir() / 'dpx-reranker.tar.gz.part'
+def _variant(int8: bool):
+    """(url, sha256, part 文件名)——两变体独立 .part 防交叉续传混字节。"""
+    if int8:
+        return (_MODEL_URL_INT8, _MODEL_SHA256_INT8,
+                'dpx-reranker-int8.tar.gz.part')
+    return _MODEL_URL, _MODEL_SHA256, 'dpx-reranker.tar.gz.part'
+
+
+def _part_file(int8: bool = False) -> Path:
+    return _dp_dir() / _variant(int8)[2]
 
 
 def _meta_file() -> Path:
@@ -196,7 +210,8 @@ def _find_model_src(extract_root: Path) -> Path:
 
 
 # ── 安装（幂等+残缺备份）─────────────────────────────────────────────────────
-def _install(src: Path, model_dir: Path, force: bool = False) -> dict:
+def _install(src: Path, model_dir: Path, force: bool = False,
+             int8: bool = False) -> dict:
     """src mv → model_dir。返回 {installed, skipped, backup?}。
 
     model_dir 完整且非 force → 幂等 skip；残缺（或 force）→
@@ -204,6 +219,7 @@ def _install(src: Path, model_dir: Path, force: bool = False) -> dict:
     """
     if _is_complete(model_dir) and not force:
         return {'installed': False, 'skipped': True}
+    url, sha256, _ = _variant(int8)
     backup = None
     if model_dir.exists():
         backup = model_dir.with_name(
@@ -215,9 +231,9 @@ def _install(src: Path, model_dir: Path, force: bool = False) -> dict:
         shutil.move(str(model_dir), str(backup))
     shutil.move(str(src), str(model_dir))
     st = _dir_stats(model_dir)
-    meta = {'url': _MODEL_URL, 'archive_root': _ARCHIVE_ROOT,
-            'sha256': _MODEL_SHA256, 'installed_at': time.strftime(
-                '%Y-%m-%dT%H:%M:%S%z'),
+    meta = {'url': url, 'archive_root': _ARCHIVE_ROOT,
+            'sha256': sha256, 'int8': int8,
+            'installed_at': time.strftime('%Y-%m-%dT%H:%M:%S%z'),
             **st}
     try:
         _meta_file().write_text(
@@ -274,9 +290,10 @@ def _bge_status() -> dict:
             meta = {'_error': 'meta 解析失败'}
     verified = None
     if isinstance(meta, dict) and meta.get('sha256'):
-        verified = meta['sha256'] == _MODEL_SHA256
+        verified = meta['sha256'] in (_MODEL_SHA256, _MODEL_SHA256_INT8)
+    int8 = meta.get('int8') if isinstance(meta, dict) else None
     return {'path': str(d), 'exists': d.is_dir(),
-            'complete': _is_complete(d), **st,
+            'complete': _is_complete(d), **st, 'int8': int8,
             'sha256_verified': verified, 'meta': meta}
 
 
@@ -289,16 +306,21 @@ def register(cli):
     @model_grp.command('pull')
     @click.option('--force', is_flag=True, default=False,
                   help='忽略已有完整安装，强制重新下载部署')
-    def model_pull(force):
+    @click.option('--int8', 'int8', is_flag=True, default=False,
+                  help='拉 int8-only 包（~210MB，仅 onnx int8 权重+tokenizer，'
+                       '不含 fp32 safetensors）')
+    def model_pull(force, int8):
         """从 GitHub Release 下载 bge reranker 并部署到 ~/.dp_cli/bge_model。
 
         sha256 硬校验+Range 断点续传（.part 文件残留即自动续传）；
-        已完整安装则幂等 skip，残缺安装自动备份后重装。
+        已完整安装则幂等 skip（任一变体在位即 skip，跨变体需 --force），
+        残缺安装自动备份后重装。--int8 选自包含 int8-only 资产。
 
         \b
         示例:
           dpx model pull
-          dpx model pull --force
+          dpx model pull --int8
+          dpx model pull --int8 --force   # fp32 → int8 切换
         """
         mdir = _model_dir()
         if _is_complete(mdir) and not force:
@@ -306,25 +328,26 @@ def register(cli):
                 **_dir_stats(mdir)},
                msg='模型已完整安装——跳过下载（--force 强制重装）')
             return
+        url, sha256, _ = _variant(int8)
         _dp_dir().mkdir(parents=True, exist_ok=True)
-        part = _part_file()
+        part = _part_file(int8)
         t0 = time.monotonic()
         try:
-            got = _download(_MODEL_URL, part)
+            got = _download(url, part)
         except Exception as e:
             error('模型下载失败——.part 已保留可断点续传，重跑 model pull 继续',
                   code='MODEL_DOWNLOAD_FAILED', detail=str(e))
             return
         elapsed = time.monotonic() - t0
         digest = _sha256_file(part)
-        if digest != _MODEL_SHA256:
+        if digest != sha256:
             try:
                 part.unlink()
             except OSError:
                 pass
             error('模型 sha256 校验不一致——已删除临时文件',
                   code='MODEL_SHA_MISMATCH',
-                  detail=f'expected {_MODEL_SHA256}, got {digest}')
+                  detail=f'expected {sha256}, got {digest}')
             return
         tmp_root = Path(tempfile.mkdtemp(prefix='.model-extract-',
                                          dir=str(_dp_dir())))
@@ -334,7 +357,7 @@ def register(cli):
             if not _is_complete(src):
                 raise RuntimeError(
                     f'解压产物不完整（缺 config/tokenizer/权重）: {src}')
-            inst = _install(src, mdir, force=force)
+            inst = _install(src, mdir, force=force, int8=int8)
         except Exception as e:
             error('模型解压/安装失败', code='MODEL_INSTALL_FAILED',
                   detail=str(e))
@@ -345,7 +368,7 @@ def register(cli):
             part.unlink()                        # 校验通过才清 .part
         except OSError:
             pass
-        ok({'path': str(mdir), 'bytes': got,
+        ok({'path': str(mdir), 'bytes': got, 'int8': int8,
             'elapsed_sec': round(elapsed, 1), 'sha256': digest, **inst},
            msg='模型已部署' if inst.get('installed') else '模型已存在')
 
@@ -368,6 +391,7 @@ def register(cli):
                 engine['loaded'] = {'error': m.get('_error')}
             else:
                 engine['loaded'] = {'kind': m[0],
-                                    'family': agent._RERANKER_FAM}
+                                    'family': agent._RERANKER_FAM,
+                                    'src': agent._RERANKER_SRC}
         ok({'bge_model': _bge_status(), 'engine': engine,
             'decide_model': _decide_status()})

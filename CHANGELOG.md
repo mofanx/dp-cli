@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.24] - 2026-10-30
+
+### 新增（模型分发闭环+daemon 常驻推荐）
+- **`dpx model pull`/`model-status`**：下载 `model-v24` release asset→sha256 硬校验→解压落位 `~/.dp_cli/bge_model`，幂等+decide 实载验证
+- **加载链优先级**：`_bge_dirs` 重排——pull 落位（`~/.dp_cli/bge_model`）上探第二位仅次 env，v19/v24 dev 路径殿后——pull 完跑新权重
+- **daemon 常驻推荐**：README 双语+`decide --help`——冷启 ~6s 只在首次，daemon/serve 后 ~90ms/次
+
 ## [0.15.23] - 2026-10-29
 
 ### 改进（补票——lexical union+覆盖收尾，0.15.22 漏带）

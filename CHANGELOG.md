@@ -2,6 +2,18 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.30] - 2026-10-31
+
+### 新增（UI↔API hint 联动层+P2 固化降摩擦）
+- **`touched_apis` 因果窗口**：browser/element/keyboard 动作结果回带近窗触达的 API 端点——netlog `wts`（CDP `wallTime` 挂钟时戳）修时钟域（`ts` 是 monotonic 与 `time.time()` 不可比）
+- **`adapter_hint` 现算前置**：动作后命中已录 adapter 端点即前置提示可直调路径，`DPX_API_HINT` 开关——advisory 加性零破坏
+- **`api-record --last/--auto`**：最近 XHR 一键固化模板免手抄 url/params
+- **`api-list --suggest`**：重复端点未录点名提示——端点表→adapter 漏斗降摩擦
+- `.gitignore` 数据防护入库——netlog/adapter 产物防误入库
+
+### 验证（双真机）
+- 京东真机 8/10 PASS；知乎热榜 30/30 一致性——hint 层+adapter 重放链路实测闭环
+
 ## [0.15.29] - 2026-10-31
 
 ### 新增（接口逆向链 L1+L2+录制式 adapter——"一切皆接口"）

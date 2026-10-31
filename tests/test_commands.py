@@ -5289,6 +5289,70 @@ def test_maybe_arm_netlog_prunes_armed(monkeypatch):
 
 
 @pytest.mark.unit
+def test_maybe_arm_netlog_uses_session_active_tab(monkeypatch):
+    """active_tab 绑定优先于 latest_tab（真机缺陷：multi-tab/
+    auto-connect 下 latest_tab=tab_ids[0]，netlog 挂错 tab）。
+    latest_tab 返 tab0 但 session 绑 t6 → arm 必须挂 t6。"""
+    import dp_cli.netlog as nl
+    import dp_cli.commands.serve as sv
+    import dp_cli.commands._utils as u
+    nl._armed.clear()
+    try:
+        tab0, tab6 = _ArmPage('t0'), _ArmPage('t6')
+
+        class _Page:
+            latest_tab = tab0
+
+            def get_tab(self, tid):
+                return {'t6': tab6}.get(tid)
+
+        monkeypatch.setattr('dp_cli.session._PAGE_CACHE',
+                            {'s': _Page()})
+        monkeypatch.setattr(u, 'load_session',
+                            lambda s: {'active_tab': 't6'})
+        got = []
+        monkeypatch.setattr(nl, 'arm_netlog',
+                            lambda p, s: got.append(p) or True)
+        sv._maybe_arm_netlog()
+        assert got == [tab6]
+    finally:
+        nl._armed.clear()
+
+
+@pytest.mark.unit
+def test_cur_tab_falls_back_when_bound_tab_dead(monkeypatch):
+    """_cur_tab：active_tab 绑定的 tab 已失效（get_tab 抛错/返 None）
+    → 清绑定存盘 + 回退 latest_tab，与 _get_page 同一语义。"""
+    import dp_cli.commands._utils as u
+    tab0 = _ArmPage('t0')
+
+    class _Page:
+        latest_tab = tab0
+
+        def get_tab(self, tid):
+            raise RuntimeError('tab gone')
+
+    saved = []
+    monkeypatch.setattr(u, 'load_session',
+                        lambda s: {'active_tab': 't9'})
+    monkeypatch.setattr(u, 'save_session',
+                        lambda s, d: saved.append((s, dict(d))))
+    assert u._cur_tab(_Page(), 's') is tab0
+    assert saved == [('s', {})]          # active_tab 已清
+
+    # get_tab 返 None（不抛错形态）同样走回退
+    class _Page2:
+        latest_tab = tab0
+
+        def get_tab(self, tid):
+            return None
+
+    saved.clear()
+    assert u._cur_tab(_Page2(), 's') is tab0
+    assert saved == [('s', {})]
+
+
+@pytest.mark.unit
 def test_cookies_import_silent_reject_counted(runner, monkeypatch,
                                               tmp_path):
     """cookies-import：page.set.cookies 不抛错但浏览器静默拒收

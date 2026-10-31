@@ -485,14 +485,50 @@ def test_serve_action_api_routed(monkeypatch):
 
 @pytest.mark.unit
 def test_build_and_render_template_roundtrip():
-    tpl, keys = net_mod._build_url_template(
+    tpl, keys, skipped = net_mod._build_url_template(
         'https://a.com/s?kw=java&p=1', {'kw': 'keyword'})
     assert tpl == 'https://a.com/s?kw={keyword}&p=1'
-    assert keys == ['keyword']
+    assert keys == ['keyword'] and skipped == []
     url, missing = net_mod._render_template(tpl, {'keyword': 'go'})
     assert missing == [] and url == 'https://a.com/s?kw=go&p=1'
     url, missing = net_mod._render_template(tpl, {})
     assert missing == ['keyword']
+
+
+@pytest.mark.unit
+def test_build_url_template_json_value_not_parameterized():
+    """query 值含 JSON（{"kw":...}）→ 整值 percent-encode 固化，
+    不生成 {var} 槽位（真机缺陷：内嵌大括号被回放端当模板位，
+    槽名带引号永远缺失 → INVALID_ARGS）；--param 显式映射仍生效。"""
+    tpl, keys, skipped = net_mod._build_url_template(
+        'https://a.com/s?q=%7B%22kw%22%3A%22x%22%7D&p=1', {})
+    assert skipped == ['q'] and keys == []
+    assert '{' not in tpl          # 模板无裸大括号——回放无误认槽位
+    url, missing = net_mod._render_template(tpl, {})
+    assert missing == [] and url == tpl
+    # 显式 --param 映射同一键 → 仍参数化为单槽位
+    tpl2, keys2, skipped2 = net_mod._build_url_template(
+        'https://a.com/s?q=%7B%22kw%22%3A%22x%22%7D', {'q': 'query'})
+    assert tpl2 == 'https://a.com/s?q={query}'
+    assert keys2 == ['query'] and skipped2 == []
+
+
+@pytest.mark.unit
+def test_api_record_skipped_params_warned(runner, adir, monkeypatch):
+    """api-record 端到端：JSON query 值固化进模板 + data.skipped_params
+    告警面，params_keys 不含怪名。"""
+    entries = [{'kind': 'req', 'id': '1',
+                'url': 'https://api.x.com/s?q=%7B%22kw%22%3A%22x%22%7D&p=1',
+                'method': 'GET', 'type': 'XHR', 'ts': 1.0}]
+    _mock_netlog(monkeypatch, entries)
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-record', 'json-q'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['skipped_params'] == ['q']
+    ep = d['adapter']['endpoint']
+    assert ep['params_keys'] == []
+    assert '{' not in ep['url_template']
 
 
 @pytest.mark.unit

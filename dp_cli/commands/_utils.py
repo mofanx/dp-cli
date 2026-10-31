@@ -78,6 +78,35 @@ def frame_ctx(page, frame_loc: str = None, session: str = 'default'):
     return fr
 
 
+def _cur_tab(page, session: str, sess: dict = None):
+    """session 当前 tab——与 _get_page 同一选取语义。
+
+    multi-tab/auto-connect 下 page.latest_tab 是 tab_ids[0]，不等于
+    session active_tab 绑定的执行 tab——active_tab 必须先行判定；
+    绑定失效（tab 已关）清绑定存盘后回退 latest_tab → page。
+    旁路逻辑（netlog arm / 留证截图）须走本函数与命令执行 tab 一致。
+    """
+    if sess is None:
+        try:
+            sess = load_session(session) or {}
+        except Exception:
+            sess = {}
+    tab_id = sess.get('active_tab')
+    if tab_id:
+        try:
+            t = page.get_tab(tab_id)
+        except Exception:
+            t = None
+        if t is not None:
+            return t
+        sess.pop('active_tab', None)
+        save_session(session, sess)
+    try:
+        return page.latest_tab or page
+    except Exception:
+        return page
+
+
 def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     """获取页面对象，失败则 error 退出。
 
@@ -101,20 +130,8 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     if raw:
         target = page
     else:
-        # 检查是否有绑定的标签页
-        tab_id = sess.get('active_tab')
-        if tab_id:
-            try:
-                target = page.get_tab(tab_id)
-            except Exception:
-                sess.pop('active_tab', None)
-                save_session(session, sess)
-                target = page
-        else:
-            try:
-                target = page.latest_tab or page
-            except Exception:
-                target = page
+        # 检查是否有绑定的标签页（active_tab → get_tab，回退 latest_tab）
+        target = _cur_tab(page, session, sess)
 
     # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dpx 命令是独立
     # Python 进程/独立 session，必须重新注册才能让下一次 navigation 生效。

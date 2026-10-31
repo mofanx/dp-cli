@@ -116,8 +116,11 @@ def _screenshot_evidence(shot_dir: str, seq: int, argv: list,
             if i + 1 < len(argv):
                 session = argv[i + 1]
         from dp_cli.session import get_browser
+        from dp_cli.commands._utils import _cur_tab
         page = get_browser(session)
-        page = page.latest_tab or page
+        # 截 session 执行 tab（active_tab 优先）——latest_tab 是
+        # tab_ids[0]，multi-tab 下会截错标签页
+        page = _cur_tab(page, session)
         path = Path(shot_dir) / f'fail-{seq}.png'
         page.get_screenshot(path=str(path))
         return str(path)

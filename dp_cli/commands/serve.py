@@ -554,10 +554,17 @@ def _maybe_arm_netlog() -> None:
     try:
         from dp_cli.session import _PAGE_CACHE
         from dp_cli.netlog import arm_netlog
-        # arm_netlog 内部比对 session→tab_id——latest_tab 换 tab
-        # （旧 driver WebSocket 已死）时自动重挂，无需在此预判
+        from dp_cli.commands._utils import _cur_tab
+        # arm 目标=session 当前 tab（active_tab 绑定优先，与 _get_page
+        # 同一选取）——multi-tab/auto-connect 下 latest_tab 是
+        # tab_ids[0]，挂错 tab 会导致 requests 无数据。
+        # arm_netlog 内部比对 session→tab_id，换 tab（旧 driver
+        # WebSocket 已死）时自动重挂，无需在此预判
         for sess, page in list(_PAGE_CACHE.items()):
-            arm_netlog(page.latest_tab or page, sess)
+            try:
+                arm_netlog(_cur_tab(page, sess), sess)
+            except Exception:
+                pass            # 单会话 arm 失败不阻塞其余会话
         # _armed 键按活跃 session 集收编——已删除会话的标记不留内存
         from dp_cli.netlog import prune_armed
         prune_armed(_PAGE_CACHE.keys())

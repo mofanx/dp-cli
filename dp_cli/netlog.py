@@ -99,7 +99,8 @@ def arm_netlog(page, session: str, force: bool = False) -> bool:
     """给 page 挂 Network 事件采集（幂等，每 session+tab 一次）。
 
     serve 循环内调用。`_armed` 记 session→tab_id：调用方每次传当前
-    latest_tab，tab 变了（旧 driver WebSocket 已死）自动重挂。
+    tab（session.active_tab 绑定优先，见 _utils._cur_tab），tab 变了
+    （旧 driver WebSocket 已死）自动重挂。
     force=True 先摘除标记再挂——供回调被第三方覆盖后（如 har-dump
     单槽 set_callback）的恢复路径使用。
     """

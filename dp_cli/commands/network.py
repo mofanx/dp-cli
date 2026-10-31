@@ -299,11 +299,21 @@ def _auto_adapter_name(url: str) -> str:
         n += 1
 
 
+# query 值含这些字符 → 模板不安全：整体 percent-encode 保留字面值、
+# 不参与参数化。内嵌大括号（JSON 值 {"kw":...}）会被回放端
+# _render_template 当 {var} 槽位——槽名带引号永远缺失，回放
+# INVALID_ARGS；引号/方括号同属 JSON 值特征一并拦。
+_UNSAFE_VALUE_CHARS = re.compile(r'[{}"\[\]]')
+
+
 def _build_url_template(url: str, param_map: dict) -> tuple:
     """录制端：query 参数值 → {模板变量} 占位。
 
     :param param_map: {原始 query 键: 模板变量名}（--param kw=keyword）
-    :return: (url_template, params_keys)；映射键不在 query 中抛 ValueError
+    :return: (url_template, params_keys, skipped_keys)；映射键不在
+        query 中抛 ValueError。skipped_keys=值含模板不安全字符
+        （{}"/[]）而整值 percent-encode 固化的 query 键——未参数化，
+        --param 显式映射这些键仍生效（走 mapped 分支不进 skipped）。
     """
     sp = urlsplit(url)
     pairs = parse_qsl(sp.query, keep_blank_values=True)
@@ -313,20 +323,24 @@ def _build_url_template(url: str, param_map: dict) -> tuple:
         raise ValueError(
             f'--param 映射的 query 键不存在于录制 URL: {", ".join(bad)}'
             f'（实际: {", ".join(sorted(have)) or "无"}）')
-    keys = []
+    keys, skipped = [], []
     base = (f'{sp.scheme}://{sp.netloc}{sp.path}'
             if sp.scheme else sp.path)
     if not pairs:
-        return base or url, keys
+        return base or url, keys, skipped
     q = []
     for k, v in pairs:
         if k in param_map:
             var = param_map[k]
             q.append(f'{k}={{{var}}}')
             keys.append(var)
+        elif _UNSAFE_VALUE_CHARS.search(v):
+            # 字面值固化：编码后模板无裸 {}，回放端不再误认槽位
+            q.append(f'{k}={quote(v, safe="")}')
+            skipped.append(k)
         else:
             q.append(f'{k}={v}')
-    return f'{base}?{"&".join(q)}', keys
+    return f'{base}?{"&".join(q)}', keys, skipped
 
 
 def _render_template(template: str, params: dict) -> tuple:
@@ -781,7 +795,7 @@ def _register_requests(cli):
             name = _auto_adapter_name(url)
             auto_named = True
         try:
-            template, keys = _build_url_template(url, pmap)
+            template, keys, skipped = _build_url_template(url, pmap)
         except ValueError as e:
             error(str(e), code='INVALID_ARGS')
             return
@@ -815,8 +829,13 @@ def _register_requests(cli):
             error(f'adapter 写盘失败: {e}', code='HTTP_FAILED')
             return
         ok({'saved_to': str(d / f'{name}.json'), 'adapter': adapter,
-            **({'auto_named': True} if auto_named else {})},
-           msg=f'adapter [{name}] 已固化')
+            **({'auto_named': True} if auto_named else {}),
+            **({'skipped_params': skipped} if skipped else {})},
+           msg=(f'adapter [{name}] 已固化'
+                + (f'（{len(skipped)} 个 query 值含 JSON/模板不安全字符'
+                   f'已按原值固化、未参数化: {", ".join(skipped)}；'
+                   f'需参数化请 --param 键=变量 显式映射）'
+                   if skipped else '')))
 
 
 def _emit_response(url, resp, output):

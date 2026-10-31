@@ -42,6 +42,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'AUTOCONNECT_FAILED':   (EXIT_CONNECT, 'auto-connect 自动发现失败'),
     'NAVIGATE_FAILED':      (EXIT_CONNECT, '页面导航失败'),
     'HTTP_FAILED':          (EXIT_CONNECT, 'HTTP 请求失败'),
+    'API_FETCH_FAILED':     (EXIT_CONNECT, '页内 fetch 失败（网络错误/CORS/JS 拒绝）'),
 
     # ── not_found（退出码 4）──
     'ELEMENT_NOT_FOUND':    (EXIT_NOT_FOUND, '元素未找到'),
@@ -54,6 +55,7 @@ ERROR_CODES: dict[str, tuple[int, str]] = {
     'NO_REFS':              (EXIT_NOT_FOUND, '无可用的 ref 映射（需先 snapshot）'),
     'ASSERT_FAILED':        (EXIT_NOT_FOUND, '断言失败（页面状态不符合预期）'),
     'RPC_NOT_FOUND':        (EXIT_NOT_FOUND, 'RPC 函数未注册且非页内可调用函数'),
+    'EMPTY_LIST':           (EXIT_NOT_FOUND, '过滤后无匹配记录（如 api-list 无 XHR/Fetch 捕获）'),
 
     # ── timeout（退出码 5）──
     'WAIT_TIMEOUT':         (EXIT_TIMEOUT, '等待超时'),

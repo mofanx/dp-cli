@@ -44,6 +44,7 @@
 | `AUTOCONNECT_FAILED` | auto-connect 自动发现失败 |
 | `NAVIGATE_FAILED` | 页面导航失败 |
 | `HTTP_FAILED` | HTTP 请求失败（http-get/http-post） |
+| `API_FETCH_FAILED` | 页内 fetch 失败（`dpx api`：网络错误/CORS 拦截/JS 拒绝；http_status 非 2xx 不算错误，是数据） |
 | `MODEL_DOWNLOAD_FAILED` | 模型资产下载失败（.part 保留可断点续传） |
 
 ### not_found（退出码 4）
@@ -60,6 +61,7 @@
 | `NO_REFS` | 无可用的 ref 映射（需先 `dp snapshot`） |
 | `ASSERT_FAILED` | 断言失败（页面状态不符合预期） |
 | `RPC_NOT_FOUND` | RPC 函数未注册且非页内可调用函数 |
+| `EMPTY_LIST` | 过滤后无匹配记录（`api-list` 无 XHR/Fetch 捕获、`requests --export` 无可导出条目） |
 | `HOOK_NOT_FOUND` | hook 未安装（hook-clear --id 指定不存在） |
 
 ### timeout（退出码 5）

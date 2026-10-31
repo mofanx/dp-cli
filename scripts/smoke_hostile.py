@@ -4,7 +4,7 @@
 用法: python scripts/smoke_hostile.py [--session S]
 每处断言真实事件触发（__hit 计数），不是"命令返回 ok"。
 """
-import json, subprocess, sys, time
+import functools, http.server, json, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 
 SES = 'hostile'
@@ -96,6 +96,99 @@ def main():
         print(f'  serve 异常: {e}')
     print(f'{"✅" if hit else "❌"} serve JSONL 全链（ping+eval 同 session）')
     ok += hit; fail += not hit
+
+    # netlog 导出链路：本地 http.server 供同源 fetch（file:// 页
+    # 跨源不稳），serve 托管 arm netlog 采集 → requests --export curl /
+    # api-list 离盘读。无外网依赖（127.0.0.1 回环）。
+    try:
+        www = Path(tempfile.mkdtemp(prefix='dpx-smoke-'))
+        (www / 'hostile.html').write_text(
+            (Path(__file__).resolve().parent.parent
+             / 'tests' / 'fixtures' / 'hostile.html').read_text(),
+            encoding='utf-8')
+        (www / 'api.json').write_text('{"ok":true}', encoding='utf-8')
+
+        class _Q(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                n = int(self.headers.get('Content-Length') or 0)
+                body = self.rfile.read(n).decode('utf-8', 'replace')
+                payload = json.dumps(
+                    {'echo': body}, ensure_ascii=False).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+        srv = http.server.HTTPServer(
+            ('127.0.0.1', 0), functools.partial(_Q, directory=str(www)))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{srv.server_port}'
+        reqs = (
+            f'{{"argv":["goto","-S","{SES}","{base}/hostile.html"]}}\n'
+            f'{{"argv":["eval","-S","{SES}",'
+            f'"fetch(\'/api.json?p=1&k=2\').then(r=>r.status)'
+            f'.catch(e=>String(e))"]}}\n'
+            '{"argv":["sleep","2"]}\n')
+        sp = subprocess.run(DPX + ['serve'], input=reqs, capture_output=True,
+                            text=True, timeout=60)
+
+        # dpx api 页内 fetch：页面在 {base}/hostile.html（同源）——
+        # GET 断言 200+body 内容；POST 断言服务端回显请求体。
+        try:
+            r = run('api', f'{base}/api.json')
+            g_ok = (r.get('status') == 'ok'
+                    and r['data'].get('http_status') == 200
+                    and '"ok":true' in r['data'].get('body', ''))
+        except Exception as e:
+            g_ok = False
+            print(f'  api GET 异常: {e}')
+        print(f'{"✅" if g_ok else "❌"} api GET（页内同源 fetch 200+body）')
+        ok += g_ok; fail += not g_ok
+
+        try:
+            r = run('api', f'{base}/echo', '-X', 'POST',
+                    '--json', '{"hi":1}')
+            p_ok = (r.get('status') == 'ok'
+                    and r['data'].get('http_status') == 200
+                    and 'hi' in r['data'].get('body', ''))
+        except Exception as e:
+            p_ok = False
+            print(f'  api POST 异常: {e}')
+        print(f'{"✅" if p_ok else "❌"} api POST --json（body 回显）')
+        ok += p_ok; fail += not p_ok
+
+        srv.shutdown()
+
+        r = run('requests', '--export', 'curl')
+        ex_ok = (r.get('status') == 'ok'
+                 and any('api.json' in e.get('url', '')
+                         and e.get('text', '').startswith('curl -X GET')
+                         for e in r.get('data', {}).get('exports', [])))
+        print(f'{"✅" if ex_ok else "❌"} requests --export curl '
+              f'（netlog→curl 重放命令）')
+        ok += ex_ok; fail += not ex_ok
+
+        r = run('api-list')
+        eps = r.get('data', {}).get('endpoints', [])
+        ap_ok = (r.get('status') == 'ok'
+                 and any('api.json' in e.get('url', '')
+                         and 'p' in e.get('params_keys', [])
+                         for e in eps))
+        if ap_ok:
+            idx = next(e['idx'] for e in eps if 'api.json' in e['url'])
+            rr = run('requests', '--export', 'curl', '--index', str(idx))
+            ap_ok = (rr.get('status') == 'ok'
+                     and 'api.json' in rr['data']['exports'][0]['url'])
+        print(f'{"✅" if ap_ok else "❌"} api-list 端点列出+idx 重放')
+        ok += ap_ok; fail += not ap_ok
+    except Exception as e:
+        fail += 2
+        print(f'  netlog 导出冒烟异常: {e}')
+
     print(f'== {ok} passed, {fail} failed ==')
     run('close')                    # 防 hostile session 残留
     sys.exit(0 if fail == 0 else 1)

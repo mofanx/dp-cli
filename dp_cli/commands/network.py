@@ -1,9 +1,12 @@
 # -*- coding:utf-8 -*-
-"""网络命令: listen / listen-stop / http-get / http-post / har-dump"""
+"""网络命令: listen / listen-stop / requests / request / api-list / api /
+http-get / http-post / har-dump"""
 import json
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter, sleep as _sleep
+from urllib.parse import urlsplit, parse_qsl
 
 import click
 
@@ -14,12 +17,179 @@ from dp_cli.commands._utils import (session_option, _get_page,
 _PACKET_FIELDS = {'url', 'method', 'status', 'type', 'request_headers',
                   'postData', 'response_headers', 'response_body'}
 
+# api-list 输出字段白名单（--fields 校验用）
+_API_FIELDS = {'idx', 'id', 'method', 'url', 'url_template', 'params_keys',
+               'content_type', 'status', 'failed'}
+_API_TYPES = {'xhr', 'fetch'}   # CDP ResourceType 小写比较
+# curl 导出时剔除的头：HTTP/2 伪头（:authority 等）curl 不认；
+# content-length 由 curl 按 --data 自算，硬编码会与 postData 长度漂移
+_SKIP_CURL_HEADERS = {'content-length'}
+# dpx api 内联 body 截断上限（防大响应炸 stdout；--raw/--output 绕行）
+_API_BODY_LIMIT = 64 * 1024
+
+
+def _parse_api_headers(header_list) -> dict:
+    """-H 'Name: value' 列表 → headers dict；格式非法经 error() 退出。"""
+    headers = {}
+    for h in header_list or ():
+        if ':' not in h:
+            error(f'-H 格式错误（需 "Name: value"）: {h!r}',
+                  code='INVALID_ARGS')
+        k, v = h.split(':', 1)
+        k = k.strip()
+        if not k:
+            error(f'-H header 名为空: {h!r}', code='INVALID_ARGS')
+        headers[k] = v.strip()
+    return headers
+
+
+def _build_api_fetch_js(url, method, headers, body) -> str:
+    """构造页内 fetch 调用脚本（run_js function 包裹 + awaitPromise 解析）。
+
+    返回 promise → DP 的 Runtime.callFunctionOn awaitPromise=True 会把
+    resolve 值回填为返回值；fetch reject（网络错误/CORS/ abort）→
+    exceptionDetails → JavaScriptError，由调用方映射 API_FETCH_FAILED。
+    """
+    opts = {'method': method}
+    if headers:
+        opts['headers'] = headers
+    if body is not None:
+        opts['body'] = body
+    return (
+        f'return fetch({json.dumps(url, ensure_ascii=False)},'
+        f'{json.dumps(opts, ensure_ascii=False)})'
+        '.then(function(r){return r.text().then(function(t){'
+        'return{status:r.status,ok:r.ok,url:r.url,body:t}})})'
+    )
+
 
 def _requests_no_buffer(session):
     error('无被动网络日志（需要常驻进程托管事件缓冲；'
           '或使用 dpx listen 主动监听）', code='NO_NETLOG',
           detail=f'dpx serve --session {session} 或 '
                  f'dpx daemon-start -S {session} + DPX_DAEMON=1')
+
+
+def _netlog_rows(entries):
+    """netlog 条目按 requestId 聚合为行（时间序，dict 保序）。
+
+    请求/响应头分开存 request_headers/response_headers——若共用 'headers'
+    键，后到站的 resp 会覆盖 req 头，导出 curl 会错拿响应头当请求头。
+    """
+    reqs = {}
+    for e in entries:
+        rid = e.get('id')
+        if rid is None:
+            continue
+        slot = reqs.setdefault(rid, {'id': rid})
+        kind = e.get('kind')
+        if kind == 'req':
+            for k in ('url', 'method', 'type', 'postData', 'ts'):
+                if e.get(k) is not None:
+                    slot[k] = e[k]
+            if e.get('headers') is not None:
+                slot['request_headers'] = e['headers']
+        elif kind == 'resp':
+            if e.get('status') is not None:
+                slot['status'] = e['status']
+            if e.get('statusText') is not None:
+                slot['statusText'] = e['statusText']
+            if e.get('mimeType') is not None:
+                slot['mimeType'] = e['mimeType']
+            if e.get('headers') is not None:
+                slot['response_headers'] = e['headers']
+            if slot.get('url') is None and e.get('url') is not None:
+                slot['url'] = e['url']
+        elif kind == 'fail':
+            slot['failed'] = e.get('errorText') or 'failed'
+    return list(reqs.values())
+
+
+def _row_match(r, furl, fmethod, ftype, ffailed, fstatus) -> bool:
+    """requests/api-list 共用行级过滤谓词
+    （URL 子串/method/type/status/failed，全 None 恒真）。"""
+    if furl and furl not in (r.get('url') or ''):
+        return False
+    if fmethod and (r.get('method') or '').upper() != fmethod.upper():
+        return False
+    if ftype and (r.get('type') or '').lower() != ftype.lower():
+        return False
+    if fstatus is not None and r.get('status') != fstatus:
+        return False
+    if ffailed and not r.get('failed'):
+        return False
+    return True
+
+
+def _export_curl(row) -> str:
+    """单行聚合记录 → curl 命令文本。"""
+    method = (row.get('method') or 'GET').upper()
+    parts = ['curl', '-X', method, shlex.quote(row.get('url') or '')]
+    for k, v in (row.get('request_headers') or {}).items():
+        kl = str(k).lower()
+        if kl.startswith(':') or kl in _SKIP_CURL_HEADERS:
+            continue
+        parts += ['-H', shlex.quote(f'{k}: {v}')]
+    post = row.get('postData')
+    if post is not None:
+        parts += ['--data-raw', shlex.quote(str(post))]
+    return ' '.join(parts)
+
+
+def _export_python(row) -> str:
+    """单行聚合记录 → python requests 片段。"""
+    method = (row.get('method') or 'GET').upper()
+    headers = {k: v for k, v in (row.get('request_headers') or {}).items()
+               if not str(k).startswith(':')}
+    lines = ['import requests', '',
+             f'resp = requests.request({method!r}, {row.get("url") or ""!r},']
+    if headers:
+        lines.append(f'    headers={headers!r},')
+    if row.get('postData') is not None:
+        lines.append(f'    data={row["postData"]!r},')
+    lines += [')', 'print(resp.status_code, resp.text[:500])']
+    return '\n'.join(lines)
+
+
+def _header_get(headers, name: str):
+    """headers dict 大小写不敏感取值。"""
+    if not isinstance(headers, dict):
+        return None
+    for k, v in headers.items():
+        if str(k).lower() == name:
+            return v
+    return None
+
+
+def _api_endpoint(idx: int, row: dict) -> dict:
+    """聚合行 → api-list 端点条目；query 参数值抽成 {key} 模板位。"""
+    url = row.get('url') or ''
+    keys = []
+    template = url
+    try:
+        sp = urlsplit(url)
+        pairs = parse_qsl(sp.query, keep_blank_values=True)
+        keys = [k for k, _ in pairs]
+        base = (f'{sp.scheme}://{sp.netloc}{sp.path}'
+                if sp.scheme else sp.path)
+        if pairs:
+            q = '&'.join(f'{k}={{{k}}}' for k, _ in pairs)
+            template = f'{base}?{q}'
+        else:
+            template = base or url
+    except Exception:
+        pass
+    item = {'idx': idx, 'id': row.get('id'),
+            'method': (row.get('method') or 'GET').upper(),
+            'url': url, 'url_template': template,
+            'params_keys': keys,
+            'content_type': _header_get(row.get('response_headers'),
+                                        'content-type')
+                            or row.get('mimeType'),
+            'status': row.get('status')}
+    if row.get('failed'):
+        item['failed'] = row['failed']
+    return item
 
 
 def _register_requests(cli):
@@ -31,11 +201,23 @@ def _register_requests(cli):
                   help='HTTP 方法过滤（GET/POST/...）')
     @click.option('--type', 'ftype', default=None,
                   help='资源类型过滤（XHR/Fetch/Document/...）')
+    @click.option('--status', 'fstatus', type=int, default=None,
+                  help='HTTP 状态码过滤（如 200/404）')
     @click.option('--failed', 'ffailed', is_flag=True,
                   help='只看失败请求')
     @click.option('--head', type=int, default=None,
                   help='只输出前 N 条（按时间序）')
-    def cmd_requests(session, furl, fmethod, ftype, ffailed, head):
+    @click.option('--index', 'findex', type=int, default=None,
+                  help='按完整日志序号选一条（0 起，同 api-list 的 idx；'
+                       '指定后其余过滤条件不生效）')
+    @click.option('--export', 'export_fmt',
+                  type=click.Choice(['curl', 'python']), default=None,
+                  help='导出为重放代码：curl 命令行 / python requests 片段')
+    @click.option('--all', 'fall', is_flag=True,
+                  help='导出全部过滤结果（--export 的默认行为，显式声明用；'
+                       '与 --index 互斥）')
+    def cmd_requests(session, furl, fmethod, ftype, ffailed, fstatus, head,
+                     findex, export_fmt, fall):
         """列出被动网络日志（serve 进程托管的 ~500 条 ring buffer）。
 
         需先跑 `dpx serve --session <name>`——常驻进程替你开着
@@ -46,35 +228,48 @@ def _register_requests(cli):
           dpx requests                       # 全部（时间序）
           dpx requests --filter api/         # URL 过滤
           dpx requests --method POST --failed
+          dpx requests --export curl               # 全部导出 curl
+          dpx requests --export curl --index 3     # 导出第 3 条
+          dpx requests --export python --filter api/
         """
         from dp_cli.netlog import read_entries
         entries = read_entries(session)
         if entries is None:
             _requests_no_buffer(session)
             return
-        # 按 requestId 聚合 req+resp 成行
-        reqs = {}
-        for e in entries:
-            rid = e.get('id')
-            if rid is None:
-                continue
-            slot = reqs.setdefault(rid, {})
-            slot.update({k: v for k, v in e.items() if v is not None})
-            if e['kind'] == 'resp':
-                slot['status'] = e.get('status')
-            if e['kind'] == 'fail':
-                slot['failed'] = e.get('errorText') or 'failed'
-        rows = list(reqs.values())
-        if furl:
-            rows = [r for r in rows if furl in (r.get('url') or '')]
-        if fmethod:
-            rows = [r for r in rows
-                    if (r.get('method') or '').upper() == fmethod.upper()]
-        if ftype:
-            rows = [r for r in rows
-                    if (r.get('type') or '').lower() == ftype.lower()]
-        if ffailed:
-            rows = [r for r in rows if r.get('failed')]
+        if findex is not None and fall:
+            error('--index 与 --all 互斥', code='CONFLICTING_OPTIONS')
+            return
+        # 按 requestId 聚合 req+resp+fail 成行（时间序）
+        all_rows = _netlog_rows(entries)
+        if findex is not None:
+            # --index 走完整日志序号（与 api-list idx 同序），短路过滤链
+            if not 0 <= findex < len(all_rows):
+                error(f'--index 越界: {findex}（共 {len(all_rows)} 条）',
+                      code='REQUEST_NOT_FOUND')
+                return
+            targets = [(findex, all_rows[findex])]
+        else:
+            # idx = 完整日志序号（与 api-list 的 idx 同序，可互查重放）
+            targets = [(i, r) for i, r in enumerate(all_rows)
+                       if _row_match(r, furl, fmethod, ftype,
+                                     ffailed, fstatus)]
+        if export_fmt:
+            # 无 URL 的条目（fail-only 等）不可重放——剔除
+            targets = [(i, r) for i, r in targets if r.get('url')]
+            if not targets:
+                error('无匹配请求可导出（过滤后为空或条目无 URL）',
+                      code='EMPTY_LIST')
+                return
+            fn = _export_curl if export_fmt == 'curl' else _export_python
+            exports = [{'idx': i, 'id': r.get('id'),
+                        'method': (r.get('method') or 'GET').upper(),
+                        'url': r.get('url'),
+                        'text': fn(r)} for i, r in targets]
+            ok({'format': export_fmt, 'count': len(exports),
+                'exports': exports})
+            return
+        rows = [r for _, r in targets]
         if head:
             rows = rows[:head]
         slim = [{'id': r.get('id'), 'method': r.get('method'),
@@ -118,6 +313,49 @@ def _register_requests(cli):
             except Exception as e:
                 merged['body_error'] = str(e)
         ok(merged)
+
+    @cli.command('api-list')
+    @session_option
+    @click.option('--filter', 'furl', default=None,
+                  help='URL 子串过滤（如 "api/"）')
+    @click.option('--method', 'fmethod', default=None,
+                  help='HTTP 方法过滤（GET/POST/...）')
+    @click.option('--status', 'fstatus', type=int, default=None,
+                  help='HTTP 状态码过滤（如 200/404）')
+    @trim_options
+    def cmd_api_list(session, furl, fmethod, fstatus, head, fields):
+        """列出 netlog 中可重放的 API 端点（仅 XHR/Fetch，排除 Document
+        及静态资源）。
+
+        输出 data.endpoints[]: {idx, id, method, url, url_template,
+        params_keys, content_type, status}——query 参数值抽成 {key}
+        模板位；idx 与 `dpx requests --index` 同序，可直接
+        `dpx requests --export curl --index <idx>` 导出重放命令。
+
+        \b
+        示例:
+          dpx api-list                     # 全部 XHR/Fetch 端点
+          dpx api-list --filter api/       # URL 过滤
+          dpx api-list --method POST --status 200
+        """
+        from dp_cli.netlog import read_entries
+        entries = read_entries(session)
+        if entries is None:
+            _requests_no_buffer(session)
+            return
+        rows = _netlog_rows(entries)
+        eps = [_api_endpoint(i, r) for i, r in enumerate(rows)
+               if (r.get('type') or '').lower() in _API_TYPES
+               and _row_match(r, furl, fmethod, None, False, fstatus)]
+        if not eps:
+            error('netlog 中无 XHR/Fetch 端点（仅有 Document/静态资源'
+                  '或尚未产生请求）', code='EMPTY_LIST')
+            return
+        eps, total = shape_records(eps, fields, head, _API_FIELDS)
+        data = {'count': len(eps), 'endpoints': eps}
+        if head is not None:
+            data['total'] = total
+        ok(data)
 
 
 def _emit_response(url, resp, output):
@@ -550,6 +788,96 @@ def register(cli):
                 ok({'har': har, 'entries': len(har['log']['entries'])})
         except Exception as e:
             error('HAR 收集失败', code='LISTEN_FAILED', detail=str(e))
+
+    @cli.command('api')
+    @click.argument('url')
+    @session_option
+    @click.option('-X', '--request', 'method', default='GET',
+                  show_default=True, help='HTTP 方法（GET/POST/PUT/...）')
+    @click.option('-H', '--header', 'headers', multiple=True,
+                  help="请求头 'Name: value'，可重复")
+    @click.option('-d', '--data', 'data', default=None,
+                  help='请求体（原文发送）')
+    @click.option('--json', 'json_body', default=None,
+                  help='JSON 请求体（自动序列化+'
+                       'Content-Type: application/json）')
+    @click.option('--raw', is_flag=True,
+                  help=f'body 不截断（默认内联上限 '
+                       f'{_API_BODY_LIMIT // 1024}KB）')
+    @click.option('--output', default=None,
+                  help='响应体写入文件（不内联到 data.body）')
+    @click.option('--timeout', default=30,
+                  help='fetch 执行超时秒数', show_default=True)
+    def api_cmd(url, session, method, headers, data, json_body,
+                raw, output, timeout):
+        """在当前页面上下文内执行 fetch（页内同源请求）。
+
+        借页面同源上下文：自带 Cookie/UA/Referer/CSRF token，
+        可命中需要登录态的接口。跨源受 CORS 约束——fetch reject
+        报 API_FETCH_FAILED。
+
+        \b
+        状态码契约：fetch 成功即 ok——http_status 是数据（404/500
+        照常在 data.http_status 返回，ok=False 标记非 2xx）；
+        仅 fetch 抛错才 error。
+
+        \b
+        示例:
+          dpx api /api/user                        # 相对路径=当前页同源
+          dpx api https://a.com/login -X POST \\
+              -H 'X-CSRF: t' --json '{"u":"a"}'
+          dpx api /report.csv --output r.csv       # 大响应写文件
+          dpx api /api/big --raw                   # 关闭 64KB 截断
+        """
+        if data is not None and json_body is not None:
+            error('-d/--data 与 --json 互斥', code='CONFLICTING_OPTIONS')
+            return
+        method = (method or 'GET').upper()
+        body = data
+        hdrs = _parse_api_headers(headers)
+        if json_body is not None:
+            try:
+                # 紧凑分隔——与 JSON.stringify 输出逐字节一致
+                body = json.dumps(json.loads(json_body),
+                                  ensure_ascii=False,
+                                  separators=(',', ':'))
+            except Exception as e:
+                error(f'--json 不是合法 JSON: {e}', code='INVALID_JSON')
+                return
+            hdrs.setdefault('Content-Type', 'application/json')
+        if body is not None and method in ('GET', 'HEAD'):
+            error(f'{method} 不能携带请求体', code='INVALID_ARGS')
+            return
+        page = _get_page(session)
+        js = _build_api_fetch_js(url, method, hdrs, body)
+        try:
+            r = page.run_js(js, timeout=timeout)
+        except TimeoutError:
+            error(f'页内 fetch 超时（{timeout}s）', code='WAIT_TIMEOUT',
+                  detail=url)
+            return
+        except Exception as e:
+            error('页内 fetch 失败（网络错误/CORS 拦截/JS 异常）',
+                  code='API_FETCH_FAILED', detail=str(e))
+            return
+        if not isinstance(r, dict) or 'status' not in r:
+            error('页内 fetch 返回异常', code='API_FETCH_FAILED',
+                  detail=repr(r)[:500])
+            return
+        result = {'http_status': r.get('status'),
+                  'ok': r.get('ok'), 'url': r.get('url')}
+        body_text = r.get('body') or ''
+        if output:
+            Path(output).write_text(body_text, encoding='utf-8')
+            result['saved_to'] = output
+            result['body_length'] = len(body_text)
+        elif not raw and len(body_text) > _API_BODY_LIMIT:
+            result['body'] = body_text[:_API_BODY_LIMIT]
+            result['truncated'] = True
+            result['body_length'] = len(body_text)
+        else:
+            result['body'] = body_text
+        ok(result)
 
     @cli.command('http-get')
     @click.argument('url')

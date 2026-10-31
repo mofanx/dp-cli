@@ -3388,6 +3388,196 @@ def test_netlog_ring_trims(tmp_path):
     assert len(lines) <= 500
 
 
+def _write_netlog(tmp_path, monkeypatch, entries, session='default'):
+    """写一份 netlog-{session}.jsonl 并把 netlog._path 指过去。"""
+    import dp_cli.netlog as nl
+    log = tmp_path / f'netlog-{session}.jsonl'
+    log.write_text('\n'.join(json.dumps(e) for e in entries) + '\n',
+                   encoding='utf-8')
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'netlog-{s}.jsonl')
+    return log
+
+
+_NETLOG_SAMPLE = [
+    {'kind': 'req', 'id': '1', 'url': 'https://x.com/api/u?p=1&k=2',
+     'method': 'GET', 'type': 'XHR',
+     'headers': {'Accept': 'application/json', 'X-Token': 'abc'}},
+    {'kind': 'resp', 'id': '1', 'url': 'https://x.com/api/u?p=1&k=2',
+     'status': 200, 'mimeType': 'application/json',
+     'headers': {'Content-Type': 'application/json'}},
+    {'kind': 'req', 'id': '2', 'url': 'https://x.com/post',
+     'method': 'POST', 'type': 'Fetch',
+     'headers': {'Content-Type': 'application/json'},
+     'postData': '{"a":1}'},
+    {'kind': 'resp', 'id': '2', 'url': 'https://x.com/post',
+     'status': 201, 'headers': {'content-type': 'application/json'}},
+    {'kind': 'req', 'id': '3', 'url': 'https://x.com/doc',
+     'method': 'GET', 'type': 'Document'},
+    {'kind': 'req', 'id': '4', 'url': 'https://x.com/app.js',
+     'method': 'GET', 'type': 'Script'},
+]
+
+
+@pytest.mark.unit
+def test_requests_export_curl(runner, monkeypatch, tmp_path):
+    """requests --export curl：聚合行导出 curl 命令（method/URL/头/postData）。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['requests', '--export', 'curl'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output.strip())
+    assert d['data']['format'] == 'curl'
+    assert d['data']['count'] == 4
+    ex = {e['idx']: e for e in d['data']['exports']}
+    get1 = ex[0]['text']
+    assert get1.startswith('curl -X GET')
+    assert 'https://x.com/api/u?p=1&k=2' in get1
+    assert "-H 'Accept: application/json'" in get1
+    post2 = ex[1]['text']
+    assert post2.startswith('curl -X POST')
+    assert "--data-raw '{\"a\":1}'" in post2
+    assert ex[1]['method'] == 'POST'
+
+
+@pytest.mark.unit
+def test_requests_export_curl_filters_pseudo_headers(runner, monkeypatch,
+                                                     tmp_path):
+    """HTTP/2 伪头（:authority）与 content-length 不进 curl 导出。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, [
+        {'kind': 'req', 'id': '1', 'url': 'https://x.com/a',
+         'method': 'POST', 'type': 'XHR',
+         'headers': {':authority': 'x.com', 'Content-Length': '3',
+                     'X-A': '1'},
+         'postData': 'abc'}])
+    r = runner.invoke(cli, ['requests', '--export', 'curl'])
+    d = json.loads(r.output.strip())
+    text = d['data']['exports'][0]['text']
+    assert ':authority' not in text and 'content-length' not in text.lower()
+    assert "-H 'X-A: 1'" in text
+
+
+@pytest.mark.unit
+def test_requests_export_python(runner, monkeypatch, tmp_path):
+    """requests --export python：requests 库片段。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['requests', '--export', 'python', '--index', '1'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output.strip())
+    assert d['data']['format'] == 'python'
+    snip = d['data']['exports'][0]['text']
+    assert 'import requests' in snip
+    assert "requests.request('POST', 'https://x.com/post'" in snip
+    assert 'data=' in snip
+
+
+@pytest.mark.unit
+def test_requests_export_index_and_bounds(runner, monkeypatch, tmp_path):
+    """--index 走完整日志序号（同 api-list idx）；越界 REQUEST_NOT_FOUND。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['requests', '--export', 'curl', '--index', '2'])
+    d = json.loads(r.output.strip())
+    ex = d['data']['exports'][0]
+    assert ex['idx'] == 2 and ex['url'] == 'https://x.com/doc'
+    r = runner.invoke(cli, ['requests', '--export', 'curl', '--index', '99'])
+    assert 'REQUEST_NOT_FOUND' in r.output
+    # --index 与 --all 互斥
+    r = runner.invoke(cli, ['requests', '--export', 'curl',
+                            '--index', '0', '--all'])
+    assert 'CONFLICTING_OPTIONS' in r.output
+
+
+@pytest.mark.unit
+def test_requests_export_empty_list(runner, monkeypatch, tmp_path):
+    """过滤后无匹配 → EMPTY_LIST。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['requests', '--export', 'curl',
+                            '--filter', 'nonexistent/'])
+    assert r.exit_code != 0
+    assert 'EMPTY_LIST' in r.output
+
+
+@pytest.mark.unit
+def test_requests_export_no_netlog(runner, monkeypatch, tmp_path):
+    """无缓冲文件 → NO_NETLOG。"""
+    from dp_cli.main import cli
+    import dp_cli.netlog as nl
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'netlog-{s}.jsonl')
+    r = runner.invoke(cli, ['requests', '--export', 'curl'])
+    assert 'NO_NETLOG' in r.output
+
+
+@pytest.mark.unit
+def test_api_list_filters_xhr_fetch(runner, monkeypatch, tmp_path):
+    """api-list：只列 XHR/Fetch，Document/Script 排除；idx 同 requests 序号。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['api-list'])
+    assert r.exit_code == 0, r.output
+    eps = json.loads(r.output.strip())['data']['endpoints']
+    assert len(eps) == 2
+    urls = {e['url'] for e in eps}
+    assert 'https://x.com/doc' not in urls           # Document 排除
+    assert 'https://x.com/app.js' not in urls        # Script 排除
+    assert {e['idx'] for e in eps} == {0, 1}         # 完整日志序号
+    a = next(e for e in eps if e['id'] == '1')
+    assert a['method'] == 'GET'
+    assert a['params_keys'] == ['p', 'k']
+    assert a['url_template'] == 'https://x.com/api/u?p={p}&k={k}'
+    assert a['content_type'] == 'application/json'
+    assert a['status'] == 200
+
+
+@pytest.mark.unit
+def test_api_list_template_and_filters(runner, monkeypatch, tmp_path):
+    """api-list：无 query 端点模板=URL 本身；--status/--method 过滤生效。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    r = runner.invoke(cli, ['api-list', '--method', 'POST'])
+    eps = json.loads(r.output.strip())['data']['endpoints']
+    assert len(eps) == 1 and eps[0]['url'] == 'https://x.com/post'
+    assert eps[0]['url_template'] == 'https://x.com/post'
+    assert eps[0]['params_keys'] == []
+    assert eps[0]['status'] == 201
+    r = runner.invoke(cli, ['api-list', '--status', '404'])
+    assert 'EMPTY_LIST' in r.output
+
+
+@pytest.mark.unit
+def test_api_list_no_netlog_and_empty(runner, monkeypatch, tmp_path):
+    """api-list：无缓冲 NO_NETLOG；仅 Document/静态资源 EMPTY_LIST。"""
+    from dp_cli.main import cli
+    import dp_cli.netlog as nl
+    monkeypatch.setattr(nl, '_path', lambda s: tmp_path / f'netlog-{s}.jsonl')
+    r = runner.invoke(cli, ['api-list'])
+    assert 'NO_NETLOG' in r.output
+    _write_netlog(tmp_path, monkeypatch, [
+        {'kind': 'req', 'id': '1', 'url': 'https://x.com/doc',
+         'method': 'GET', 'type': 'Document'}])
+    r = runner.invoke(cli, ['api-list'])
+    assert r.exit_code == 4
+    assert 'EMPTY_LIST' in r.output
+
+
+@pytest.mark.unit
+def test_api_list_idx_replays_via_requests_export(runner, monkeypatch,
+                                                  tmp_path):
+    """api-list idx → requests --export curl --index 直接重放同一端点。"""
+    from dp_cli.main import cli
+    _write_netlog(tmp_path, monkeypatch, _NETLOG_SAMPLE)
+    eps = json.loads(runner.invoke(cli, ['api-list']).output.strip()
+                   )['data']['endpoints']
+    idx = next(e['idx'] for e in eps if e['id'] == '2')
+    r = runner.invoke(cli, ['requests', '--export', 'curl',
+                            '--index', str(idx)])
+    ex = json.loads(r.output.strip())['data']['exports'][0]
+    assert ex['url'] == 'https://x.com/post'
+    assert ex['method'] == 'POST'
+
+
 class _ArmPage:
     """arm_netlog 用假 tab：tab_id + 记录 set_callback 的 driver。"""
 

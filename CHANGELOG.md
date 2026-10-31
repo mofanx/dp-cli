@@ -2,6 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 新增（接口逆向链 L1+L2）
+- **`dpx api`**：页内 fetch 原语——`run_js`+awaitPromise，天然继承 session/cookie/Origin 同源态；curl 风 `-X/-H/-d/--json/--output/--timeout`，`API_FETCH_FAILED` 契约
+- **`dpx api-list`**：netlog 聚合端点表——`url_template {key}` query 参数泛化
+- **`dpx requests --export curl|python`**：捕获项一键导出重放代码；`request/response_headers` 分槽修互覆 bug
+
 ## [0.15.28] - 2026-10-31
 
 ### 改进（eval-120 95.0→98.3 规则修+反哺飞轮闭合）

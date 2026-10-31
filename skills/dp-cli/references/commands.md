@@ -58,13 +58,15 @@
 | 键盘/滚动 | `scroll` | [x], [y], [top], [bottom], [locator], [mouse_x], [mouse_y], [session] |
 | 键盘/滚动 | `scroll-to` | <locator>, [session] |
 | 键盘/滚动 | `type` | <text>, [session], [human], [human_min], [human_max] |
+| 网络 | `api` | <url>, [session], [method], [headers], [data], [json_body], [raw], [output], [timeout] |
+| 网络 | `api-list` | [session], [furl], [fmethod], [fstatus], [fields], [head] |
 | 网络 | `har-dump` | [session], [seconds], [url_filter], [output], [with_body] |
 | 网络 | `http-get` | <url>, [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `http-post` | <url>, [data], [form], [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `listen` | [session], [url_filter], [count], [timeout], [method] |
 | 网络 | `listen-stop` | [session], [count], [timeout], [output], [fields], [head] |
 | 网络 | `request` | [session], <request_id>, [body] |
-| 网络 | `requests` | [session], [furl], [fmethod], [ftype], [ffailed], [head] |
+| 网络 | `requests` | [session], [furl], [fmethod], [ftype], [fstatus], [ffailed], [head], [findex], [export_fmt], [fall] |
 | 断言 | `assert-count` | <locator>, [expected], [session], [min_count], [max_count], [negate], [frame], [timeout] |
 | 断言 | `assert-text` | <text>, [session], [locator], [exact], [negate], [frame], [timeout] |
 | 断言 | `assert-url` | <text>, [session], [exact], [check_title], [negate], [timeout] |

@@ -500,3 +500,148 @@ def test_adapter_name_validation():
     assert net_mod._adapter_path('good-name_1') is not None
     for bad in ('a/b', '..', 'a b', 'https://x.com', '', '-x'):
         assert net_mod._adapter_path(bad) is None, bad
+
+
+# ── P2：api-record --last/--auto + api-list --suggest ────────────
+
+@pytest.mark.unit
+def test_api_record_last_picks_latest_xhr(runner, adir, monkeypatch):
+    """--last 显式取最后一条 XHR/Fetch 行（末尾 Document 跳过）。"""
+    entries = _netlog_entries() + [
+        {'kind': 'req', 'id': '2', 'url': 'https://x.com/doc',
+         'method': 'GET', 'type': 'Document', 'ts': 2.0}]
+    _mock_netlog(monkeypatch, entries)
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-record', 'last-one', '--last'])
+    assert r.exit_code == 0, r.output
+    d = json.loads((adir / 'last-one.json').read_text(encoding='utf-8'))
+    assert d['endpoint']['url_template'].startswith(
+        'https://api.x.com/search')
+    assert 'auto_named' not in json.loads(r.output)['data']
+
+
+@pytest.mark.unit
+def test_api_record_index_last_conflict(runner, adir, monkeypatch):
+    """--index 与 --last 互斥 → CONFLICTING_OPTIONS。"""
+    _mock_netlog(monkeypatch, _netlog_entries())
+    from dp_cli.main import cli
+    r = runner.invoke(cli,
+                      ['api-record', 'x', '--index', '0', '--last'])
+    assert json.loads(r.output)['code'] == 'CONFLICTING_OPTIONS'
+
+
+@pytest.mark.unit
+def test_api_record_auto_domain_naming(runner, adir, monkeypatch):
+    """--auto 免 name：host 标签+末段 → zhuanlan-zhihu-com-draft。"""
+    _mock_netlog(monkeypatch, [
+        {'kind': 'req', 'id': '1',
+         'url': 'https://zhuanlan.zhihu.com/api/draft?id=1',
+         'method': 'POST', 'type': 'XHR', 'ts': 1.0,
+         'postData': '{}'}])
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-record', '--auto'])
+    assert r.exit_code == 0, r.output
+    f = adir / 'zhuanlan-zhihu-com-draft.json'
+    assert f.exists()
+    d = json.loads(f.read_text(encoding='utf-8'))
+    assert d['name'] == 'zhuanlan-zhihu-com-draft'
+    assert d['endpoint']['method'] == 'POST'
+    assert json.loads(r.output)['data']['auto_named'] is True
+
+
+@pytest.mark.unit
+def test_api_record_auto_explicit_name_wins(runner, adir, monkeypatch):
+    """--auto + 显式 name：name 优先，自动命名不生效。"""
+    _mock_netlog(monkeypatch, _netlog_entries())
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-record', 'my-name', '--auto'])
+    assert r.exit_code == 0, r.output
+    assert (adir / 'my-name.json').exists()
+
+
+@pytest.mark.unit
+def test_api_record_auto_collision_suffix(runner, adir, monkeypatch):
+    """--auto 撞名递增 -2——不覆盖既有 adapter。"""
+    _mock_netlog(monkeypatch, [
+        {'kind': 'req', 'id': '1', 'url': 'https://x.com/hot',
+         'method': 'GET', 'type': 'XHR', 'ts': 1.0}])
+    from dp_cli.main import cli
+    for _ in range(2):
+        r = runner.invoke(cli, ['api-record', '--auto'])
+        assert r.exit_code == 0, r.output
+    assert (adir / 'x-com-hot.json').exists()
+    assert (adir / 'x-com-hot-2.json').exists()
+
+
+@pytest.mark.unit
+def test_api_record_auto_first_label_fallback(adir):
+    """命名兜底：无路径段时 host 扁平化；纯数字末段跳过。
+    （adir 隔离 HOME——撞名检查读注册表目录）"""
+    assert net_mod._auto_adapter_name(
+        'https://api.b.com') == 'api-b-com'
+    assert net_mod._auto_adapter_name(
+        'https://zhuanlan.zhihu.com/api/draft?id=1') == \
+        'zhuanlan-zhihu-com-draft'
+    # 纯数字末段跳过
+    assert net_mod._auto_adapter_name(
+        'https://a.com/v2/123') == 'a-com-v2'
+
+
+@pytest.mark.unit
+def test_api_list_suggest_groups_and_excludes_adapters(
+        runner, adir, monkeypatch):
+    """--suggest：url_template hits>=2 且未固化才冒头。"""
+    _write_adapter(adir)          # api.x.com/search 已固化（{keyword}）
+    entries = []
+    for i in range(3):            # 已固化端点 3 hits → 排除
+        entries.append({'kind': 'req', 'id': f'a{i}',
+                        'url': f'https://api.x.com/search?kw=q{i}&p=1',
+                        'method': 'GET', 'type': 'XHR', 'ts': 1.0})
+    for i in range(2):            # 热端点 2 hits → 建议
+        entries.append({'kind': 'req', 'id': f'b{i}',
+                        'url': f'https://api.y.com/feed?cursor={i}',
+                        'method': 'GET', 'type': 'Fetch', 'ts': 2.0})
+    entries.append({'kind': 'req', 'id': 'c',   # 单 hit → 不列
+                    'url': 'https://api.z.com/once',
+                    'method': 'GET', 'type': 'XHR', 'ts': 3.0})
+    entries.append({'kind': 'req', 'id': 'd',   # Document 不计
+                    'url': 'https://api.y.com/doc',
+                    'method': 'GET', 'type': 'Document', 'ts': 4.0})
+    _mock_netlog(monkeypatch, entries)
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-list', '--suggest'])
+    assert r.exit_code == 0, r.output
+    sugg = json.loads(r.output)['data']['suggestions']
+    assert len(sugg) == 1
+    s = sugg[0]
+    assert s['url_template'] == 'https://api.y.com/feed?cursor={cursor}'
+    assert s['method'] == 'GET' and s['hits'] == 2
+    assert s['suggest_record'] == 'api-record api-y-com-feed --last'
+
+
+@pytest.mark.unit
+def test_api_list_suggest_empty(runner, adir, monkeypatch):
+    """全部 hits<2（或全已固化）→ EMPTY_LIST。"""
+    _mock_netlog(monkeypatch, _netlog_entries())   # 单条 XHR hits=1
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-list', '--suggest'])
+    assert r.exit_code != 0
+    assert 'EMPTY_LIST' in r.output
+
+    _write_adapter(adir)                            # 注册即不再建议
+    entries = [{'kind': 'req', 'id': f'a{i}',
+                'url': f'https://api.x.com/search?kw=q{i}&p=1',
+                'method': 'GET', 'type': 'XHR', 'ts': 1.0}
+               for i in range(3)]
+    _mock_netlog(monkeypatch, entries)
+    r = runner.invoke(cli, ['api-list', '--suggest'])
+    assert 'EMPTY_LIST' in r.output
+
+
+@pytest.mark.unit
+def test_api_list_suggest_no_netlog(runner, adir, monkeypatch):
+    """无 netlog 缓冲 → NO_NETLOG（同 api-list 主路径）。"""
+    _mock_netlog(monkeypatch, None)
+    from dp_cli.main import cli
+    r = runner.invoke(cli, ['api-list', '--suggest'])
+    assert 'NO_NETLOG' in r.output

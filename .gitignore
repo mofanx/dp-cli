@@ -25,3 +25,11 @@ t.txt
 t2.json
 t3.json
 test.json
+
+# 真机采集数据/流量（隐私防误入库——文件在 ~/.dp_cli 但防误拷 repo）
+hard_cases*.jsonl
+decide_train*.jsonl
+netlog-*.jsonl
+adapters/
+*.dp_cli
+sessions/*.session

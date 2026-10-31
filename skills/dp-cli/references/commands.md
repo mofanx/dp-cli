@@ -59,8 +59,8 @@
 | 键盘/滚动 | `scroll-to` | <locator>, [session] |
 | 键盘/滚动 | `type` | <text>, [session], [human], [human_min], [human_max] |
 | 网络 | `api` | <url>, [kv], [session], [method], [headers], [data], [json_body], [raw], [output], [timeout] |
-| 网络 | `api-list` | [session], [furl], [fmethod], [fstatus], [list_adapters], [fields], [head] |
-| 网络 | `api-record` | [name], [session], [findex], [param_map], [goal], [nav_url], [do_list], [do_delete] |
+| 网络 | `api-list` | [session], [furl], [fmethod], [fstatus], [list_adapters], [do_suggest], [fields], [head] |
+| 网络 | `api-record` | [name], [session], [findex], [use_last], [auto_name], [param_map], [goal], [nav_url], [do_list], [do_delete] |
 | 网络 | `har-dump` | [session], [seconds], [url_filter], [output], [with_body] |
 | 网络 | `http-get` | <url>, [headers], [proxy], [timeout], [output], [impersonate] |
 | 网络 | `http-post` | <url>, [data], [form], [headers], [proxy], [timeout], [output], [impersonate] |

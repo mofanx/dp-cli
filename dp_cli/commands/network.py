@@ -246,6 +246,59 @@ def _list_adapters() -> list:
     return out
 
 
+def _template_base(url) -> str:
+    """url_template → scheme://host/path 基座（去 query）。
+
+    api-list --suggest 的"已固化"判据：api-record 固化模板里只有
+    --param 映射的键是 {var}（其余保留字面值），与 api-list 全键
+    {key} 形态整串比必失配——比基座（host+path）才是同一端点。
+    """
+    try:
+        sp = urlsplit(url or '')
+        return (f'{sp.scheme}://{sp.netloc}{sp.path}'
+                if sp.scheme else sp.path) or (url or '')
+    except Exception:
+        return url or ''
+
+
+def _auto_adapter_name(url: str) -> str:
+    """--auto/--suggest 域名命名：host 点分标签+末段语义路径 →
+    合法 adapter 名。
+
+    zhuanlan.zhihu.com + /api/draft → zhuanlan-zhihu-com-draft；
+    末段须标识符形态（纯数字 id 段跳过），无可用段退域名首标签；
+    撞名不覆盖既有 adapter——递增 -2/-3。
+    """
+    try:
+        sp = urlsplit(url or '')
+        host, path = (sp.hostname or '').lower(), sp.path or ''
+    except Exception:
+        host, path = '', ''
+    segs = [s for s in host.split('.') if s]
+    tail = ''
+    for s in reversed([x for x in path.split('/') if x]):
+        if re.fullmatch(r'[A-Za-z][\w-]{0,30}', s):
+            tail = s.lower()
+            break
+    raw = '-'.join(segs + ([tail] if tail else []))
+    name = re.sub(r'-{2,}', '-',
+                  re.sub(r'[^a-z0-9_-]+', '-', raw.lower())
+                  ).strip('-')[:63].strip('-')
+    if not name or not _ADAPTER_NAME_RE.match(name):
+        # 兜底：域名首标签（仍不合法退 'api'）
+        name = re.sub(r'[^a-z0-9_-]+', '-',
+                      (segs[0] if segs else 'api').lower()
+                      ).strip('-') or 'api'
+    base, n = name, 2
+    while True:
+        p = _adapter_path(name)
+        if p is None or not p.exists():
+            return name
+        suffix = f'-{n}'
+        name = f'{base[:63 - len(suffix)].rstrip("-")}{suffix}'
+        n += 1
+
+
 def _build_url_template(url: str, param_map: dict) -> tuple:
     """录制端：query 参数值 → {模板变量} 占位。
 
@@ -532,9 +585,13 @@ def _register_requests(cli):
                   help='HTTP 状态码过滤（如 200/404）')
     @click.option('--adapters', 'list_adapters', is_flag=True,
                   help='改列 adapter 注册表（api-record 固化的端点模板）')
+    @click.option('--suggest', 'do_suggest', is_flag=True,
+                  help='端点热度建议——netlog 按 url_template 聚合，'
+                       'hits>=2 且未固化 adapter 的端点列出'
+                       '（重复低效自动冒头，附 api-record 建议命令）')
     @trim_options
     def cmd_api_list(session, furl, fmethod, fstatus, list_adapters,
-                     head, fields):
+                     do_suggest, head, fields):
         """列出 netlog 中可重放的 API 端点（仅 XHR/Fetch，排除 Document
         及静态资源）。
 
@@ -549,6 +606,7 @@ def _register_requests(cli):
           dpx api-list --filter api/       # URL 过滤
           dpx api-list --method POST --status 200
           dpx api-list --adapters          # adapter 注册表
+          dpx api-list --suggest           # 高频未固化端点建议
         """
         if list_adapters:
             ads = _list_adapters()
@@ -560,6 +618,42 @@ def _register_requests(cli):
             _requests_no_buffer(session)
             return
         rows = _netlog_rows(entries)
+        if do_suggest:
+            eps = [_api_endpoint(i, r) for i, r in enumerate(rows)
+                   if (r.get('type') or '').lower() in _API_TYPES
+                   and _row_match(r, furl, fmethod, None, False,
+                                  fstatus)]
+            groups, order = {}, []
+            for ep in eps:
+                key = (ep['method'], ep['url_template'])
+                g = groups.get(key)
+                if g is None:
+                    g = groups[key] = {
+                        'url_template': ep['url_template'],
+                        'method': ep['method'], 'hits': 0}
+                    order.append(key)
+                g['hits'] += 1
+            # 已固化判据比 (method, 基座)——录制模板 {var} 名与
+            # api-list {query键} 形态不同，整串比必失配
+            recorded = {((a.get('method') or 'GET').upper(),
+                         _template_base(a.get('url_template')))
+                        for a in _list_adapters()}
+            sugg = [groups[k] for k in order
+                    if groups[k]['hits'] >= 2
+                    and (groups[k]['method'],
+                         _template_base(groups[k]['url_template']))
+                        not in recorded]
+            sugg.sort(key=lambda g: -g['hits'])
+            if not sugg:
+                error('无可建议端点（netlog 中无 hits>=2 且未固化的'
+                      ' XHR/Fetch 端点）', code='EMPTY_LIST')
+                return
+            for g in sugg:
+                g['suggest_record'] = (
+                    f'api-record '
+                    f'{_auto_adapter_name(g["url_template"])} --last')
+            ok({'count': len(sugg), 'suggestions': sugg})
+            return
         eps = [_api_endpoint(i, r) for i, r in enumerate(rows)
                if (r.get('type') or '').lower() in _API_TYPES
                and _row_match(r, furl, fmethod, None, False, fstatus)]
@@ -579,6 +673,14 @@ def _register_requests(cli):
     @click.option('--index', 'findex', type=int, default=None,
                   help='按完整日志序号选 netlog 行（0 起，同 requests '
                        '--index / api-list idx；默认最后一条 XHR/Fetch）')
+    @click.option('--last', 'use_last', is_flag=True,
+                  help='显式取 netlog 最后一条 XHR/Fetch 行（同缺省'
+                       '行为的声明式写法；与 --index 互斥）')
+    @click.option('--auto', 'auto_name', is_flag=True,
+                  help='自动域名命名——name 可省，取 host 标签+末段'
+                       '路径（zhuanlan.zhihu.com/draft→'
+                       'zhuanlan-zhihu-com-draft）；默认取最新'
+                       ' XHR/Fetch（--index 可另行指定行）')
     @click.option('--param', 'param_map', multiple=True,
                   help='可变参数位映射 query键=模板名（如 kw=keyword），'
                        '可重复——映射的 query 值固化为 {模板名} 占位')
@@ -591,8 +693,8 @@ def _register_requests(cli):
                   help='列出 adapter 注册表（同 api-list --adapters）')
     @click.option('--delete', 'do_delete', is_flag=True,
                   help='删除指定 adapter：api-record --delete <name>')
-    def cmd_api_record(name, session, findex, param_map, goal, nav_url,
-                       do_list, do_delete):
+    def cmd_api_record(name, session, findex, use_last, auto_name,
+                       param_map, goal, nav_url, do_list, do_delete):
         """录制式 adapter：netlog 挑一条 XHR/Fetch 固化为端点模板。
 
         产物 ~/.dp_cli/adapters/<name>.json——录制一次、重放多次：
@@ -606,6 +708,8 @@ def _register_requests(cli):
           dpx api-record bili-search --param kw=keyword \\
               --nav-url https://b.com/search --goal '搜索'
           dpx api-record last-xhr               # 默认最后一条 XHR
+          dpx api-record last-xhr --last        # 显式声明同上
+          dpx api-record --auto                 # 免名：域名自动命名
           dpx api-record myapi --index 3        # 指定日志行
           dpx api-record --list                 # 注册表
           dpx api-record --delete myapi         # 删除
@@ -629,10 +733,16 @@ def _register_requests(cli):
             p.unlink()
             ok({'deleted': name})
             return
-        if not name:
-            error('缺 adapter 名: api-record <name>', code='INVALID_ARGS')
+        if findex is not None and use_last:
+            error('--index 与 --last 互斥（--index 显式选行，'
+                  '--last 取最后一条 XHR/Fetch）',
+                  code='CONFLICTING_OPTIONS')
             return
-        if _adapter_path(name) is None:
+        if not name and not auto_name:
+            error('缺 adapter 名: api-record <name>'
+                  '（或 --auto 自动域名命名）', code='INVALID_ARGS')
+            return
+        if name and _adapter_path(name) is None:
             error(f'adapter 名非法（须 [A-Za-z0-9][\\w-]{{0,63}}）: {name!r}',
                   code='INVALID_ARGS')
             return
@@ -666,6 +776,10 @@ def _register_requests(cli):
         if not url:
             error('所选请求无 URL，无法固化', code='INVALID_ARGS')
             return
+        auto_named = False
+        if not name:                     # --auto：host+末段派生名
+            name = _auto_adapter_name(url)
+            auto_named = True
         try:
             template, keys = _build_url_template(url, pmap)
         except ValueError as e:
@@ -700,7 +814,8 @@ def _register_requests(cli):
         except OSError as e:
             error(f'adapter 写盘失败: {e}', code='HTTP_FAILED')
             return
-        ok({'saved_to': str(d / f'{name}.json'), 'adapter': adapter},
+        ok({'saved_to': str(d / f'{name}.json'), 'adapter': adapter,
+            **({'auto_named': True} if auto_named else {})},
            msg=f'adapter [{name}] 已固化')
 
 

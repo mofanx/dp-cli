@@ -32,6 +32,7 @@ import click
 from dp_cli.output import ok, error, debug, _dump, _write_err
 from dp_cli.session import load_session, save_session, save_refs, load_refs
 from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.hints import adapter_hint, attach_hints
 
 def _models_dir() -> Path:
     """agent 模型目录——惰性求值（import 期固化会让 HOME 隔离失效）。"""
@@ -1257,6 +1258,10 @@ def register(cli):
 
         \b
         结构化置信度（result 字段）:
+          hints.adapter_hint  当前页 host 命中 adapter 注册表时给出
+                              {name,method,params_keys}——可考虑
+                              `dpx api <name>` 而非走 UI；advisory 现算
+                              不入缓存，拒答路径同带（DPX_API_HINT=0 关）
           confidence_tier  high/medium/low——conf+margin 综合分档
                            （meta 规则短路标 'rule'，非置信语义；
                            tier=refuse 时恒压 low——置信不足即该升级）
@@ -1278,6 +1283,11 @@ def register(cli):
         eng = engine or sess.get('agent_engine') or 'external'
         state = _page_state(page, session, max_opts=top_k,
                             recall_pool=(eng == 'reranker'))
+        # L0 adapter_hint 现算（L0.5 契约）：url 取当次 state 的当前
+        # tab URL——epoch 守卫天然成立；hint 不进缓存，命中后响应组装
+        # 处仍按当次注册表注入（同 margin/tier 现算层）
+        _ahint = adapter_hint((state.get('state') or {}).get('url'),
+                              goal)
         prev_sig = _state_sig(session)
         # meta 决策确定性短路——done/blocked/scroll 走规则非模型
         # （语义学习对状态决策零增益已实测；规则命中即出判定）
@@ -1285,18 +1295,20 @@ def register(cli):
         if meta:
             cur_sig = state['epoch']
             _record_hash(session, cur_sig)
-            ok({'action': meta['action'], 'ref': meta.get('ref'),
-                'confidence': 1.0,
-                'confidence_tier': 'rule',   # 规则命中非置信语义，如实标
-                # 结构化置信三键与模型路径对齐——消费者按键存在性
-                # 统一取，不 KeyError（规则命中确定可信→不升级无备选）
-                'should_escalate': False,
-                'alternatives': [],
-                'deterministic': True, 'advisory': eng == 'reranker',
-                'reason': meta['reason'], 'epoch': cur_sig,
-                'options_count': len(state['options']),
-                'truncated': state['truncated'], 'engine': 'meta-rules',
-                'done': meta['action'] == 'done', 'stuck': False})
+            ok(attach_hints(
+                {'action': meta['action'], 'ref': meta.get('ref'),
+                 'confidence': 1.0,
+                 'confidence_tier': 'rule',   # 规则命中非置信语义，如实标
+                 # 结构化置信三键与模型路径对齐——消费者按键存在性
+                 # 统一取，不 KeyError（规则命中确定可信→不升级无备选）
+                 'should_escalate': False,
+                 'alternatives': [],
+                 'deterministic': True, 'advisory': eng == 'reranker',
+                 'reason': meta['reason'], 'epoch': cur_sig,
+                 'options_count': len(state['options']),
+                 'truncated': state['truncated'], 'engine': 'meta-rules',
+                 'done': meta['action'] == 'done', 'stuck': False},
+                adapter_hint=_ahint))
             return
         # --cascade：Julia 粗筛 top-3 候选集回传上层终裁，
         # 不自动执行（top-3 召回实测 100%，top-1 仅 60%）
@@ -1314,15 +1326,17 @@ def register(cli):
             if not ranked and resp.get('target'):
                 ranked = [(str(resp['target']),
                            resp.get('confidence') or 0)]
-            ok({'candidates': [
-                {'ref': int(k) if str(k).isdigit() else k,
-                 'prob': round(float(v), 4),
-                 **next((o for o in state['options']
-                         if str(o['ref']) == str(k)), {})}
-                for k, v in ranked],
-                'epoch': state['epoch'],
-                'engine': eng, 'goal': goal, 'cached': cached,
-                'note': '级联模式——请上层引擎对候选集终裁后执行'})
+            ok(attach_hints(
+                {'candidates': [
+                    {'ref': int(k) if str(k).isdigit() else k,
+                     'prob': round(float(v), 4),
+                     **next((o for o in state['options']
+                             if str(o['ref']) == str(k)), {})}
+                    for k, v in ranked],
+                 'epoch': state['epoch'],
+                 'engine': eng, 'goal': goal, 'cached': cached,
+                 'note': '级联模式——请上层引擎对候选集终裁后执行'},
+                adapter_hint=_ahint))
             return
         resp, request = _ask_questions(state, goal, eng, session,
                                        answer, answer_file,
@@ -1426,6 +1440,10 @@ def register(cli):
                                  state=state, unsure=_unsure)
         except Exception:
             pass
+        # adapter_hint 挂在 hard-case 落盘之后——响应侧 advisory
+        # 不入训练数据；拒答（AGENT_UNSURE）detail 同样携带（拒答恰是
+        # 接口化最值钱场景，见 UI_API_LINKAGE.md L0 否决注脚）
+        attach_hints(result, adapter_hint=_ahint)
         if _unsure:
             error(f'置信度 {conf:.2f} / margin {margin:.2f} 低于阈值——'
                   '候选不足或页面不适合当前决策模型',

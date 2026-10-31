@@ -85,7 +85,7 @@ def _netlog_rows(entries):
         slot = reqs.setdefault(rid, {'id': rid})
         kind = e.get('kind')
         if kind == 'req':
-            for k in ('url', 'method', 'type', 'postData', 'ts'):
+            for k in ('url', 'method', 'type', 'postData', 'ts', 'wts'):
                 if e.get(k) is not None:
                     slot[k] = e[k]
             if e.get('headers') is not None:

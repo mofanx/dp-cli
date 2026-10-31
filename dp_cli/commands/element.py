@@ -1,11 +1,14 @@
 # -*- coding:utf-8 -*-
 """元素交互命令: click / dblclick / fill / clear / select / hover / drag / check / upload / count"""
+import time
+
 import click
 
 from dp_cli.output import ok, error
 from dp_cli.commands._utils import (session_option, frame_option,
                                     _get_page, resolve_locator, frame_ctx,
                                     _wait_ele)
+from dp_cli.hints import attach_hints, touched_apis
 from dp_cli.human import human_options, human_click, human_type, human_clear
 
 
@@ -69,6 +72,9 @@ def register(cli):
                   human_max, frame, timeout):
         """点击元素（默认等待可见/稳定/无遮挡，--force 跳过）。
 
+        成功响应 data.hints.touched_apis：动作 ±窗口内 netlog 捕获的
+        XHR（serve/daemon 托管时；advisory，DPX_API_HINT=0 关）。
+
         \b
         示例:
           dpx click "text:登录"
@@ -102,6 +108,7 @@ def register(cli):
                                 label='点击')
             if ele is None:
                 return
+            _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
             if by_js:
                 ele.run_js('this.click()')
             elif by_mouse:
@@ -123,7 +130,10 @@ def register(cli):
                     return
             else:
                 ele.click()
-            ok({'locator': locator}, msg='点击成功')
+            ok(attach_hints(
+                {'locator': locator},
+                touched_apis=touched_apis(session, _t0)),
+               msg='点击成功')
         except Exception as e:
             error(f'点击失败: {locator}', code='CLICK_FAILED', detail=str(e))
 
@@ -175,6 +185,9 @@ def register(cli):
              human, human_min, human_max):
         """向输入框填入文本。
 
+        成功响应 data.hints.touched_apis：动作 ±窗口内 netlog 捕获的
+        XHR（serve/daemon 托管时；advisory，DPX_API_HINT=0 关）。
+
         \b
         示例:
           dpx fill "@name=username" admin
@@ -193,6 +206,7 @@ def register(cli):
                             no_wait=no_wait, code='FILL_FAILED', label='填入')
             if ele is None:
                 return
+            _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
             if human:
                 human_click(page, ele, human_min, human_max)
                 if clear:
@@ -200,7 +214,10 @@ def register(cli):
                 human_type(page, value, human_min, human_max)
             else:
                 ele.input(value, clear=clear, by_js=by_js)
-            ok({'locator': locator, 'value': value}, msg='填入成功')
+            ok(attach_hints(
+                {'locator': locator, 'value': value},
+                touched_apis=touched_apis(session, _t0)),
+               msg='填入成功')
         except Exception as e:
             error(f'填入失败: {locator}', code='FILL_FAILED', detail=str(e))
 

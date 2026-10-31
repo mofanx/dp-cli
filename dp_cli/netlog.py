@@ -65,6 +65,9 @@ def _entry_req(kw: dict) -> dict:
     req = kw.get('request') or {}
     return {'kind': 'req', 'id': kw.get('requestId'),
             'ts': kw.get('timestamp'),
+            # wts=wallTime 挂钟时戳——hints.touched_apis 因果窗口锚
+            # （ts 是 CDP monotonic，与 time.time() 不同域不可比）
+            'wts': kw.get('wallTime'),
             'url': req.get('url'), 'method': req.get('method'),
             'type': kw.get('type'),
             'headers': req.get('headers'),

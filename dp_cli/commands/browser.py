@@ -23,6 +23,7 @@ from dp_cli.session import (get_browser, close_browser, list_sessions,
 from dp_cli.output import ok, error, format_page_info, debug
 from dp_cli.commands._utils import (session_option, _get_page, normalize_url,
                                     resolve_locator, CdpWaitGate)
+from dp_cli.hints import adapter_hint, attach_hints
 from dp_cli.stealth import apply_stealth, stealth_check, PRESETS, DEFAULT_UA
 
 
@@ -192,6 +193,9 @@ def register(cli):
                  auto_connect, channel, probe_dir, new, stealth):
         """打开浏览器并可选导航到 URL。
 
+        响应 data.hints.adapter_hint：当前页 host 命中 adapter 注册表
+        时提示可 `dpx api <name>` 走接口（advisory，DPX_API_HINT=0 关）。
+
         \b
         【复用用户自己的浏览器 - 方式 A：--remote-debugging-port 启动】
         第一步：用调试模式启动你自己的 Chrome/Chromium：
@@ -318,6 +322,8 @@ def register(cli):
         info = format_page_info(page)
         if stealth_info:
             info['stealth'] = stealth_info
+        # L0 adapter_hint 现算——当前 tab URL host 匹配注册表即提示
+        attach_hints(info, adapter_hint=adapter_hint(info.get('url')))
         ok(info, msg='浏览器已就绪' + ('（已启用 stealth）' if stealth else ''))
 
     @cli.command()

@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """键盘与滚动命令: press / type / scroll / scroll-to / autoscroll"""
+import time
 from time import sleep as _sleep
 
 import click
@@ -8,6 +9,7 @@ from dp_cli.output import ok, error, debug
 from dp_cli.commands._utils import (
     session_option, _get_page, resolve_locator, wait_network_idle,
 )
+from dp_cli.hints import attach_hints, touched_apis
 from dp_cli.session import load_session, save_session
 from dp_cli.human import human_options, human_type, _rand
 
@@ -121,6 +123,9 @@ def register(cli):
     def cmd_type(text, session, human, human_min, human_max):
         """输入文本（当前焦点元素）。
 
+        成功响应 data.hints.touched_apis：动作 ±窗口内 netlog 捕获的
+        XHR（serve/daemon 托管时；advisory，DPX_API_HINT=0 关）。
+
         \b
         示例:
           dpx type "hello world"
@@ -129,11 +134,15 @@ def register(cli):
         """
         page = _get_page(session)
         try:
+            _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
             if human:
                 human_type(page, text, human_min, human_max)
             else:
                 page.actions.type(text)
-            ok({'text': text}, msg='输入成功')
+            ok(attach_hints(
+                {'text': text},
+                touched_apis=touched_apis(session, _t0)),
+               msg='输入成功')
         except Exception as e:
             error(f'输入失败', code='TYPE_FAILED', detail=str(e))
 

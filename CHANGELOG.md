@@ -2,12 +2,13 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.15.29] - 2026-10-31
 
-### 新增（接口逆向链 L1+L2）
+### 新增（接口逆向链 L1+L2+录制式 adapter——"一切皆接口"）
 - **`dpx api`**：页内 fetch 原语——`run_js`+awaitPromise，天然继承 session/cookie/Origin 同源态；curl 风 `-X/-H/-d/--json/--output/--timeout`，`API_FETCH_FAILED` 契约
 - **`dpx api-list`**：netlog 聚合端点表——`url_template {key}` query 参数泛化
 - **`dpx requests --export curl|python`**：捕获项一键导出重放代码；`request/response_headers` 分槽修互覆 bug
+- **录制式 adapter**：`api-record` 固化「端点模板+参数插值+ui_fallback 链」→`dpx api <name>` 重放；接口失败 fail-closed 降级 UI（via=api/ui_fallback）；serve `api` action 双形态中转——实测 api 直调 0.344s vs UI 三轮 1.76s（~5x），知乎 PATCH draft 真端点固化为样例
 
 ## [0.15.28] - 2026-10-31
 

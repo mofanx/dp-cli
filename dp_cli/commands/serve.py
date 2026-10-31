@@ -51,11 +51,66 @@ def _install_timeout_handler():
 _GLOBAL_FLAGS = ('-v', '--verbose', '--compact')
 
 
+def _action_argv(req: dict) -> tuple:
+    """{"action": "...", ...} 结构化请求 → argv。返回 (argv, err)。
+
+    常驻中转形态：adapter/URL 判定时仍走 api 命令自身语义
+    （先查 adapters 注册表命中按 adapter，否则按 URL）。
+    目前支持 action='api'：
+      {"action":"api","name":"bili-search","params":{"keyword":"py"}}
+      {"action":"api","url":"...","method":"POST","headers":{...},
+       "data"|"json": ..., "session": "...", "timeout": N,
+       "raw": true, "output": "..."}
+    """
+    act = req.get('action')
+    if act != 'api':
+        return None, f'未知 action: {act!r}（支持: api）'
+    argv = ['api']
+    name, url = req.get('name'), req.get('url')
+    if name and url:
+        return None, 'api action 的 name 与 url 互斥'
+    if name:
+        argv.append(str(name))
+        params = req.get('params')
+        if params is not None:
+            if not isinstance(params, dict):
+                return None, 'api action 的 params 须为对象 {k: v}'
+            argv += [f'{k}={v}' for k, v in params.items()]
+    elif url:
+        argv.append(str(url))
+    else:
+        return None, 'api action 需要 "name"（adapter）或 "url"'
+    if req.get('method') is not None:
+        argv += ['-X', str(req['method'])]
+    headers = req.get('headers')
+    if headers is not None:
+        if not isinstance(headers, dict):
+            return None, 'api action 的 headers 须为对象 {名: 值}'
+        for k, v in headers.items():
+            argv += ['-H', f'{k}: {v}']
+    if req.get('json') is not None and req.get('data') is not None:
+        return None, 'api action 的 data 与 json 互斥'
+    if req.get('json') is not None:
+        argv += ['--json', json.dumps(req['json'], ensure_ascii=False,
+                                      separators=(',', ':'))]
+    elif req.get('data') is not None:
+        argv += ['-d', str(req['data'])]
+    if req.get('timeout') is not None:
+        argv += ['--timeout', str(req['timeout'])]
+    if req.get('raw'):
+        argv += ['--raw']
+    if req.get('output') is not None:
+        argv += ['--output', str(req['output'])]
+    if req.get('session') is not None:
+        argv += ['-S', str(req['session'])]
+    return argv, None
+
+
 def _parse_request(raw: str) -> tuple:
     """解析一行 JSON 请求 → (argv, req_id, err)。
 
-    合法形态：{"cmd": str} / {"argv": [str,...]}；附可选 "id" 透传。
-    返回 (argv, id, None) 或 (None, None, error_msg)。
+    合法形态：{"cmd": str} / {"argv": [str,...]} / {"action": str, ...}；
+    附可选 "id" 透传。返回 (argv, id, None) 或 (None, None, error_msg)。
     """
     try:
         req = json.loads(raw)
@@ -72,8 +127,13 @@ def _parse_request(raw: str) -> tuple:
             argv = shlex.split(req['cmd'])
         except ValueError as e:
             return None, req_id, f'cmd 解析失败: {e}'
+    elif isinstance(req.get('action'), str):
+        argv, err = _action_argv(req)
+        if err:
+            return None, req_id, err
     else:
-        return None, req_id, '请求缺 "cmd"（字符串）或 "argv"（数组）'
+        return None, req_id, ('请求缺 "cmd"（字符串）或 "argv"（数组）'
+                              '或 "action"（结构化动作）')
 
     if argv and argv[0] in ('dpx', 'dp', 'dp-cli'):
         argv = argv[1:]
@@ -546,6 +606,9 @@ def serve(session, warmup):
       {"cmd": "open https://example.com"}
       {"cmd": "snapshot --brief", "id": 1}
       {"argv": ["click", "text:登录"], "id": 2}
+      {"action": "api", "name": "bili-search",
+       "params": {"keyword": "python"}}
+      {"action": "api", "url": "...", "method": "POST"}
     响应（stdout 每行一个 JSON）：
       {"id": 1, "seq": 1, "exit": 0, "result": {"status": "ok", ...}}
 

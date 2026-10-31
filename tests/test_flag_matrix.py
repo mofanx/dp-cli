@@ -18,7 +18,7 @@ _SESSION_CMDS = {
     'scroll', 'title', 'url', 'html', 'text', 'attr', 'value',
     'assert-*', 'state-save', 'state-load', 'cookies', 'storage',
     'listen', 'listen-stop', 'requests', 'request', 'api-list', 'api',
-    'har',
+    'api-record', 'har',
     'intercept', 'emulate', 'download', 'record-start',
     'record-stop', 'record-show', 'record-status', 'agent-state',
     'decide', 'agent-setup', 'query', 'extract', 'trace', 'metrics',

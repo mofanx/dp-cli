@@ -161,7 +161,9 @@ def main():
         print(f'{"✅" if p_ok else "❌"} api POST --json（body 回显）')
         ok += p_ok; fail += not p_ok
 
-        srv.shutdown()
+        # daemon 线程 shutdown——防 Chrome preconnect 半开连接把
+        # 单线程 handler 卡在 requestline 读取导致 shutdown 无限等
+        threading.Thread(target=srv.shutdown, daemon=True).start()
 
         r = run('requests', '--export', 'curl')
         ex_ok = (r.get('status') == 'ok'
@@ -188,6 +190,89 @@ def main():
     except Exception as e:
         fail += 2
         print(f'  netlog 导出冒烟异常: {e}')
+
+    # 录制式 adapter 链路：netlog→api-record 固化→via=api 重放→
+    # 端点死后 fail-closed 降级 via=ui_fallback（done.html 无可交互
+    # 候选→decide meta 规则确定性 done，零引擎依赖、零外网）。
+    try:
+        www2 = Path(tempfile.mkdtemp(prefix='dpx-adp-'))
+        (www2 / 'done.html').write_text(
+            '<!doctype html><html><body><p>结果页</p></body></html>',
+            encoding='utf-8')
+        adp_state = {'dead': False}
+
+        class _A(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                if self.path.startswith('/search'):
+                    if adp_state['dead']:
+                        payload = b'{"err":"endpoint killed"}'
+                        self.send_response(500)
+                    else:
+                        payload = json.dumps(
+                            {'hits': 3}, ensure_ascii=False).encode('utf-8')
+                        self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                else:
+                    super().do_GET()
+
+        # ThreadingHTTPServer：handler 走独立线程——Chrome preconnect
+        # （只连不发请求行）不会把 serve_forever 循环卡死在
+        # rfile.readline()，shutdown() 才不会无限等待（实测教训）
+        srv2 = http.server.ThreadingHTTPServer(
+            ('127.0.0.1', 0), functools.partial(_A, directory=str(www2)))
+        srv2.daemon_threads = True
+        srv2.block_on_close = False
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+        base2 = f'http://127.0.0.1:{srv2.server_port}'
+        # serve 托管 arm netlog：goto 后页内 fetch 产生 XHR 行供录制
+        reqs = (
+            f'{{"argv":["goto","-S","{SES}","{base2}/done.html"]}}\n'
+            f'{{"argv":["eval","-S","{SES}",'
+            f'"fetch(\'/search?kw=smoke&p=1\').then(r=>r.status)'
+            f'.catch(e=>String(e))"]}}\n'
+            '{"argv":["sleep","2"]}\n')
+        subprocess.run(DPX + ['serve'], input=reqs, capture_output=True,
+                       text=True, timeout=60)
+
+        r = run('api-record', 'smoke-adapter',
+                '--param', 'kw=keyword',
+                '--nav-url', f'{base2}/done.html',
+                '--goal', '查看结果')
+        rec_ok = r.get('status') == 'ok'
+        print(f'{"✅" if rec_ok else "❌"} api-record 固化 '
+              f'（netlog→adapters/smoke-adapter.json）')
+        ok += rec_ok; fail += not rec_ok
+
+        r = run('api', 'smoke-adapter', 'keyword=smoke')
+        via_ok = (r.get('status') == 'ok'
+                  and r.get('data', {}).get('via') == 'api'
+                  and r['data'].get('http_status') == 200
+                  and 'hits' in r['data'].get('body', ''))
+        print(f'{"✅" if via_ok else "❌"} api <adapter> 重放 via=api '
+              f'（200+body）')
+        ok += via_ok; fail += not via_ok
+
+        adp_state['dead'] = True     # 杀掉端点：HTTP 500 ≥400 触发降级
+        r = run('api', 'smoke-adapter', 'keyword=smoke')
+        fb = r.get('data', {})
+        fb_ok = (r.get('status') == 'ok'
+                 and fb.get('via') == 'ui_fallback'
+                 and fb.get('ok') is True)
+        print(f'{"✅" if fb_ok else "❌"} 端点死→fail-closed '
+              f'via=ui_fallback（open+decide 链）')
+        ok += fb_ok; fail += not fb_ok
+
+        run('api-record', 'smoke-adapter', '--delete')
+        threading.Thread(target=srv2.shutdown, daemon=True).start()
+    except Exception as e:
+        fail += 3
+        print(f'  adapter 冒烟异常: {e}')
 
     print(f'== {ok} passed, {fail} failed ==')
     run('close')                    # 防 hostile session 残留

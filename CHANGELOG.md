@@ -2,6 +2,19 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.31] - 2026-11-01
+
+### 修复（B1-B7 真机病灶——decide/agent 决策链+交互执行链）
+- **B1 meta 空 ref 降 UNSURE**：meta 规则命中 click/type/select 等需 ref 动作却解不出目标元素时，不再按 conf=1.0 空 ref 放行（上层拿"不可执行的建议"当真执行失败）——降 `AGENT_UNSURE`+`ref_missing`+`should_escalate`，意图保留交上层重寻元素
+- **B2 LLM 引擎失败降级 reranker**：JEV/LLM parse/网络失败不再裸 `DECIDE_FAILED` 打死整页决策——自动降 reranker 二档重试，`engine_requested`/`degraded`/`fallback_reason` 如实标注；reranker 自身故障维持 `DECIDE_FAILED`，双败才 `AGENT_UNSURE`
+- **B3 `tab-select --index`**：序号位置参数的等价旗（`dpx tab-select --index 1` ≡ `dpx tab-select 1`），两者同给必须一致否则报错——修 agent 自然猜旗形态 Usage 报错
+- **B4 eval IIFE 兜底**：`run_js` 顶层 return 多语句脚本（`var x=…;return x`）在 Runtime.evaluate 下 Illegal return statement——语法类失败自动按 `(function(){…})()` 重跑，运行时错误原样上抛不双跑副作用
+- **B7 遮挡自动 by-js 降级**：click/fill 遮挡检测命中自动 fallback JS 派发一次（真实页浮层普遍误伤——JD 商品卡/比价站弹层归因），`fallback`/`occluded` 字段如实标注非静默；元素本身解不出仍报原 occluded 错
+- **`_cur_tab` 统一 active_tab 判定**：serve/batch/netlog 三挂点收口——修 netlog arm 记错 tab；adapter `skipped_params` 显式化（JSON 模板漏参可见）
+
+### 验证（真机重跑）
+- jde2 daemon 0.15.30 `fallback:by_js` 实锤（遮挡自动降级生效）；eval `var x=1`→2 IIFE 兜底通过；reranker probs 降级链路实测作答
+
 ## [0.15.30] - 2026-10-31
 
 ### 新增（UI↔API hint 联动层+P2 固化降摩擦）

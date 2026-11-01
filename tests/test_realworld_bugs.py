@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""真机归因修复（B1-B4、B7）。
+"""真机归因修复（B1-B4、B7、B9、B10）。
 
 B1  meta-rules 命中需 ref 的元素动作却 ref=None → 降 conf 走
     AGENT_UNSURE（tier=low/should_escalate=true），非 conf=1.0 空 ref；
@@ -13,6 +13,13 @@ B4  eval 多语句 JS（顶层 return）→ Illegal return statement 时
 B7  click/fill actionability occluded → 自动降级 by-js 重试一次，
     响应标 fallback:'by_js'+occluded:true（advisory 非静默）；
     重定位也失败才按原 occluded 报错
+B9  tab 绑定漂移——_cur_tab 对 get_tab 异常不再无条件清绑定：
+    tab_ids 在册但 attach 失败 → 保留绑定 + 返回 None →
+    _get_page fail-closed 报 TAB_FAILED（不静默漂 latest_tab）；
+    get_tab 假阴性时绕名单直接 attach 复核；真关才清绑定回退
+B10 fill 遮挡降级 by_js → input 前先 run_js 显式清场
+    （value=''+input 事件），再 input(clear=False,by_js=True)；
+    正常 fill 路径语义不动
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -442,7 +449,13 @@ def test_b7_fill_occluded_falls_back_by_js(monkeypatch):
     assert out['status'] == 'ok', out
     d = out['data']
     assert d['fallback'] == 'by_js' and d['occluded'] is True
-    assert ele.inputs == [{'value': '手机', 'clear': True, 'by_js': True}]
+    # B10：降级路径先 run_js 清场（value=''+input 事件），
+    # 再 input(clear=False, by_js=True)——不再靠 DP input 自带
+    # clear 语义（真机追加不清空归因）
+    assert ele.clicked == [
+        'this.value="";this.dispatchEvent('
+        'new Event("input",{bubbles:true}))']
+    assert ele.inputs == [{'value': '手机', 'clear': False, 'by_js': True}]
 
 
 def test_b7_click_by_js_explicit_no_fallback_mark(monkeypatch):
@@ -505,3 +518,195 @@ def test_b7_non_occluded_fail_no_retry(monkeypatch):
     assert '不可交互' in out['message']
     assert calls == [True]                 # 无降级重试
     assert ele.inputs == []
+
+
+# ── B9：tab 绑定漂移——_cur_tab fail-closed ─────────────────────
+
+class _BoundTab:
+    """单 tab mock：记录 run_js 命中，区分 eval 打到哪个 tab。"""
+    def __init__(self, tid):
+        self.tab_id = tid
+        self.calls = []
+        self.latest_tab = None
+        self.url = f'https://{tid}/'
+        self.title = tid
+
+    def run_js(self, script, *a, as_expr=False, timeout=None, **k):
+        self.calls.append(script)
+        return f'{self.tab_id}-result'
+
+    def ele(self, locator, timeout=None):
+        return self           # --locator 分支：self 即元素
+
+
+class _BoundPage:
+    """浏览器级 page mock：双 tab 场景。
+
+    active_tab 绑 tabB；latest_tab=tabA（外部活动 tab——B9 漂移终点）。
+    get_tab_exc 注入 get_tab 瞬断；tab_ids 可控（tab 是否在册）。
+    """
+    def __init__(self, tabs, tab_ids=None, get_tab_exc=None):
+        self._tabs = tabs
+        self.latest_tab = tabs['tabA']
+        self._tab_ids = list(tabs) if tab_ids is None else tab_ids
+        self._get_tab_exc = get_tab_exc
+        self.browser = self       # ChromiumTab(page.browser, tid) 直 attach 用
+        self.calls = []
+
+    @property
+    def tab_ids(self):
+        return self._tab_ids
+
+    def get_tab(self, tid):
+        if self._get_tab_exc:
+            raise self._get_tab_exc
+        return self._tabs[tid]
+
+
+def _b9_mocks(monkeypatch, page, sess):
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: dict(sess))
+
+
+def test_b9_eval_hits_bound_tab(monkeypatch):
+    """active_tab=tabB、latest_tab=tabA → eval 打在 tabB（绑定生效）。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _BoundPage(tabs)
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabB-result'
+    assert tabs['tabB'].calls == ['document.title']
+    assert tabs['tabA'].calls == []          # 无漂移
+
+
+def test_b9_eval_locator_branch_bound_tab(monkeypatch):
+    """eval --locator 元素分支同样打在绑定 tab。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _BoundPage(tabs)
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'this.id', '--locator', '#kw'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabB-result'
+    assert tabs['tabA'].calls == []
+
+
+def test_b9_get_tab_transient_direct_attach_recovers(monkeypatch):
+    """get_tab 假阴性（名单过滤/瞬断）但 tab 在册 → 绕名单直 attach
+    取回 tabB，绑定保留（不清 active_tab）、eval 不漂移。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _BoundPage(tabs, get_tab_exc=RuntimeError('NO_SUCH_TAB'))
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    # get_tab 抛错后 _cur_tab 走 ChromiumTab(page.browser, tid) 直 attach
+    import DrissionPage._pages.chromium_tab as _ct
+    monkeypatch.setattr(_ct, 'ChromiumTab',
+                        lambda browser, tid: tabs[tid])
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabB-result'
+    assert tabs['tabA'].calls == []
+    assert saved == []                        # 绑定未被清/回写
+
+
+def test_b9_bound_tab_unreachable_fails_closed(monkeypatch):
+    """绑定 tab 在册但两路 attach 均败 → TAB_FAILED 显式报错，
+    绑定保留（可重试），绝不静默漂 latest_tab 打 tabA。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _BoundPage(tabs, get_tab_exc=RuntimeError('boom'))
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'error'
+    assert out['code'] == 'TAB_FAILED'
+    assert 'tabB' in out['message']
+    assert tabs['tabA'].calls == []          # 没有漂到 latest_tab
+    assert saved == []                       # 绑定保留
+
+
+def test_b9_dead_tab_clears_binding_falls_back(monkeypatch):
+    """tab 真关（不在 tab_ids）→ 清绑定存盘 + 回退 latest_tab——
+    原失效语义保留。"""
+    tabs = {'tabA': _BoundTab('tabA')}
+    page = _BoundPage(tabs, tab_ids=['tabA'],
+                      get_tab_exc=RuntimeError('gone'))
+    sess = {'active_tab': 'tabB'}
+    _b9_mocks(monkeypatch, page, sess)
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabA-result'
+    assert saved and 'active_tab' not in saved[-1]   # 失效绑定已清
+
+
+# ── B10：fill by_js 降级先清场 ──────────────────────────────────
+
+def test_b10_normal_fill_no_clear_js(monkeypatch):
+    """正常（非降级）fill 路径不加清场 run_js——原语义不动。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    monkeypatch.setattr(element_mod, '_resolve_ele',
+                        lambda *a, **k: (ele, None))
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['fill', 'css:#kw', 'x'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert 'fallback' not in out['data']
+    # 正常路径：input 保持原签名语义（clear=True 由 DP 处理），
+    # 无任何额外清场 run_js
+    assert ele.inputs == [{'value': 'x', 'clear': True, 'by_js': False}]
+    assert ele.clicked == []
+
+
+def test_b10_fallback_clear_runs_before_input(monkeypatch):
+    """降级路径：清场 run_js 在 input 调用之前（顺序断言）。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    seq = []
+
+    orig_run_js = ele.run_js
+    def run_js(script, *a, **k):
+        if 'elementFromPoint' not in script:
+            seq.append(('run_js', script))
+        return orig_run_js(script, *a, **k)
+    ele.run_js = run_js
+    orig_input = ele.input
+    def _input(value, clear=True, by_js=False):
+        seq.append(('input', value, clear, by_js))
+        return orig_input(value, clear=clear, by_js=by_js)
+    ele.input = _input
+
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['fill', 'css:#kw', 'u3', '--timeout', '2'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert seq == [
+        ('run_js', 'this.value="";this.dispatchEvent('
+                   'new Event("input",{bubbles:true}))'),
+        ('input', 'u3', False, True)]

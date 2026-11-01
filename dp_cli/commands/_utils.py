@@ -85,6 +85,10 @@ def _cur_tab(page, session: str, sess: dict = None):
     session active_tab 绑定的执行 tab——active_tab 必须先行判定；
     绑定失效（tab 已关）清绑定存盘后回退 latest_tab → page。
     旁路逻辑（netlog arm / 留证截图）须走本函数与命令执行 tab 一致。
+
+    返回 None：绑定 tab 在册但两路 attach 均失败（B9 fail-closed——
+    绑定保留、绝不静默漂到 latest_tab 操作错目标）。旁路调用方
+    按"无可用 tab"处理，_get_page 转 TAB_FAILED 显式报错。
     """
     if sess is None:
         try:
@@ -93,12 +97,35 @@ def _cur_tab(page, session: str, sess: dict = None):
             sess = {}
     tab_id = sess.get('active_tab')
     if tab_id:
+        t = None
         try:
             t = page.get_tab(tab_id)
         except Exception:
             t = None
+        if t is None:
+            # B9：get_tab 的 targetInfos 名单校验可假阴性（bridge
+            # 过滤/attach 瞬断/快照竞态）——绕名单按 targetId 直接
+            # attach 复核死活：目标真死 attach 必败，活着即取回正确
+            # tab 且绑定不丢
+            try:
+                from DrissionPage._pages.chromium_tab import ChromiumTab
+                t = ChromiumTab(page.browser, tab_id)
+            except Exception:
+                t = None
         if t is not None:
             return t
+        # 两路 attach 均败。tab_ids 仍在册 = 活着但不可达——
+        # 原语义"清绑定+回退 latest_tab"会把后续命令静默漂到无关
+        # tab（B9 eval 打错页真机归因）；保留绑定返回 None，
+        # 由 _get_page fail-closed 显式报错。
+        # 不在册/枚举失败 = 绑定失效（tab 已关/不可枚举），
+        # 清绑定存盘后回退 latest_tab → page（原语义）
+        try:
+            alive = tab_id in (page.tab_ids or ())
+        except Exception:
+            alive = False
+        if alive:
+            return None
         sess.pop('active_tab', None)
         save_session(session, sess)
     try:
@@ -132,6 +159,13 @@ def _get_page(session: str, raw: bool = False, inject_recording: bool = True):
     else:
         # 检查是否有绑定的标签页（active_tab → get_tab，回退 latest_tab）
         target = _cur_tab(page, session, sess)
+        if target is None:
+            # B9 fail-closed：绑定 tab 在册但 attach 不可达——
+            # 显式报错，绝不静默漂到 latest_tab 操作错目标
+            error(f'绑定的标签页在册但连接失败: {sess.get("active_tab")}'
+                  f'——重试一次；放弃绑定可 dpx tab-select none',
+                  code='TAB_FAILED')
+            return
 
     # 自动重新应用 stealth：CDP init_js 绑定到 CDP session，每个 dpx 命令是独立
     # Python 进程/独立 session，必须重新注册才能让下一次 navigation 生效。

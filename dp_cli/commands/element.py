@@ -255,7 +255,15 @@ def register(cli):
                 return
             _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
             if fb is not None:
-                ele.input(value, clear=clear, by_js=True)
+                if clear:
+                    # B10：遮挡降级先显式清场——input(by_js=True) 的
+                    # 清场依赖 DP 版本语义（真机追加不清空，多个值
+                    # 串联废掉表单）；run_js 置空并派发 input 事件
+                    # 兼容 React/Vue 受控组件，然后 clear=False 填入
+                    ele.run_js('this.value="";'
+                               'this.dispatchEvent('
+                               'new Event("input",{bubbles:true}))')
+                ele.input(value, clear=False, by_js=True)
             elif human:
                 human_click(page, ele, human_min, human_max)
                 if clear:

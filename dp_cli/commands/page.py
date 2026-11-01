@@ -430,8 +430,9 @@ def register(cli):
 
     @cli.command('sleep')
     @click.argument('seconds', type=float)
-    def cmd_sleep(seconds):
-        """无条件定时等待（脚本节奏控制）。
+    @session_option
+    def cmd_sleep(seconds, session):
+        """无条件定时等待（脚本节奏控制，-S 为命令面一致性空操作）。
 
         \b
         示例:
@@ -453,7 +454,8 @@ def register(cli):
     @click.option('--text', default=None, help='等待页面包含指定文本')
     @click.option('--loaded', is_flag=True, help='等待页面 DOM 加载完成')
     @click.option('--idle', type=float, is_flag=False, flag_value=2.0, default=None,
-                  help='等待网络空闲（无请求持续 N 秒，默认 2），适合懒加载')
+                  help='等待网络空闲（无请求持续 N 秒，默认 2），适合懒加载；'
+                       '埋点/心跳类遥测请求不计入空闲判定')
     @click.option('--downloads-done', is_flag=True, help='等待所有下载完成')
     @click.option('--download', 'downloads_done_alias', is_flag=True,
                   flag_value=True, help='--downloads-done 别名')

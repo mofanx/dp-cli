@@ -773,22 +773,48 @@ def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
     return None
 
 
-def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30) -> bool:
+# wait --idle 埋点/心跳白名单——遥测类 URL 不计入 pending/activity
+# （xhs 等长驻心跳页面"网络永不空闲"实测归因：心跳 XHR 使 pending
+# 恒非空，--idle 必超时）。requestWillBeSent 的 request.url 匹配即
+# 整链路忽略（requestId 入 ignored，其 response/fail 同步跳过）。
+_IDLE_IGNORE_RE = re.compile(
+    r'(heartbeat|beacon|xlog|analytics|telemetry|'
+    r'/collect[/?&]|/track[/?&]|/metrics?[/?&]|/logs?[/?&]|/apm[/?&.]|'
+    r'sentry\.|umeng|cnzz|hm\.baidu|google-analytics|googletagmanager|'
+    r'doubleclick|facebook\.net|bat\.bing)',
+    re.IGNORECASE)
+
+
+def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
+                      ignore_re=_IDLE_IGNORE_RE) -> bool:
     """等待网络空闲：通过 CDP 监听，直到无活跃请求持续 idle_time 秒。
 
+    :param ignore_re: 埋点/心跳 URL 白名单正则——命中的请求整链路
+        不计入 pending 也不刷新 activity；None 禁用过滤。
     :raises TimeoutError: 若 timeout 秒内未达成空闲条件
     """
     pending = set()
+    ignored = set()
     last_activity = perf_counter()
 
     def _on_request(**kwargs):
         nonlocal last_activity
-        pending.add(kwargs.get('requestId', ''))
+        rid = kwargs.get('requestId', '')
+        if ignore_re is not None:
+            req = kwargs.get('request') or {}
+            if ignore_re.search(req.get('url') or ''):
+                ignored.add(rid)
+                return
+        pending.add(rid)
         last_activity = perf_counter()
 
     def _on_response(**kwargs):
         nonlocal last_activity
-        pending.discard(kwargs.get('requestId', ''))
+        rid = kwargs.get('requestId', '')
+        if rid in ignored:
+            ignored.discard(rid)
+            return
+        pending.discard(rid)
         last_activity = perf_counter()
 
     page.run_cdp('Network.enable')

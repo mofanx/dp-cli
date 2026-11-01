@@ -34,6 +34,9 @@
 - `page.tab_ids` 在 `MixTab` 上不存在——popup 检测要走 `page.browser.tab_ids` 回退
 - `download_path` 默认是 cwd 而非"未配置"——不能当条件判据
 - adapter 导航模式：URL 直参可能因登录态/会话重定向打回首页——manmanbuy `historyLowest.aspx?url=` 未登录直跳首页，需先 open 工具页再填表单二次导航（B8 归因，勿把直参 URL 当稳定入口）
+- `open --auto-connect <url>` 曾走 `ChromiumPage.get`=tab_ids[0] 劫持用户首个 tab（跑批归因）——`browser._open_navigate` 分流：无 active_tab 绑定→new_tab+绑，有绑定→绑定 tab 导航；`--port` 未分流（如需同款行为另行评估）
+- netlog 仅 serve/daemon 长驻进程 arm（设计边界）——CDP Network 事件按 WebSocket 连接投递，逐条 `dpx <cmd>` 短进程退出即断链，arm 只能捕存活期残段且污染 `requests` 的"未挂载"降级语义；CLI 路径 `touched_apis` 恒空属预期，被动日志走 `dpx serve`/daemon 或 `listen`
+- `wait --idle` 埋点/心跳白名单（`_IDLE_IGNORE_RE`）——遥测 URL 不计入 pending/activity；站点私有心跳 endpoint 漏网时用 `--loaded`/`--text` 替代
 
 ## 发版门禁
 

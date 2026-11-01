@@ -75,6 +75,44 @@ def _cdp_eval(page, expression: str):
     return None
 
 
+def _open_navigate(page, session: str, url: str):
+    """open 初始导航分流（auto-connect 防首 tab 劫持）。
+
+    auto-connect 接管的是用户自己的浏览器：ChromiumPage.get 打在
+    tab_ids[0] 上——用户首个 tab 被静默导航走（跑批真机归因）。
+    分流：
+      - 已有 active_tab 绑定 → 在绑定 tab 内导航
+      - 无绑定/绑定失效      → new_tab 开专属 tab 并绑 active_tab
+    dpx 自管实例（非 auto-connect）→ page.get 原语义不变。
+    返回实际被导航的页面对象（供 format_page_info 报当前 tab）。
+    """
+    sess = load_session(session) or {}
+    if not sess.get('auto_connect'):
+        page.get(url)
+        return page
+    tab_id = sess.get('active_tab')
+    tab = None
+    if tab_id:
+        try:
+            tab = page.get_tab(tab_id)
+        except Exception:
+            tab = None
+    if tab is not None:
+        tab.get(url)
+        return tab
+    if tab_id:
+        # 绑定失效（tab 已关）——清绑定走新 tab，不回退劫持首个 tab
+        sess.pop('active_tab', None)
+        save_session(session, sess)
+    new_tab = page.new_tab(url=url)
+    new_tid = getattr(new_tab, 'tab_id', None)
+    if new_tid:
+        sess = load_session(session) or {}
+        sess['active_tab'] = new_tid
+        save_session(session, sess)
+    return new_tab
+
+
 def _apply_browser_cdp(page, cfg: dict) -> None:
     """重放 media / bypass_csp / throttle 会话级 CDP 设置。
 
@@ -314,12 +352,14 @@ def register(cli):
                           detail=f'allowed={_allowed}')
                     return
             try:
-                page.get(normalize_url(url))
+                target = _open_navigate(page, session, normalize_url(url))
             except Exception as e:
                 error(f'导航失败: {e}', code='NAVIGATE_FAILED', detail=str(e))
                 return
+        else:
+            target = page
 
-        info = format_page_info(page)
+        info = format_page_info(target)
         if stealth_info:
             info['stealth'] = stealth_info
         # L0 adapter_hint 现算——当前 tab URL host 匹配注册表即提示

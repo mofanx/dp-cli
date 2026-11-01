@@ -31,6 +31,7 @@ from click.testing import CliRunner
 
 import dp_cli.agent as agent
 import dp_cli.commands._utils as _utils
+import dp_cli.commands.browser as browser_mod
 import dp_cli.commands.element as element_mod
 import dp_cli.commands.page as page_mod
 import dp_cli.commands.tab as tab_mod
@@ -749,3 +750,203 @@ def test_b10_fallback_clear_runs_before_input(monkeypatch):
         ('run_js', 'this.value="";this.dispatchEvent('
                    'new Event("input",{bubbles:true}))'),
         ('input', 'u3', False, True)]
+
+
+# ── B11：跑批归因三连（auto-connect 首 tab 劫持 / sleep -S /
+#   wait --idle 心跳白名单）────────────────────────────────────
+
+class _Ready:
+    ready_state = 'complete'
+
+
+class _NavTab:
+    def __init__(self, tid):
+        self.tab_id = tid
+        self.got = []
+        self.url = f'https://tab-{tid}.example/'
+        self.title = f't-{tid}'
+        self.states = _Ready()
+
+    def get(self, url, *a, **k):
+        self.got.append(url)
+
+
+class _NavPage:
+    """ChromiumPage 替身：get 记录在首个 tab（劫持路径），
+    new_tab/get_tab 记专属 tab。"""
+
+    def __init__(self, tabs=()):
+        self.url = 'https://first-tab.example/'
+        self.title = 'user-first'
+        self.states = _Ready()
+        self.got = []
+        self.new_tabs = []
+        self._tabs = {t.tab_id: t for t in tabs}
+
+    def get(self, url, *a, **k):
+        self.got.append(url)
+
+    def new_tab(self, url=None, **kw):
+        t = _NavTab(f'NEW{len(self.new_tabs) + 1}')
+        t.got.append(url)
+        self._tabs[t.tab_id] = t
+        self.new_tabs.append(t)
+        return t
+
+    def get_tab(self, tid):
+        return self._tabs.get(tid)
+
+
+def _open_mocks(monkeypatch, sess_store, page):
+    monkeypatch.setattr(browser_mod, 'get_browser', lambda *a, **k: page)
+    monkeypatch.setattr(browser_mod, 'load_session',
+                        lambda s: dict(sess_store))
+    monkeypatch.setattr(browser_mod, 'save_session',
+                        lambda s, d: sess_store.update(d))
+    monkeypatch.setattr(browser_mod, 'discover_port_from_profile',
+                        lambda p: 9222)
+
+
+def test_b11_open_auto_connect_navigates_new_tab(monkeypatch):
+    """auto-connect 无 active_tab → new_tab+绑定，用户首个 tab 不动。"""
+    sess_store, page = {}, _NavPage()
+    _open_mocks(monkeypatch, sess_store, page)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['open', 'https://example.com', '--auto-connect',
+              '--probe-dir', '/tmp/x'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.got == []                    # 首个 tab 未被导航
+    assert len(page.new_tabs) == 1
+    assert page.new_tabs[0].got == ['https://example.com']
+    assert sess_store['active_tab'] == 'NEW1'   # 专属 tab 已绑定
+    assert out['data']['url'] == 'https://tab-NEW1.example/'
+
+
+def test_b11_open_auto_connect_bound_tab_navigates(monkeypatch):
+    """auto-connect 已有 active_tab → 绑定 tab 内导航，不再开新 tab。"""
+    bound = _NavTab('T1')
+    sess_store = {'auto_connect': True, 'active_tab': 'T1'}
+    page = _NavPage(tabs=[bound])
+    _open_mocks(monkeypatch, sess_store, page)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['open', 'https://example.com', '--auto-connect',
+              '--probe-dir', '/tmp/x'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.got == [] and page.new_tabs == []
+    assert bound.got == ['https://example.com']
+
+
+def test_b11_open_auto_connect_stale_binding_falls_new_tab(monkeypatch):
+    """active_tab 绑定失效（get_tab None）→ 清绑定走 new_tab，
+    不回退劫持首个 tab。"""
+    sess_store = {'auto_connect': True, 'active_tab': 'DEAD'}
+    page = _NavPage()
+    _open_mocks(monkeypatch, sess_store, page)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['open', 'https://example.com', '--auto-connect',
+              '--probe-dir', '/tmp/x'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.got == []
+    assert len(page.new_tabs) == 1
+    assert sess_store['active_tab'] == 'NEW1'
+
+
+def test_b11_open_managed_browser_get_unchanged(monkeypatch):
+    """非 auto-connect（dpx 自管实例）→ page.get 原语义回归。"""
+    sess_store, page = {}, _NavPage()
+    _open_mocks(monkeypatch, sess_store, page)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['open', 'https://example.com'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.got == ['https://example.com']
+    assert page.new_tabs == []
+    assert 'active_tab' not in sess_store
+
+
+def test_b11_sleep_accepts_session_flag():
+    """dpx sleep 0.01 -S x ——runner 统一补 -S 不再 INVALID_ARGS。"""
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['sleep', '0.01', '-S', 'taskpool'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['slept'] == 0.01
+
+
+# ── wait --idle 心跳白名单 ────────────────────────────────────
+
+class _IdleDriver:
+    def __init__(self):
+        self.cbs = {}
+
+    def set_callback(self, name, cb):
+        if cb is None:
+            self.cbs.pop(name, None)
+        else:
+            self.cbs[name] = cb
+
+
+class _IdlePage:
+    def __init__(self):
+        self.driver = _IdleDriver()
+
+    def run_cdp(self, *a, **k):
+        return {}
+
+
+def test_b11_idle_ignores_heartbeat():
+    """心跳/埋点请求不计入 pending——长驻 heartbeat 页面也能收敛空闲。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(page, idle_time=0.2,
+                                          timeout=3)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    # 真实请求发起并完成——随后只剩心跳
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    # 长驻心跳（永不 finished）——修复前 pending 恒非空必超时
+    for i in range(10):
+        if 'v' in result:
+            break
+        cbs['Network.requestWillBeSent'](
+            requestId=f'hb{i}',
+            request={'url': 'https://xhs.example/beacon/heartbeat'})
+        time.sleep(0.05)
+    th.join(3)
+    assert result.get('v') is True
+
+
+def test_b11_idle_whitelist_off_preserves_semantics():
+    """ignore_re=None 关闭过滤——心跳不 finish 时仍按原语义超时。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+
+    def _run():
+        try:
+            result['v'] = _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=0.5, ignore_re=None)
+        except TimeoutError:
+            result['v'] = 'timeout'
+
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    time.sleep(0.05)
+    page.driver.cbs['Network.requestWillBeSent'](
+        requestId='hb1',
+        request={'url': 'https://xhs.example/beacon/heartbeat'})
+    th.join(3)
+    assert result.get('v') == 'timeout'

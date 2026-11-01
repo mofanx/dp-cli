@@ -5332,6 +5332,7 @@ def test_cur_tab_falls_back_when_bound_tab_dead(monkeypatch):
 
     class _Page:
         latest_tab = tab0
+        tab_ids = ['t0']                 # 绑定 t9 已死——枚举两次均缺席
 
         def get_tab(self, tid):
             raise RuntimeError('tab gone')
@@ -5347,6 +5348,7 @@ def test_cur_tab_falls_back_when_bound_tab_dead(monkeypatch):
     # get_tab 返 None（不抛错形态）同样走回退
     class _Page2:
         latest_tab = tab0
+        tab_ids = ['t0']
 
         def get_tab(self, tid):
             return None

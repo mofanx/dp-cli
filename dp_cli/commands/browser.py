@@ -22,7 +22,8 @@ from dp_cli.session import (get_browser, close_browser, list_sessions,
                             sniff_auto_user_data_dir)
 from dp_cli.output import ok, error, format_page_info, debug
 from dp_cli.commands._utils import (session_option, _get_page, normalize_url,
-                                    resolve_locator, CdpWaitGate)
+                                    resolve_locator, CdpWaitGate,
+                                    _attach_bound_tab, _tab_confirmed_dead)
 from dp_cli.hints import adapter_hint, attach_hints
 from dp_cli.stealth import apply_stealth, stealth_check, PRESETS, DEFAULT_UA
 
@@ -93,15 +94,18 @@ def _open_navigate(page, session: str, url: str):
     tab_id = sess.get('active_tab')
     tab = None
     if tab_id:
-        try:
-            tab = page.get_tab(tab_id)
-        except Exception:
-            tab = None
+        tab = _attach_bound_tab(page, tab_id)
     if tab is not None:
         tab.get(url)
         return tab
     if tab_id:
-        # 绑定失效（tab 已关）——清绑定走新 tab，不回退劫持首个 tab
+        # 绑定失效分流：确证已死（tab_ids 双枚举缺席）→ 清绑定
+        # 走新 tab；不可证死（attach/枚举瞬断）→ fail-closed 抛错，
+        # 不丢绑定也不多开 tab（与 _cur_tab 同一确证标准）
+        if not _tab_confirmed_dead(page, tab_id):
+            raise ConnectionError(
+                f'绑定的标签页不可达: {tab_id}——重试一次；'
+                f'放弃绑定可 dpx tab-select none')
         sess.pop('active_tab', None)
         save_session(session, sess)
     new_tab = page.new_tab(url=url)

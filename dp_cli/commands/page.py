@@ -499,8 +499,16 @@ def register(cli):
         page = _get_page(session)
         try:
             if idle is not None:
-                wait_network_idle(page, idle_time=idle, timeout=timeout)
-                ok(format_page_info(page), msg=f'网络已空闲 {idle}s')
+                _idle_stats = {}
+                wait_network_idle(page, idle_time=idle, timeout=timeout,
+                                  stats=_idle_stats)
+                _idle_data = format_page_info(page)
+                # 长挂请求老化剔除计数透出——普通 fetch 长轮询
+                # 豁免可观测（jd/知乎 pending 永挂归因）
+                if _idle_stats.get('stale_dropped'):
+                    _idle_data['stale_dropped'] = \
+                        _idle_stats['stale_dropped']
+                ok(_idle_data, msg=f'网络已空闲 {idle}s')
             elif loaded:
                 page.wait.doc_loaded(timeout=timeout)
                 ok(format_page_info(page), msg='页面已加载')

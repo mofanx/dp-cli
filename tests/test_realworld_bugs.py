@@ -30,6 +30,17 @@ B13 wait --idle 长连接豁免——WS 握手（type=WebSocket/wss://
 B14 adapter body JSON 顶层标量键 = kw=v 注入面——record 端
     body_params_keys 落盘+提示，回放端 kw=v 替换 JSON 子键
     （类型对齐录制值），命中键不再进 extra 警告
+B15 跑批二轮 2 病灶——
+    A4 wait --idle 普通 fetch 长轮询（非 WS/SSE）pending 永挂：
+    pending 改 {rid:ts}，超 pending_ttl（DPX_IDLE_PENDING_TTL，
+    默认 5s，<=0 关）未 finished 自动剔除计 stale_dropped，
+    wait 响应透出计数；WS/SSE/ignore_re 白名单不动
+    A5 mmb 三连（ELEMENT_NOT_FOUND+AGENT_UNSURE）= tab 绑定
+    死亡误判→清绑定→静默漂 latest_tab：_cur_tab attach 双路
+    复核一轮 + _tab_confirmed_dead 要求 tab_ids 两次成功枚举
+    均缺席才清绑定（枚举失败/在册=不可证死→fail-closed 保留
+    绑定报 TAB_FAILED）；_open_navigate 同一确证标准，
+    不可证死抛错不乱开 tab
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -804,6 +815,10 @@ class _NavPage:
         self.new_tabs.append(t)
         return t
 
+    @property
+    def tab_ids(self):
+        return list(self._tabs)
+
     def get_tab(self, tid):
         return self._tabs.get(tid)
 
@@ -1187,3 +1202,264 @@ def test_b14_replay_unmatched_key_still_warns(isolated_home,
     d = json.loads(r.output)['data']
     assert any('zzz' in w for w in d['warnings'])
     assert not any('keyword' in w for w in d['warnings'])
+
+
+# ── B15：跑批二轮 2 病灶——idle pending TTL 老化 + tab 绑定
+#   死亡确证（mmb 三连回归归因）────────────────────────────
+
+def test_b15_idle_pending_ttl_prunes_stale():
+    """A4：普通 fetch 长轮询（type=Fetch 永不 loadingFinished，
+    非 WS/SSE 抓不到协议特征）→ 超 pending_ttl 老化剔除，
+    idle 收敛 True + stats.stale_dropped≥1（jd/知乎 5×WAIT_FAILED
+    归因）。"""
+    import threading, time
+    page = _IdlePage()
+    result, stats = {}, {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=3,
+                pending_ttl=0.3, stats=stats)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    # 正常请求发起并完成
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    # type=Fetch 普通请求长挂——修复前 pending 恒非空必超时
+    cbs['Network.requestWillBeSent'](
+        requestId='lp1', type='Fetch',
+        request={'url': 'https://jd.example/longpoll'})
+    fin = cbs['Network.loadingFinished']
+    th.join(3)
+    assert result.get('v') is True
+    assert stats.get('stale_dropped', 0) >= 1
+    # 长挂请求迟到的 finished 走 ignored 回收——不炸不复活
+    fin(requestId='lp1')
+
+
+def test_b15_idle_pending_ttl_env_override(monkeypatch):
+    """DPX_IDLE_PENDING_TTL 环境变量可调老化窗口。"""
+    import threading, time
+    monkeypatch.setenv('DPX_IDLE_PENDING_TTL', '0.25')
+    page = _IdlePage()
+    result, stats = {}, {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=3, stats=stats)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    cbs['Network.requestWillBeSent'](
+        requestId='lp1', type='XHR',
+        request={'url': 'https://zhihu.example/poll'})
+    th.join(3)
+    assert result.get('v') is True
+    assert stats.get('stale_dropped', 0) >= 1
+
+
+def test_b15_idle_pending_ttl_off_keeps_old_semantics():
+    """pending_ttl<=0 关老化——长挂请求不剔除，回到原超时语义。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+
+    def _run():
+        try:
+            result['v'] = _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=0.5, pending_ttl=0)
+        except TimeoutError:
+            result['v'] = 'timeout'
+
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    time.sleep(0.05)
+    page.driver.cbs['Network.requestWillBeSent'](
+        requestId='lp1', type='Fetch',
+        request={'url': 'https://jd.example/longpoll'})
+    th.join(3)
+    assert result.get('v') == 'timeout'
+
+
+class _FlapEnumPage:
+    """tab_ids 枚举可控：exc=抛错 / seq=逐次返回不同名单。"""
+
+    def __init__(self, tabs, tab_seq=None, enum_exc=None,
+                 get_tab_exc=None):
+        self._tabs = tabs
+        self.latest_tab = tabs['tabA']
+        self._tab_seq = list(tab_seq) if tab_seq else None
+        self._enum_exc = enum_exc
+        self._get_tab_exc = get_tab_exc
+        self.browser = self
+
+    @property
+    def tab_ids(self):
+        if self._enum_exc is not None:
+            raise self._enum_exc
+        if self._tab_seq:
+            return self._tab_seq.pop(0) \
+                if len(self._tab_seq) > 1 else self._tab_seq[0]
+        return list(self._tabs)
+
+    def get_tab(self, tid):
+        if self._get_tab_exc:
+            raise self._get_tab_exc
+        return self._tabs[tid]
+
+    def new_tab(self, url=None, **k):
+        raise AssertionError('不可证死不应开新 tab')
+
+
+def test_b15_cur_tab_enum_error_keeps_binding(monkeypatch):
+    """A5：attach 双路失败 + tab_ids 枚举抛错 = 不可证死——
+    旧实现 except→alive=False 当死清绑定，后续命令静默漂
+    latest_tab（mmb 三连：fill/decide 打到用户 jd/知乎前台
+    tab 报 ELEMENT_NOT_FOUND/AGENT_UNSURE）。现保留绑定
+    返回 None → _get_page fail-closed 报 TAB_FAILED。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _FlapEnumPage(tabs,
+                         enum_exc=RuntimeError('getTargets flake'),
+                         get_tab_exc=RuntimeError('boom'))
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'error'
+    assert out['code'] == 'TAB_FAILED'
+    assert tabs['tabA'].calls == []          # 没漂到 latest_tab
+    assert saved == []                        # 绑定保留未清
+
+
+def test_b15_cur_tab_flap_missing_then_present_keeps(monkeypatch):
+    """首次枚举缺席 + 复核在册（getTargets 快照竞态）→ 不清绑定，
+    fail-closed TAB_FAILED。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    page = _FlapEnumPage(
+        tabs, tab_seq=[['tabA'], ['tabA', 'tabB']],
+        get_tab_exc=RuntimeError('boom'))
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['code'] == 'TAB_FAILED'
+    assert saved == []                        # 单次缺席不清绑定
+    assert tabs['tabA'].calls == []
+
+
+def test_b15_cur_tab_attach_retry_recovers(monkeypatch):
+    """attach 一轮瞬断、复核轮恢复 → 取回绑定 tab——瞬断不升级
+    为死亡判定，eval 正常打 tabB。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+
+    class _RetryPage(_FlapEnumPage):
+        def __init__(self, tabs, **kw):
+            super().__init__(tabs, **kw)
+            self.n = 0
+
+        def get_tab(self, tid):
+            self.n += 1
+            if self.n == 1:
+                raise RuntimeError('transient')
+            return self._tabs[tid]
+
+    page = _RetryPage(tabs)
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabB-result'
+    assert page.n >= 2                         # 复核轮真跑了
+    assert saved == []
+
+
+def test_b15_cur_tab_dead_twice_confirmed_clears(monkeypatch):
+    """两次成功枚举均缺席 = 确证死亡 → 清绑定回退 latest_tab
+    （原失效语义保留，单缺席误清才是缺陷）。"""
+    tabs = {'tabA': _BoundTab('tabA')}
+    page = _FlapEnumPage(tabs, tab_seq=[['tabA'], ['tabA']],
+                         get_tab_exc=RuntimeError('gone'))
+    _b9_mocks(monkeypatch, page, {'active_tab': 'tabB'})
+    saved = []
+    monkeypatch.setattr(_utils, 'save_session',
+                        lambda s, d: saved.append(dict(d)))
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['eval', 'document.title'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['result'] == 'tabA-result'
+    assert saved and 'active_tab' not in saved[-1]
+
+
+def test_b15_open_navigate_unconfirmed_death_fails_closed(
+        monkeypatch):
+    """open --auto-connect：绑定 tab attach 失败但枚举不可证死
+    → NAVIGATE_FAILED 显式报错，绑定保留、不多开 stray tab。"""
+    tabs = {'tabA': _BoundTab('tabA'), 'tabB': _BoundTab('tabB')}
+    opened = []
+
+    class _P(_FlapEnumPage):
+        def new_tab(self, url=None, **k):
+            opened.append(url)
+            return _BoundTab('tabN')
+
+    page = _P(tabs, enum_exc=RuntimeError('enum flake'),
+              get_tab_exc=RuntimeError('boom'))
+    sess = {'auto_connect': True, 'user_connected': True,
+            'probe_dir': '/tmp/x', 'active_tab': 'tabB'}
+    monkeypatch.setattr(browser_mod, 'get_browser',
+                        lambda *a, **k: page)
+    monkeypatch.setattr(browser_mod, 'load_session',
+                        lambda s: dict(sess))
+    monkeypatch.setattr(browser_mod, 'save_session',
+                        lambda s, d: None)
+    monkeypatch.setattr(browser_mod, 'discover_port_from_profile',
+                        lambda d: 9222)
+    import DrissionPage._pages.chromium_tab as _ct
+
+    def _no_attach(browser, tid):
+        raise RuntimeError('attach failed')
+    monkeypatch.setattr(_ct, 'ChromiumTab', _no_attach)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['open', '--auto-connect', '--probe-dir', '/tmp/x',
+              'https://tool.manmanbuy.com/historyLowest.aspx'])
+    out = json.loads(r.output)
+    assert out['status'] == 'error'
+    assert out['code'] == 'NAVIGATE_FAILED'
+    assert 'tabB' in out['message']
+    assert opened == []                        # 不多开 tab

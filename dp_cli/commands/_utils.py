@@ -2,6 +2,7 @@
 """所有命令模块共享的工具函数和装饰器"""
 import io
 import csv
+import os
 import re
 import threading
 from time import perf_counter, sleep as _sleep
@@ -78,6 +79,57 @@ def frame_ctx(page, frame_loc: str = None, session: str = 'default'):
     return fr
 
 
+# 绑定 tab 复核延迟：attach/枚举瞬断窗口（bridge 抖动、
+# Target.getTargets 快照竞态）一次失败不等于真死
+_TAB_RETRY_DELAY = 0.3
+
+
+def _attach_bound_tab(page, tab_id):
+    """active_tab → tab 对象；两路 attach，全败返回 None。
+
+    ① page.get_tab(tab_id)：名单校验后取 MixTab；
+    ② ChromiumTab 直挂（B9）：get_tab 的 targetInfos 名单校验
+    可假阴性（bridge 过滤/attach 瞬断/快照竞态）——绕名单按
+    targetId 直接 attach 复核死活：目标真死 attach 必败，
+    活着即取回正确 tab 且绑定不丢。
+    """
+    t = None
+    try:
+        t = page.get_tab(tab_id)
+    except Exception:
+        t = None
+    if t is not None:
+        return t
+    try:
+        from DrissionPage._pages.chromium_tab import ChromiumTab
+        return ChromiumTab(page.browser, tab_id)
+    except Exception:
+        return None
+
+
+def _tab_confirmed_dead(page, tab_id) -> bool:
+    """active_tab 是否确证已死——仅当 tab_ids 两次成功枚举均缺席。
+
+    返回 False 的情形一律"不可证死"：
+      - 枚举抛错（CDP/bridge 瞬断）——失败样本不是死亡证据，
+        旧实现 except→alive=False 把枚举瞬断直接当死清绑定，
+        后续命令静默漂 latest_tab（mmb 三连真机归因）；
+      - 单次枚举缺席——快照竞态可漏列活 tab，短延迟复核二次
+        缺席才采信；
+      - 在册——活着但 attach 不可达，走 fail-closed。
+    """
+    for i in range(2):
+        try:
+            ids = page.tab_ids or ()
+        except Exception:
+            return False               # 枚举失败 = 不可证死
+        if tab_id in ids:
+            return False               # 在册 = 活
+        if i == 0:
+            _sleep(_TAB_RETRY_DELAY)   # 缺席复核间隔
+    return True                        # 两次成功枚举均缺席 = 确证死亡
+
+
 def _cur_tab(page, session: str, sess: dict = None):
     """session 当前 tab——与 _get_page 同一选取语义。
 
@@ -86,7 +138,7 @@ def _cur_tab(page, session: str, sess: dict = None):
     绑定失效（tab 已关）清绑定存盘后回退 latest_tab → page。
     旁路逻辑（netlog arm / 留证截图）须走本函数与命令执行 tab 一致。
 
-    返回 None：绑定 tab 在册但两路 attach 均失败（B9 fail-closed——
+    返回 None：绑定 tab 不可证死但 attach 不可达（B9 fail-closed——
     绑定保留、绝不静默漂到 latest_tab 操作错目标）。旁路调用方
     按"无可用 tab"处理，_get_page 转 TAB_FAILED 显式报错。
     """
@@ -97,34 +149,20 @@ def _cur_tab(page, session: str, sess: dict = None):
             sess = {}
     tab_id = sess.get('active_tab')
     if tab_id:
-        t = None
-        try:
-            t = page.get_tab(tab_id)
-        except Exception:
-            t = None
+        t = _attach_bound_tab(page, tab_id)
         if t is None:
-            # B9：get_tab 的 targetInfos 名单校验可假阴性（bridge
-            # 过滤/attach 瞬断/快照竞态）——绕名单按 targetId 直接
-            # attach 复核死活：目标真死 attach 必败，活着即取回正确
-            # tab 且绑定不丢
-            try:
-                from DrissionPage._pages.chromium_tab import ChromiumTab
-                t = ChromiumTab(page.browser, tab_id)
-            except Exception:
-                t = None
+            # B9 二阶：attach 双路一轮瞬断复核——bridge/CDP 抖动
+            # 会把活 tab 打成"不可达"，重试一轮再判
+            _sleep(_TAB_RETRY_DELAY)
+            t = _attach_bound_tab(page, tab_id)
         if t is not None:
             return t
-        # 两路 attach 均败。tab_ids 仍在册 = 活着但不可达——
-        # 原语义"清绑定+回退 latest_tab"会把后续命令静默漂到无关
-        # tab（B9 eval 打错页真机归因）；保留绑定返回 None，
-        # 由 _get_page fail-closed 显式报错。
-        # 不在册/枚举失败 = 绑定失效（tab 已关/不可枚举），
-        # 清绑定存盘后回退 latest_tab → page（原语义）
-        try:
-            alive = tab_id in (page.tab_ids or ())
-        except Exception:
-            alive = False
-        if alive:
+        # 两路 attach 两轮均败。只有"确证已死"（tab_ids 两次成功
+        # 枚举均缺席）才清绑定回退 latest_tab（原失效语义）；
+        # 在册/枚举失败 = 不可证死——保留绑定返回 None，
+        # 由 _get_page fail-closed 显式报错（B9 原则外延到枚举
+        # 失败分支：宁可 TAB_FAILED 不误清绑定漂错页）。
+        if not _tab_confirmed_dead(page, tab_id):
             return None
         sess.pop('active_tab', None)
         save_session(session, sess)
@@ -814,16 +852,46 @@ def _long_lived_request(req: dict, rtype) -> bool:
     return False
 
 
+# pending 老化默认 TTL——普通 fetch/XHR 长轮询（JD/知乎实测）
+# requestWillBeSent 后无 loadingFinished，pending 永挂使 --idle
+# 必超时。非 WS/SSE 形态抓不到协议特征，用入列时长兜底：超 TTL
+# 未完成即判定"长挂"，剔除 pending 计 stale_dropped。
+_IDLE_PENDING_TTL_DEFAULT = 5.0
+
+
+def _idle_pending_ttl(pending_ttl) -> float:
+    """pending_ttl 参数 → 生效值；None 读 DPX_IDLE_PENDING_TTL
+    （环境变量可调），缺省 _IDLE_PENDING_TTL_DEFAULT；<=0 关老化。"""
+    if pending_ttl is not None:
+        try:
+            return float(pending_ttl)
+        except (TypeError, ValueError):
+            return _IDLE_PENDING_TTL_DEFAULT
+    try:
+        return float(os.environ.get(
+            'DPX_IDLE_PENDING_TTL', _IDLE_PENDING_TTL_DEFAULT))
+    except (TypeError, ValueError):
+        return _IDLE_PENDING_TTL_DEFAULT
+
+
 def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
-                      ignore_re=_IDLE_IGNORE_RE) -> bool:
+                      ignore_re=_IDLE_IGNORE_RE, pending_ttl=None,
+                      stats: dict = None) -> bool:
     """等待网络空闲：通过 CDP 监听，直到无活跃请求持续 idle_time 秒。
 
     :param ignore_re: 埋点/心跳 URL 白名单正则——命中的请求整链路
         不计入 pending 也不刷新 activity；None 禁用过滤。
+    :param pending_ttl: 单请求 pending 老化秒数——入列超 TTL 仍无
+        loadingFinished/Failed 的请求判"长挂"剔除 pending（普通
+        fetch 长轮询兜底，WS/SSE 已由 _long_lived_request 豁免）；
+        None → DPX_IDLE_PENDING_TTL 环境变量，默认 5s；<=0 关老化。
+    :param stats: 可选 dict 出参——返回时含 stale_dropped 计数。
     :raises TimeoutError: 若 timeout 秒内未达成空闲条件
     """
-    pending = set()
+    ttl = _idle_pending_ttl(pending_ttl)
+    pending = {}          # rid → 入列时刻（老化修剪用）
     ignored = set()
+    stale_dropped = 0
     last_activity = perf_counter()
 
     def _on_request(**kwargs):
@@ -839,7 +907,7 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
                 and ignore_re.search(req.get('url') or ''):
             ignored.add(rid)
             return
-        pending.add(rid)
+        pending[rid] = perf_counter()
         last_activity = perf_counter()
 
     def _on_response(**kwargs):
@@ -848,7 +916,7 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
         if rid in ignored:
             ignored.discard(rid)
             return
-        pending.discard(rid)
+        pending.pop(rid, None)
         last_activity = perf_counter()
 
     page.run_cdp('Network.enable')
@@ -860,7 +928,22 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
     try:
         end = perf_counter() + timeout
         while perf_counter() < end:
-            if not pending and (perf_counter() - last_activity) >= idle_time:
+            now = perf_counter()
+            if ttl > 0 and pending:
+                # 老化修剪：超 TTL 无 finished 的请求移出 pending——
+                # rid 转 ignored，其迟到的 finished 既不复活 pending
+                # 也不刷新 activity（长挂请求的迟到收尾不算活跃）
+                stale = [r for r, t0 in pending.items()
+                         if now - t0 > ttl]
+                for r in stale:
+                    pending.pop(r, None)
+                    ignored.add(r)
+                if stale:
+                    stale_dropped += len(stale)
+                    debug(f'wait --idle 老化剔除 {len(stale)} 个'
+                          f'长挂请求（ttl={ttl}s，累计 '
+                          f'{stale_dropped}）')
+            if not pending and (now - last_activity) >= idle_time:
                 return True
             _sleep(0.1)
         raise TimeoutError(f'网络未在 {timeout}s 内空闲 {idle_time}s')
@@ -868,6 +951,8 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
         driver.set_callback('Network.requestWillBeSent', None)
         driver.set_callback('Network.loadingFinished', None)
         driver.set_callback('Network.loadingFailed', None)
+        if stats is not None:
+            stats['stale_dropped'] = stale_dropped
 
 
 def records_to_csv(records: list) -> str:

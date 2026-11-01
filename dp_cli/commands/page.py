@@ -10,7 +10,9 @@ import click
 from dp_cli.output import ok, error, debug, format_page_info
 from dp_cli.commands._utils import (session_option, _get_page,
                                     wait_network_idle, trim_options,
-                                    shape_records, CdpWaitGate)
+                                    shape_records, CdpWaitGate,
+                                    _missions_seen_update, _dl_dir_files,
+                                    _dl_file_info)
 
 _CONSOLE_FIELDS = {'level', 'text', 'source', 'timestamp'}
 
@@ -604,44 +606,53 @@ def register(cli):
                     error('下载管理器不可用（_dl_mgr 缺失），无法跟踪下载',
                           code='DOWNLOAD_FAILED')
                     return
+                # missions 恒空修复：DP set_done 完成即从 _missions
+                # 弹出——轮询中累积 seen 快照（对象引用，弹出后终态
+                # 仍可读）；stale 'running' 按 DPX_DL_STALE_TTL 剔除；
+                # 目录增量（本进程窗口内落盘的新完成文件）也算 done
                 end = perf_counter() + timeout
-                missions = []
-                while perf_counter() < end:
-                    missions = list(
-                        getattr(mgr, 'missions', {}).values())
-                    if missions and all(
-                            getattr(m, 'is_done', True) for m in missions):
+                seen, progress, dropped = {}, {}, set()
+                baseline = {f.name for f in _dl_dir_files(_dl_dir)}
+                active, dir_hit = [], []
+                while True:
+                    active = _missions_seen_update(
+                        mgr, seen, progress, dropped)
+                    if active and all(
+                            getattr(m, 'is_done', True) for m in active):
+                        break
+                    dir_hit = [f for f in _dl_dir_files(_dl_dir)
+                               if f.name not in baseline]
+                    if dir_hit:
+                        break
+                    if perf_counter() >= end:
+                        dir_hit = []
                         break
                     _sleep(0.2)
                 done = [{'name': getattr(m, 'name', None),
                          'path': getattr(m, 'final_path', None)
                                  or str(getattr(m, 'folder', '') or ''),
                          'state': getattr(m, 'state', None)}
-                        for m in missions]
-                if missions and all(
-                        getattr(m, 'is_done', True) for m in missions):
+                        for m in active]
+                if active and all(
+                        getattr(m, 'is_done', True) for m in active):
                     ok({'missions': done,
                         'download_dir': _dl_dir}, msg='下载已完成')
-                elif not missions:
+                elif dir_hit:
+                    # 本进程窗口内新落盘文件——事件流在另一进程
+                    # （跨进程断链）但完成文件可见即 done
+                    ok({'missions': [_dl_file_info(f)
+                                     for f in dir_hit[:20]],
+                        'download_dir': _dl_dir,
+                        'note': '下载事件未在本进程观测，'
+                                '结果为目录增量回扫'},
+                       msg='下载已完成（目录回扫）')
+                elif not active:
                     # 事后语义回退：本进程未观测到事件（跨进程断链），
                     # 但前进程已完成的下载文件应可追溯——扫目录兜底
-                    from pathlib import Path as _P
-                    _skip_sfx = ('.crdownload', '.part', '.partial', '.tmp')
-                    try:
-                        files = [f for f in _P(_dl_dir).iterdir()
-                                 if f.is_file()
-                                 and f.suffix.lower() not in _skip_sfx]
-                    except OSError:
-                        files = []
+                    files = _dl_dir_files(_dl_dir)
                     if files:
-                        files.sort(key=lambda f: f.stat().st_mtime,
-                                   reverse=True)
-                        ok({'missions': [{
-                            'name': f.name,
-                            'path': str(f),
-                            'state': 'completed（目录回扫）',
-                            'size': f.stat().st_size,
-                        } for f in files[:20]],
+                        ok({'missions': [_dl_file_info(f)
+                                         for f in files[:20]],
                             'download_dir': _dl_dir,
                             'note': '本进程未观测到下载事件，'
                                     '结果为目录回扫（跨进程断链）'},

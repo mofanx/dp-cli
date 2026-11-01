@@ -974,6 +974,97 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
             stats['ignored_reqs'] = ignored_reqs
 
 
+# ── 下载任务追踪（missions 恒空修复）─────────────────────────────
+# DrissionPage DownloadManager.set_done 完成即从 _missions 弹出——
+# 裸读 mgr.missions 恒只见在途任务，`missions and all(is_done)`
+# 恒不可达烧满 timeout；外部触发/断链的 stale 'running' mission
+# 无过期机制会堵死目录回扫分支使 wait 永久 WAIT_TIMEOUT。
+# 解法：轮询中累积 seen 快照（存 mission 对象引用——DP 弹出后其
+# is_done/final_path/state 仍原地更新可读）、stale 按
+# received_bytes 停滞 TTL 剔除、missions 语义落空走目录回扫兜底。
+_DL_STALE_TTL_DEFAULT = 30.0
+
+# 下载中临时文件后缀——目录回扫排除项（出现即未完成）
+_DL_PART_SUFFIXES = ('.crdownload', '.part', '.partial', '.tmp')
+
+
+def _dl_stale_ttl() -> float:
+    """running 态下载 mission 的停滞 TTL（秒）。
+
+    received_bytes 超此时长无增长判 stale 从 seen 剔除。
+    DPX_DL_STALE_TTL 环境变量可调；<=0 关闭剔除。
+    """
+    try:
+        return float(os.environ.get('DPX_DL_STALE_TTL',
+                                    _DL_STALE_TTL_DEFAULT))
+    except (TypeError, ValueError):
+        return _DL_STALE_TTL_DEFAULT
+
+
+def _dl_dir_files(dl_dir) -> list:
+    """下载目录回扫：已完成文件列表（排除下载中临时后缀），
+    按 mtime 新→旧排序；目录不可读返回 []。"""
+    from pathlib import Path
+    try:
+        files = [f for f in Path(dl_dir).iterdir()
+                 if f.is_file()
+                 and f.suffix.lower() not in _DL_PART_SUFFIXES]
+    except OSError:
+        return []
+    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    return files
+
+
+def _missions_seen_update(mgr, seen: dict, progress: dict,
+                          dropped: set = None, ttl=None) -> list:
+    """轮询一轮 mgr.missions：收编新 mission 进 seen + stale 剔除，
+    返回 seen 现存 mission 列表。
+
+    :param mgr: DrissionPage DownloadManager（或同形态 mock）。
+    :param seen: {guid: mission} 跨轮累积——存对象引用，DP 完成弹出
+        _missions 后其终态（is_done/final_path/state）仍可读。
+    :param progress: {guid: [received_bytes, last_change_ts]} stale
+        判定的进度时钟（stale=running 态超 ttl 秒无进度）。
+    :param dropped: 已判 stale 的 guid 集合——running mission 从未
+        完成的不会被 DP 弹出，剔除后每轮仍出现在 mgr.missions 里，
+        无此集合会原地复活重新计时永远剔不掉。
+    :param ttl: stale 秒数；None → _dl_stale_ttl()（读
+        DPX_DL_STALE_TTL）；<=0 关闭剔除。
+    """
+    if ttl is None:
+        ttl = _dl_stale_ttl()
+    if dropped is None:
+        dropped = set()
+    now = perf_counter()
+    for guid, m in getattr(mgr, 'missions', {}).items():
+        if guid in dropped:
+            continue                      # stale 已剔除，不再收编
+        seen[guid] = m
+        rb = getattr(m, 'received_bytes', None)
+        prev = progress.get(guid)
+        if prev is None or prev[0] != rb:
+            progress[guid] = [rb, now]
+    if ttl > 0:
+        for guid in list(seen):
+            m = seen[guid]
+            if getattr(m, 'is_done', False):
+                progress.pop(guid, None)      # 终态不再追踪进度
+            elif getattr(m, 'state', None) == 'running':
+                _, ts = progress.get(guid, [None, now])
+                if now - ts >= ttl:
+                    del seen[guid]
+                    progress.pop(guid, None)
+                    dropped.add(guid)
+    return list(seen.values())
+
+
+def _dl_file_info(f) -> dict:
+    """目录回扫命中的文件 → missions 输出条目。"""
+    return {'name': f.name, 'path': str(f),
+            'state': 'completed（目录回扫）',
+            'size': f.stat().st_size}
+
+
 def records_to_csv(records: list) -> str:
     """将记录列表转为 CSV 字符串（含 BOM，Excel 直接打开不乱码）"""
     if not records:

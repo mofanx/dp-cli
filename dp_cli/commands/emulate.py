@@ -19,7 +19,9 @@ import click
 
 from dp_cli.output import ok, error, debug
 from dp_cli.session import load_session, save_session
-from dp_cli.commands._utils import session_option, _get_page
+from dp_cli.commands._utils import (session_option, _get_page,
+                                    _missions_seen_update, _dl_dir_files,
+                                    _dl_file_info)
 
 
 def _apply_emulate(page, cfg: dict) -> None:
@@ -392,13 +394,35 @@ def register(cli):
 
             # _dl_mgr 是 DrissionPage 私有 API，版本间可能缺失，做防御性回退
             mgr = getattr(getattr(page, 'browser', None), '_dl_mgr', None)
-            missions = []
+            # download_dir 回显口径统一走 _dl_path()：命令行旗 > session
+            # 持久化配置 > DP 运行时默认（cwd）——configured 字段显式区分
+            # "用户配置过"与"DP 默认值"，防止下游把 cwd 当已配置判定
+            from dp_cli.session import _dl_path
+            _cfg_dir = _dl_path(session)
+            # 目录回扫只对显式配置目录生效——DP 默认 download_path
+            # 是 cwd，扫它会把无关文件误当下载产物
+            _eff_dir = download_dir or _cfg_dir
+            # missions 恒空修复（同 wait --downloads-done）：seen 快照
+            # 追踪弹出后终态 + stale TTL + 目录增量回扫兜底
+            seen, progress, dropped = {}, {}, set()
+            active, dir_hit = [], []
+            baseline = ({f.name for f in _dl_dir_files(_eff_dir)}
+                        if _eff_dir else set())
             if mgr is not None:
-                missions = list(getattr(mgr, 'missions', {}).values())
                 end = perf_counter() + timeout
-                while perf_counter() < end:
-                    missions = list(getattr(mgr, 'missions', {}).values())
-                    if missions and all(getattr(m, 'is_done', True) for m in missions):
+                while True:
+                    active = _missions_seen_update(
+                        mgr, seen, progress, dropped)
+                    if active and all(getattr(m, 'is_done', True)
+                                      for m in active):
+                        break
+                    if _eff_dir:
+                        dir_hit = [f for f in _dl_dir_files(_eff_dir)
+                                   if f.name not in baseline]
+                        if dir_hit:
+                            break
+                    if perf_counter() >= end:
+                        dir_hit = []
                         break
                     _sleep(0.2)
 
@@ -407,21 +431,23 @@ def register(cli):
                 'url': getattr(m, 'url', None),
                 'state': getattr(m, 'state', None),
                 'path': getattr(m, 'final_path', None) or str(getattr(m, 'folder', '') or ''),
-            } for m in missions]
-            # download_dir 回显口径统一走 _dl_path()：命令行旗 > session
-            # 持久化配置 > DP 运行时默认（cwd）——configured 字段显式区分
-            # "用户配置过"与"DP 默认值"，防止下游把 cwd 当已配置判定
-            from dp_cli.session import _dl_path
-            _cfg_dir = _dl_path(session)
+            } for m in active]
             result = {
                 'download_dir': (download_dir or _cfg_dir
                                  or str(getattr(page, 'download_path', ''))),
                 'configured': bool(download_dir or _cfg_dir),
                 'missions': completed,
             }
-            if missions and not all(getattr(m, 'is_done', True) for m in missions):
+            if dir_hit:
+                # 事件流不可见但窗口内新文件落盘——目录增量回扫命中
+                result['missions'] = ([_dl_file_info(f) for f in dir_hit[:20]]
+                                      + completed)
+                result['note'] = ('下载事件未在本进程观测，'
+                                  '结果为目录增量回扫')
+            elif active and not all(getattr(m, 'is_done', True)
+                                    for m in active):
                 result['warning'] = f'{timeout}s 内下载未完成'
-            elif not missions:
+            elif not active:
                 result['note'] = ('等待窗口内未检测到下载任务' if mgr is not None
                                   else '当前 DrissionPage 无 _dl_mgr，无法跟踪下载任务')
             ok(result)

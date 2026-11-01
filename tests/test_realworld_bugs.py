@@ -48,6 +48,15 @@ B16 wait --idle 三阶（46 批 12×WAIT_FAILED）——
     clarity.ms，/log 尾 URL）；③豁免类流量全链路不触
     activity——持续豁免请求下 idle 收敛；stats 加
     ignored_reqs 透出
+B18 dpx download/wait --downloads-done missions 恒空（61 批实锤）——
+    DrissionPage set_done 完成即从 _missions 弹出，裸读恒只见
+    在途 → `missions and all(is_done)` 恒不可达烧满 timeout；
+    stale 'running' mission（外部触发/断链）无过期堵死目录回扫
+    分支。修法：_missions_seen_update 累积 seen 快照（对象引用，
+    弹出后终态仍读得到）+ stale 按 received_bytes 停滞 TTL
+    （DPX_DL_STALE_TTL，默认 30s，<=0 关）剔除入 dropped 防复活
+    + download/wait 目录增量回扫（窗口内新落盘文件即 done，
+    wait 保留 post-hoc 全目录回扫兜底跨进程断链）
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -60,6 +69,7 @@ import dp_cli.agent as agent
 import dp_cli.commands._utils as _utils
 import dp_cli.commands.browser as browser_mod
 import dp_cli.commands.element as element_mod
+import dp_cli.commands.emulate as emulate_mod
 import dp_cli.commands.network as net_mod
 import dp_cli.commands.page as page_mod
 import dp_cli.commands.tab as tab_mod
@@ -1663,3 +1673,244 @@ def test_b17_long_lived_request_blob_data():
         {'url': 'https://www.zhihu.com/api/v4/me'}, 'XHR')
     assert not _utils._long_lived_request(
         {'url': 'https://a.com/blob-store'}, 'Fetch')  # path 含 blob 不误伤
+
+
+# ── B18：download/wait --downloads-done missions 恒空 ────────────
+
+class _DlMission:
+    """模拟 DrissionPage DownloadMission——完成弹出后终态仍挂对象上。"""
+
+    def __init__(self, name='f.bin', state='running', done=False,
+                 received=0, folder='/tmp/dl'):
+        self.name = name
+        self.url = f'https://x/{name}'
+        self.state = state
+        self.final_path = None
+        self.folder = folder
+        self.received_bytes = received
+        self._is_done = done
+
+    @property
+    def is_done(self):
+        return self._is_done
+
+    def finish(self):
+        """模拟 DownloadManager.set_done：置终态（调用方负责弹出）。"""
+        self.state = 'completed'
+        self.final_path = f'{self.folder}/{self.name}'
+        self._is_done = True
+
+
+class _PopMgr:
+    """missions 在第 pop_after 次读取后弹出并完成——模拟 DP 运行时
+    set_done 从 _missions 移除的恒空形态。"""
+
+    def __init__(self, mission=None, pop_after=2):
+        self._m = mission or _DlMission()
+        self._pop_after = pop_after
+        self.calls = 0
+
+    @property
+    def missions(self):
+        self.calls += 1
+        if self.calls >= self._pop_after:
+            if not self._m._is_done:
+                self._m.finish()
+            return {}                    # set_done 已弹出
+        return {'g1': self._m}
+
+
+def _dl_wait_mocks(monkeypatch, mgr, dl_dir):
+    """wait --downloads-done 链路 mock：page.set.download_path 重武装
+    + browser._dl_mgr + session.download_dir。"""
+    from types import SimpleNamespace
+    page = SimpleNamespace(
+        set=SimpleNamespace(download_path=lambda p: None),
+        browser=SimpleNamespace(_dl_mgr=mgr))
+    sess = {'download_dir': str(dl_dir)}
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: sess)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: sess)
+    return page
+
+
+def test_b18_seen_retains_mission_after_pop():
+    """seen 快照：DP set_done 弹出 _missions 后，seen 仍持对象终态
+    （is_done/final_path 原地可读）——修复前裸读恒空。"""
+    from types import SimpleNamespace
+    m = _DlMission()
+    mgr = SimpleNamespace(missions={'g1': m})
+    seen, progress, dropped = {}, {}, set()
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped)
+    assert active == [m] and not m.is_done
+    m.finish()
+    mgr.missions.pop('g1')               # DP：完成即弹出
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped)
+    assert active == [m]
+    assert all(x.is_done for x in active)
+    assert active[0].final_path == '/tmp/dl/f.bin'
+
+
+def test_b18_stale_running_dropped_and_not_revived():
+    """stale TTL：running 态 received_bytes 停滞超 ttl → 从 seen
+    剔除并入 dropped；mission 仍在 mgr.missions 也不复活重计时。"""
+    import time
+    from types import SimpleNamespace
+    m = _DlMission(state='running', received=0)
+    mgr = SimpleNamespace(missions={'g1': m})
+    seen, progress, dropped = {}, {}, set()
+    _utils._missions_seen_update(mgr, seen, progress, dropped, ttl=0.02)
+    assert 'g1' in seen
+    time.sleep(0.04)
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped,
+                                          ttl=0.02)
+    assert active == [] and 'g1' in dropped
+    # 未完成的 running mission 不会被 DP 弹出——下轮仍在 mgr.missions，
+    # 无 dropped 集合会原地复活重新计时永远剔不掉
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped,
+                                          ttl=0.02)
+    assert active == []
+
+
+def test_b18_progress_resets_stale_clock():
+    """有进度的 running mission 不误判 stale——received_bytes 增长
+    重置停滞时钟。"""
+    import time
+    from types import SimpleNamespace
+    m = _DlMission(state='running', received=0)
+    mgr = SimpleNamespace(missions={'g1': m})
+    seen, progress, dropped = {}, {}, set()
+    _utils._missions_seen_update(mgr, seen, progress, dropped, ttl=0.05)
+    time.sleep(0.03)
+    m.received_bytes = 100               # 进度推进 → 时钟重置
+    _utils._missions_seen_update(mgr, seen, progress, dropped, ttl=0.05)
+    time.sleep(0.03)                     # 距上次进度 < ttl → 仍存活
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped,
+                                          ttl=0.05)
+    assert active == [m] and 'g1' not in dropped
+    time.sleep(0.06)                     # 停滞超 ttl → 剔除
+    active = _utils._missions_seen_update(mgr, seen, progress, dropped,
+                                          ttl=0.05)
+    assert active == [] and 'g1' in dropped
+
+
+def test_b18_stale_ttl_env_override(monkeypatch):
+    """DPX_DL_STALE_TTL 环境变量生效；非法值回退默认 30。"""
+    monkeypatch.setenv('DPX_DL_STALE_TTL', '1.5')
+    assert _utils._dl_stale_ttl() == 1.5
+    monkeypatch.setenv('DPX_DL_STALE_TTL', 'garbage')
+    assert _utils._dl_stale_ttl() == _utils._DL_STALE_TTL_DEFAULT
+
+
+def test_b18_wait_done_after_mission_pop(monkeypatch, tmp_path):
+    """wait --downloads-done：mission 轮询途中完成弹出——seen 快照
+    判定 done，返回终态（修复前恒烧满 timeout）。"""
+    from dp_cli.main import cli
+    _dl_wait_mocks(monkeypatch, _PopMgr(pop_after=2), tmp_path)
+    r = CliRunner().invoke(
+        cli, ['wait', '--downloads-done', '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['status'] == 'ok'
+    assert out['data']['missions'][0]['name'] == 'f.bin'
+    assert out['data']['missions'][0]['state'] == 'completed'
+    assert out['data']['missions'][0]['path'] == '/tmp/dl/f.bin'
+
+
+def test_b18_wait_dir_increment_hit(monkeypatch, tmp_path):
+    """missions 恒空但等待窗口内新文件落盘 → done（目录增量回扫，
+    跨进程断链形态）。"""
+    import threading
+    from dp_cli.main import cli
+    (tmp_path / 'pre.bin').write_bytes(b'x')   # 基线文件不算新下载
+    mgr = type('M', (), {'missions': {}})()
+    _dl_wait_mocks(monkeypatch, mgr, tmp_path)
+    threading.Timer(
+        0.3, lambda: (tmp_path / 'new.bin').write_bytes(b'y')).start()
+    r = CliRunner().invoke(
+        cli, ['wait', '--downloads-done', '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    names = [m['name'] for m in out['data']['missions']]
+    assert names == ['new.bin']          # 只有增量，不含 pre.bin
+    assert '目录回扫' in out['message']
+
+
+def test_b18_wait_stale_mission_unblocks_dir_fallback(
+        monkeypatch, tmp_path):
+    """stale 'running' mission（外部触发断链）不再堵死回扫——TTL
+    剔除后落入 post-hoc 目录回扫（修复前永久 WAIT_TIMEOUT）。"""
+    from types import SimpleNamespace
+    from dp_cli.main import cli
+    (tmp_path / 'old.bin').write_bytes(b'x')
+    mgr = SimpleNamespace(missions={'g1': _DlMission(state='running')})
+    _dl_wait_mocks(monkeypatch, mgr, tmp_path)
+    monkeypatch.setenv('DPX_DL_STALE_TTL', '0.3')
+    r = CliRunner().invoke(
+        cli, ['wait', '--downloads-done', '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['status'] == 'ok'
+    assert out['data']['missions'][0]['name'] == 'old.bin'
+    assert '目录回扫' in out['message']
+
+
+def test_b18_download_seen_after_pop(monkeypatch, tmp_path):
+    """dpx download：mission 完成弹出后 seen 仍报终态。"""
+    from types import SimpleNamespace
+    from dp_cli.main import cli
+    mgr = _PopMgr(pop_after=2)
+    page = SimpleNamespace(
+        download_path=str(tmp_path),
+        set=SimpleNamespace(download_path=lambda p: None,
+                            when_download_file_exists=lambda x: None),
+        browser=SimpleNamespace(_dl_mgr=mgr))
+    monkeypatch.setattr(emulate_mod, '_get_page', lambda s: page)
+    monkeypatch.setattr(emulate_mod, 'load_session', lambda s: {})
+    monkeypatch.setattr(emulate_mod, 'save_session', lambda *a: None)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
+    r = CliRunner().invoke(
+        cli, ['download', '--dir', str(tmp_path), '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)['data']
+    assert out['missions'][0]['name'] == 'f.bin'
+    assert out['missions'][0]['state'] == 'completed'
+
+
+def test_b18_download_dir_increment_hit(monkeypatch, tmp_path):
+    """dpx download：missions 恒空，窗口内新文件落盘 → missions 含
+    目录回扫条目（wait 同逻辑复用，修复前 download 无此兜底）。"""
+    import threading
+    from types import SimpleNamespace
+    from dp_cli.main import cli
+    mgr = SimpleNamespace(missions={})
+    page = SimpleNamespace(
+        download_path=str(tmp_path),
+        set=SimpleNamespace(download_path=lambda p: None,
+                            when_download_file_exists=lambda x: None),
+        browser=SimpleNamespace(_dl_mgr=mgr))
+    monkeypatch.setattr(emulate_mod, '_get_page', lambda s: page)
+    monkeypatch.setattr(emulate_mod, 'load_session', lambda s: {})
+    monkeypatch.setattr(emulate_mod, 'save_session', lambda *a: None)
+    monkeypatch.setattr('dp_cli.session.load_session', lambda s: {})
+    threading.Timer(
+        0.3, lambda: (tmp_path / 'late.bin').write_bytes(b'z')).start()
+    r = CliRunner().invoke(
+        cli, ['download', '--dir', str(tmp_path), '--timeout', '5'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)['data']
+    assert out['missions'][0]['name'] == 'late.bin'
+    assert '目录回扫' in out['missions'][0]['state']
+    assert '增量回扫' in out['note']
+
+
+def test_b18_wait_no_missions_empty_dir_still_timeout(
+        monkeypatch, tmp_path):
+    """回归：无 mission 且目录恒空 → 仍 WAIT_TIMEOUT（不误报成功）。"""
+    from types import SimpleNamespace
+    from dp_cli.main import cli
+    mgr = SimpleNamespace(missions={})
+    _dl_wait_mocks(monkeypatch, mgr, tmp_path)
+    r = CliRunner().invoke(
+        cli, ['wait', '--downloads-done', '--timeout', '1'])
+    assert 'WAIT_TIMEOUT' in r.output

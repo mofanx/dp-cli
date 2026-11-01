@@ -785,6 +785,35 @@ _IDLE_IGNORE_RE = re.compile(
     re.IGNORECASE)
 
 
+def _long_lived_request(req: dict, rtype) -> bool:
+    """requestWillBeSent 事件 → 是否为长连接（WS/SSE）请求。
+
+    WebSocket 握手/SSE 建立后永不 loadingFinished——计入 pending
+    则集合恒非空，wait --idle 必超时（zhihu/search.jd.com wss
+    长挂实锤）。四判据任一即豁免（同 ignore_re 语义：requestId
+    入 ignored，其 response/fail 同步跳过）：
+      ① CDP type=WebSocket/EventSource
+      ② ws:// / wss:// scheme
+      ③ Upgrade: websocket 请求头（type 缺失的老内核兜底）
+      ④ Accept: text/event-stream 请求头
+    """
+    if str(rtype or '').lower() in ('websocket', 'eventsource'):
+        return True
+    url = str(req.get('url') or '').lower()
+    if url.startswith(('ws://', 'wss://')):
+        return True
+    headers = req.get('headers') or {}
+    if not isinstance(headers, dict):
+        return False
+    for k, v in headers.items():
+        kl, vl = str(k).lower(), str(v).lower()
+        if kl == 'upgrade' and 'websocket' in vl:
+            return True
+        if kl == 'accept' and 'text/event-stream' in vl:
+            return True
+    return False
+
+
 def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
                       ignore_re=_IDLE_IGNORE_RE) -> bool:
     """等待网络空闲：通过 CDP 监听，直到无活跃请求持续 idle_time 秒。
@@ -800,11 +829,16 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
     def _on_request(**kwargs):
         nonlocal last_activity
         rid = kwargs.get('requestId', '')
-        if ignore_re is not None:
-            req = kwargs.get('request') or {}
-            if ignore_re.search(req.get('url') or ''):
-                ignored.add(rid)
-                return
+        req = kwargs.get('request') or {}
+        # WS/SSE 长连接先于 URL 白名单豁免——永不 finished 的请求
+        # 无论 URL 形态都不入 pending（wss:// 不会被 ignore_re 命中）
+        if _long_lived_request(req, kwargs.get('type')):
+            ignored.add(rid)
+            return
+        if ignore_re is not None \
+                and ignore_re.search(req.get('url') or ''):
+            ignored.add(rid)
+            return
         pending.add(rid)
         last_activity = perf_counter()
 

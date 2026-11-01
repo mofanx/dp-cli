@@ -242,6 +242,8 @@ def _list_adapters() -> list:
                     'method': (ep.get('method') or 'GET').upper(),
                     'url_template': ep.get('url_template'),
                     'params_keys': ep.get('params_keys') or [],
+                    'body_params_keys':
+                        ep.get('body_params_keys') or [],
                     'ui_fallback': fb or None})
     return out
 
@@ -355,6 +357,64 @@ def _render_template(template: str, params: dict) -> tuple:
         return m.group(0)
 
     return _TEMPLATE_SLOT_RE.sub(_rep, template or ''), missing
+
+
+def _body_json_params(body) -> tuple:
+    """录制 body → (可注入键集, 解析后 dict)。
+
+    body 为 JSON 对象时，顶层标量键是 kw=v 注入面——jd-search-tag
+    类 {"keyword":"..."} 字面量 body 未被参数化的跑批病灶在此
+    收口；非 JSON/非 dict body → (set(), None) 不参与注入。
+    嵌套 dict/list 值不入注入面（kw=v 字符串语义覆盖不了结构体，
+    留在 extra 警告里如实报）。"""
+    try:
+        d = json.loads(body)
+    except Exception:
+        return set(), None
+    if not isinstance(d, dict):
+        return set(), None
+    return {k for k, v in d.items()
+            if v is None or isinstance(v, (str, int, float, bool))}, d
+
+
+def _coerce_body_value(orig, raw):
+    """kw=v 字符串值 → 尽量对齐录制值 JSON 类型的替换值。
+
+    录制值是 int/float/bool 时同型转换（page=3 不写成 "3" 撕裂
+    API 契约）；转不动/字符串/None 原样字符串。"""
+    if isinstance(orig, bool):
+        return str(raw).lower() in ('1', 'true', 'yes', 'on')
+    if isinstance(orig, int):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return raw
+    if isinstance(orig, float):
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return raw
+    return raw
+
+
+def _inject_body_params(body, params: dict) -> tuple:
+    """adapter 录制 body 的 JSON 顶层键 ← kw=v 注入。
+
+    :return: (body_str, consumed_keys)；body 非 JSON 对象或无键
+        命中时原样返回、consumed 为空——调用方对未消费键仍走
+        extra 警告面（不静默吞参）。"""
+    injectable, d = _body_json_params(body)
+    if d is None:
+        return body, set()
+    consumed = set()
+    for k, v in (params or {}).items():
+        if k in injectable:
+            d[k] = _coerce_body_value(d[k], v)
+            consumed.add(k)
+    if not consumed:
+        return body, consumed
+    return json.dumps(d, ensure_ascii=False,
+                      separators=(',', ':')), consumed
 
 
 def _parse_kv_args(args) -> dict:
@@ -809,8 +869,16 @@ def _register_requests(cli):
                 'params_keys': keys,
             },
         }
+        body_keys = set()
         if row.get('postData') is not None:
             adapter['endpoint']['body'] = row['postData']
+            # body JSON 顶层标量键 = kw=v 注入面——落盘供 api-list
+            # --adapters / 调用方发现（params_keys:[] 时仍有可传参
+            # 路径，jd-search-tag 病灶）
+            body_keys, _ = _body_json_params(row['postData'])
+            if body_keys:
+                adapter['endpoint']['body_params_keys'] = \
+                    sorted(body_keys)
         if goal or nav_url:
             adapter['ui_fallback'] = {
                 'session': session,
@@ -830,12 +898,18 @@ def _register_requests(cli):
             return
         ok({'saved_to': str(d / f'{name}.json'), 'adapter': adapter,
             **({'auto_named': True} if auto_named else {}),
-            **({'skipped_params': skipped} if skipped else {})},
+            **({'skipped_params': skipped} if skipped else {}),
+            **({'body_params_keys': sorted(body_keys)}
+               if body_keys else {})},
            msg=(f'adapter [{name}] 已固化'
                 + (f'（{len(skipped)} 个 query 值含 JSON/模板不安全字符'
                    f'已按原值固化、未参数化: {", ".join(skipped)}；'
                    f'需参数化请 --param 键=变量 显式映射）'
-                   if skipped else '')))
+                   if skipped else '')
+                + (f'（body JSON 键可按 kw=v 注入: '
+                   f'{", ".join(sorted(body_keys))}——'
+                   f'形如 api {name} 键=值）'
+                   if body_keys else '')))
 
 
 def _emit_response(url, resp, output):
@@ -1331,25 +1405,35 @@ def register(cli):
                 return
             rebuilt, missing = _render_template(
                 ep.get('url_template'), kv_params)
+            # body JSON 顶层键同样是 kw=v 注入面（record 端
+            # body_params_keys 已标注）——命中键不进 extra 警告，
+            # 下方取录制 body 时同步替换
+            body_keys, _ = (_body_json_params(ep.get('body'))
+                            if ep.get('body') is not None
+                            else (set(), None))
             if missing:
                 error(f'adapter [{url}] 缺模板参数: {", ".join(missing)}'
                       f'（需要: {", ".join(ep.get("params_keys") or [])}'
-                      f'——形如 {url} key=value）',
+                      f'——形如 {url} key=value'
+                      + (f'；body 可注入键: {", ".join(sorted(body_keys))}'
+                         if body_keys else '') + '）',
                       code='INVALID_ARGS')
                 return
             extra = [k for k in kv_params
                      if k not in set(_TEMPLATE_SLOT_RE.findall(
-                         ep.get('url_template') or ''))]
+                         ep.get('url_template') or ''))
+                     and k not in body_keys]
             if extra:
                 warnings.append(
-                    f'参数未在 url_template 占位中，已忽略: '
+                    f'参数未在 url_template/body 可注入键中，已忽略: '
                     f'{", ".join(extra)}')
             url = rebuilt
             if method is None:
                 method = ep.get('method')
             if data is None and json_body is None \
                     and ep.get('body') is not None:
-                data = ep['body']
+                data, _consumed = _inject_body_params(
+                    ep['body'], kv_params)
         elif kv_params:
             error('URL 形态不接受 kw=v 位置参数（kw=v 仅 adapter '
                   '形态使用；query 请直接写进 URL）', code='INVALID_ARGS')

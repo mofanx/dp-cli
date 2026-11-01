@@ -21,6 +21,15 @@ B10 fill 遮挡降级 by_js → input 前先 run_js 显式清场
     （value=''+input 事件），再 input(clear=False,by_js=True)；
     二阶：正常路径 clear=True 同样前置显式清场（React 受控框
     追加污染根治），clear=False 显式传才不清场
+B12 daemon meta 落 build_id（git describe，非 git 降级 version）
+    + client 握手比对——同 version 内代码漂移 stderr 告警
+    建议 daemon-stop（不硬拒）；老 meta 无 build_id 字段放行
+B13 wait --idle 长连接豁免——WS 握手（type=WebSocket/wss://
+    scheme/Upgrade 头）与 SSE（EventSource/event-stream Accept）
+    永不 loadingFinished 也不占 pending，普通请求完成即收敛
+B14 adapter body JSON 顶层标量键 = kw=v 注入面——record 端
+    body_params_keys 落盘+提示，回放端 kw=v 替换 JSON 子键
+    （类型对齐录制值），命中键不再进 extra 警告
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -33,8 +42,10 @@ import dp_cli.agent as agent
 import dp_cli.commands._utils as _utils
 import dp_cli.commands.browser as browser_mod
 import dp_cli.commands.element as element_mod
+import dp_cli.commands.network as net_mod
 import dp_cli.commands.page as page_mod
 import dp_cli.commands.tab as tab_mod
+import dp_cli.daemon as daemon_mod
 
 pytestmark = pytest.mark.unit
 
@@ -950,3 +961,229 @@ def test_b11_idle_whitelist_off_preserves_semantics():
         request={'url': 'https://xhs.example/beacon/heartbeat'})
     th.join(3)
     assert result.get('v') == 'timeout'
+
+
+# ── B12：daemon build_id 握手——同 version 内代码漂移告警 ─────────
+
+def test_b12_build_id_falls_back_to_version(monkeypatch):
+    """非 git 环境/打包版 git describe 失败 → build_id 降级 version
+    （双侧同值不告警，向后兼容兜底）。"""
+    monkeypatch.setattr(daemon_mod.subprocess, 'run',
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            FileNotFoundError('no git')))
+    assert daemon_mod._dpx_build_id() == daemon_mod._dpx_version()
+    # git describe 成功 → commit 级标识透出
+    class _R:
+        returncode = 0
+        stdout = '20b6012-dirty\n'
+    monkeypatch.setattr(daemon_mod.subprocess, 'run',
+                        lambda *a, **k: _R())
+    assert daemon_mod._dpx_build_id() == '20b6012-dirty'
+
+
+def test_b12_version_probe_build_drift_warns(tmp_path, monkeypatch):
+    """version 一致但 build_id 漂移 → stderr 建议 daemon-stop（不硬拒）。"""
+    meta = tmp_path / 's.session'
+    meta.write_text(json.dumps({
+        'version': daemon_mod._dpx_version(), 'build_id': 'old-sha'}))
+    monkeypatch.setattr(daemon_mod, '_meta_path', lambda s: meta)
+    monkeypatch.setattr(daemon_mod, '_dpx_build_id', lambda: 'new-sha')
+    warned = []
+    monkeypatch.setattr('dp_cli.output._write_err', warned.append)
+    daemon_mod._VER_WARNED.discard('s')
+    daemon_mod._version_probe('s')
+    assert warned and '漂移' in warned[0] and 'old-sha' in warned[0]
+
+
+def test_b12_version_probe_no_build_id_passes(tmp_path, monkeypatch):
+    """老 daemon meta 无 build_id → 现语义放行不告警（向后兼容）。"""
+    meta = tmp_path / 's2.session'
+    meta.write_text(json.dumps({'version': daemon_mod._dpx_version()}))
+    monkeypatch.setattr(daemon_mod, '_meta_path', lambda s: meta)
+    warned = []
+    monkeypatch.setattr('dp_cli.output._write_err', warned.append)
+    daemon_mod._VER_WARNED.discard('s2')
+    daemon_mod._version_probe('s2')
+    assert warned == []
+
+
+def test_b12_version_probe_same_build_id_silent(tmp_path, monkeypatch):
+    """build_id 一致 → 静默（新 daemon 配新 client 不误报）。"""
+    meta = tmp_path / 's3.session'
+    meta.write_text(json.dumps({
+        'version': daemon_mod._dpx_version(), 'build_id': 'same'}))
+    monkeypatch.setattr(daemon_mod, '_meta_path', lambda s: meta)
+    monkeypatch.setattr(daemon_mod, '_dpx_build_id', lambda: 'same')
+    warned = []
+    monkeypatch.setattr('dp_cli.output._write_err', warned.append)
+    daemon_mod._VER_WARNED.discard('s3')
+    daemon_mod._version_probe('s3')
+    assert warned == []
+
+
+def test_b12_status_surfaces_build_id(tmp_path, monkeypatch, capsys):
+    """daemon-status 响应带 build_id（老 meta 无字段→null 不崩）。"""
+    sock = tmp_path / 's4.sock'
+    sock.write_text('')                     # POSIX 存在性标记
+    meta = tmp_path / 's4.session'
+    meta.write_text(json.dumps({'pid': -1, 'version': 'v1',
+                                'build_id': 'b1'}))
+    monkeypatch.setattr(daemon_mod, '_meta_path', lambda s: meta)
+    monkeypatch.setattr(daemon_mod, '_sock_path', lambda s: sock)
+    monkeypatch.setattr(daemon_mod, '_sock_path_eff', lambda s: sock)
+    daemon_mod._status('s4')
+    out = json.loads(capsys.readouterr().out)
+    assert out['data']['build_id'] == 'b1'
+
+
+# ── B13：wait --idle 长连接（WS/SSE）豁免 ───────────────────────
+
+def test_b13_idle_ws_sse_exempt():
+    """wss/EventSource 永不 loadingFinished 也不挡 idle——
+    普通请求完成后按原时序收敛。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(page, idle_time=0.2,
+                                          timeout=3)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    # type=WebSocket（CDP 直标）
+    cbs['Network.requestWillBeSent'](
+        requestId='w1', type='WebSocket',
+        request={'url': 'wss://zhihu.example/ws'})
+    # wss:// scheme + 无 type（老内核事件面）
+    cbs['Network.requestWillBeSent'](
+        requestId='w2',
+        request={'url': 'wss://search.jd.example/socket'})
+    # Upgrade 头兜底（http(s) URL 的 WS 握手形态）
+    cbs['Network.requestWillBeSent'](
+        requestId='w3',
+        request={'url': 'https://x.example/ws-upgrade',
+                 'headers': {'Upgrade': 'WebSocket'}})
+    # SSE：type=EventSource / Accept: text/event-stream
+    cbs['Network.requestWillBeSent'](
+        requestId='e1', type='EventSource',
+        request={'url': 'https://jd.example/sse'})
+    cbs['Network.requestWillBeSent'](
+        requestId='e2',
+        request={'url': 'https://y.example/stream',
+                 'headers': {'Accept': 'text/event-stream'}})
+    # 普通请求发起并完成——修复前 w*/e* 恒占 pending 必超时
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    fin = cbs['Network.loadingFinished']
+    th.join(3)
+    assert result.get('v') is True
+    # 长连接迟到的 finished 走 ignored 回收不炸
+    fin(requestId='w1')
+
+
+def test_b13_long_lived_helper_predicate():
+    """_long_lived_request 四判据 + 反例（普通 XHR 不误豁免）。"""
+    f = _utils._long_lived_request
+    assert f({'url': 'wss://a/ws'}, None)
+    assert f({'url': 'https://a/sse'}, 'EventSource')
+    assert f({'url': 'https://a/ws',
+              'headers': {'upgrade': 'websocket'}}, None)
+    assert f({'url': 'https://a/sse',
+              'headers': {'ACCEPT': 'text/event-stream'}}, 'XHR')
+    assert not f({'url': 'https://a/api'}, 'XHR')
+    assert not f({'url': 'https://a/api',
+                  'headers': {'Accept': 'application/json'}}, 'Fetch')
+
+
+# ── B14：adapter body JSON 参数化（record 标注 + 回放注入）──────
+
+def test_b14_record_marks_body_params(isolated_home, monkeypatch):
+    """POST JSON body adapter：body_params_keys 落盘 + data 面透出。"""
+    entries = [{'kind': 'req', 'id': '1',
+                'url': 'https://api.jd.example/tag',
+                'method': 'POST', 'type': 'XHR', 'ts': 1.0,
+                'postData': '{"keyword":"被子","page":1}'},
+               {'kind': 'resp', 'id': '1', 'status': 200}]
+    monkeypatch.setattr('dp_cli.netlog.read_entries',
+                        lambda s: entries)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['api-record', 'jd-search-tag'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert d['body_params_keys'] == ['keyword', 'page']
+    ep = d['adapter']['endpoint']
+    assert ep['body_params_keys'] == ['keyword', 'page']
+    saved = json.loads(
+        (isolated_home / '.dp_cli' / 'adapters'
+         / 'jd-search-tag.json').read_text(encoding='utf-8'))
+    assert saved['endpoint']['body_params_keys'] == \
+        ['keyword', 'page']
+
+
+def test_b14_replay_injects_body_params(isolated_home, monkeypatch):
+    """kw=v 回放注入 JSON 子键——page 保持 int 类型、URL 无槽位也
+    不 INVALID_ARGS、命中键不进 extra 警告。"""
+    adir = isolated_home / '.dp_cli' / 'adapters'
+    adir.mkdir(parents=True)
+    (adir / 'jd-search-tag.json').write_text(json.dumps({
+        'name': 'jd-search-tag', 'recorded_at': 'x',
+        'endpoint': {
+            'method': 'POST',
+            'url_template': 'https://api.jd.example/tag',
+            'params_keys': [],
+            'body': '{"keyword":"被子","page":1}',
+            'body_params_keys': ['keyword', 'page']}}))
+    captured = {}
+
+    class _FP:
+        def run_js(self, script, *a, **k):
+            captured['script'] = script
+            return {'status': 200, 'ok': True,
+                    'url': 'https://api.jd.example/tag', 'body': '{}'}
+
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: _FP())
+    from dp_cli.main import cli
+    r = CliRunner().invoke(
+        cli, ['api', 'jd-search-tag', 'keyword=枕头', 'page=3'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert 'warnings' not in d        # 两键均被消费，无 extra 警告
+    import re as _re
+    m = _re.match(r'return fetch\((\{.*?\}|".*?"),(\{.*\})\)\.then',
+                  captured['script'])
+    opts = json.loads(m.group(2))
+    assert opts['method'] == 'POST'
+    assert json.loads(opts['body']) == {'keyword': '枕头', 'page': 3}
+
+
+def test_b14_replay_unmatched_key_still_warns(isolated_home,
+                                              monkeypatch):
+    """body/模板都未命中的 kw=v 仍走 extra 警告（不静默吞参）。"""
+    adir = isolated_home / '.dp_cli' / 'adapters'
+    adir.mkdir(parents=True)
+    (adir / 'a1.json').write_text(json.dumps({
+        'name': 'a1', 'endpoint': {
+            'method': 'POST', 'url_template': 'https://x.com/t',
+            'params_keys': [],
+            'body': '{"keyword":"k"}',
+            'body_params_keys': ['keyword']}}))
+
+    class _FP:
+        def __init__(self):
+            self.scripts = []
+
+        def run_js(self, script, *a, **k):
+            self.scripts.append(script)
+            return {'status': 200, 'ok': True, 'url': 'u', 'body': ''}
+
+    page = _FP()
+    monkeypatch.setattr(net_mod, '_get_page', lambda s: page)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['api', 'a1', 'keyword=v', 'zzz=1'])
+    assert r.exit_code == 0, r.output
+    d = json.loads(r.output)['data']
+    assert any('zzz' in w for w in d['warnings'])
+    assert not any('keyword' in w for w in d['warnings'])

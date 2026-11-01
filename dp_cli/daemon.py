@@ -104,23 +104,55 @@ def _dpx_version() -> str:
         return 'dev'
 
 
+def _dpx_build_id() -> str:
+    """代码构建标识：git describe（dev 环境）→ 包版本降级。
+
+    同 version 内代码漂移靠本字段握手暴露——跑批时陈旧 daemon
+    （旧 commit 代码）因 sock 存在被自动路由，version 相同但新
+    修复不生效；非 git 环境/打包版 git describe 失败退化为
+    version（双侧同值不告警，向后兼容）。"""
+    try:
+        repo = Path(__file__).resolve().parent.parent
+        r = subprocess.run(['git', 'describe', '--always', '--dirty'],
+                           cwd=str(repo), capture_output=True,
+                           text=True, timeout=3)
+        if r.returncode == 0:
+            out = (r.stdout or '').strip()
+            if out:
+                return out
+    except Exception:
+        pass
+    return _dpx_version()
+
+
 _VER_WARNED = set()   # 每进程每 session 只警告一次
 
 
 def _version_probe(session: str) -> None:
-    """连接成功后探测 daemon 版本——不匹配仅 stderr 警告不拒绝。"""
+    """连接成功后探测 daemon 版本/构建——不匹配仅 stderr 警告不拒绝。
+
+    version 不一致 → 版本告警；version 一致但 build_id 漂移（同
+    版本内代码变更、陈旧 daemon 跑旧 commit）→ 代码漂移告警建议
+    daemon-stop 重开。老 daemon meta 无 build_id 字段 → 跳过比对
+    按现语义放行（向后兼容，不硬拒）。"""
     if session in _VER_WARNED:
         return
     _VER_WARNED.add(session)
     try:
         meta = json.loads(
             _meta_path(session).read_text(encoding='utf-8'))
+        from dp_cli.output import _write_err
         dv = meta.get('version')
         cv = _dpx_version()
         if dv and dv != cv:
-            from dp_cli.output import _write_err
             _write_err(f'daemon v{dv} vs dpx v{cv}——建议 '
                        f'dpx daemon-stop -S {session} 后重开\n')
+            return
+        db = meta.get('build_id')
+        cb = _dpx_build_id()
+        if db and cb and db != cb:
+            _write_err(f'daemon 代码漂移（build {db} vs dpx {cb}）——'
+                       f'建议 dpx daemon-stop -S {session} 后重开\n')
     except Exception:
         pass
 
@@ -906,6 +938,10 @@ def run_daemon(session: str):
         # version 供 daemon-status/_version_probe 消费——漏写会让
         # 版本探测链静默失效（t2 实测 version:null）
         'version': _dpx_version(),
+        # build_id=commit 级构建标识——同 version 内代码漂移握手
+        # （陈旧 daemon 跑旧 commit 自动路由病灶）；非 git 环境
+        # 降级为 version，老 meta 无此字段按 version 语义放行
+        'build_id': _dpx_build_id(),
         'session': session, 'started_at': time.time(),
         'owner': os.environ.get('USER') or os.environ.get('USERNAME', '')}, ensure_ascii=False))
     stop_ev = threading.Event()
@@ -967,6 +1003,7 @@ def _status(session: str):
     ok({'running': alive, 'session': session, 'pid': pid,
         'socket': str(sock_p), 'started_at': meta.get('started_at'),
         'version': meta.get('version'),
+        'build_id': meta.get('build_id'),
         'owner': meta.get('owner')})
 
 

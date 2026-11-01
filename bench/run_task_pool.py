@@ -17,6 +17,7 @@ expect.kind:
   eval_contains   {expr?=document.body.innerText, needle|any_of|all_of}
   url_contains    {needle|any_of|all_of}
   stdout_contains {needle|any_of|all_of, step?}
+  step_code       {step, needle|any_of|all_of}                指定步 status/code/message 命中
   status_ok       {}                                          全部步 status==ok
 
 任务级聚合:
@@ -267,6 +268,20 @@ def eval_expect(exp: dict, records: list, session: str, cfg) -> tuple:
             ''.join(r.get('stdout', '') for r in records[-2:])
         ok, det = _needle_hit(src, exp)
         return ok, det
+
+    if kind == 'step_code':
+        # 断言指定步归一化结果：status/code/message 合并文本做
+        # needle 命中——用于"错误路径工作正常"类任务（如遮挡检测
+        # 返回 CLICK_FAILED(hidden) 即算遮挡路径验证通过）。
+        idx = exp.get('step')
+        src = records[idx] if idx is not None and 0 <= idx < len(records) \
+            else None
+        if src is None:
+            return False, f'step_code: 无 step {idx} 记录'
+        blob = ' '.join(str(src.get(k) or '')
+                        for k in ('status', 'code', 'message'))
+        ok, det = _needle_hit(blob, exp)
+        return ok, f'step[{idx}] {blob[:70]!r} {det}'
 
     return False, f'未知 expect.kind: {kind}'
 

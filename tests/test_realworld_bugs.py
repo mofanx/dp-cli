@@ -41,6 +41,13 @@ B15 跑批二轮 2 病灶——
     均缺席才清绑定（枚举失败/在册=不可证死→fail-closed 保留
     绑定报 TAB_FAILED）；_open_navigate 同一确证标准，
     不可证死抛错不乱开 tab
+B16 wait --idle 三阶（46 批 12×WAIT_FAILED）——
+    ①孤儿 finished/failed（rid 不在 pending）不刷新
+    last_activity；②zhihu/bing/jd 遥测形态补白
+    （applog/sc-profiler/blackhole/keepalive/aria.microsoft/
+    clarity.ms，/log 尾 URL）；③豁免类流量全链路不触
+    activity——持续豁免请求下 idle 收敛；stats 加
+    ignored_reqs 透出
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -1463,3 +1470,139 @@ def test_b15_open_navigate_unconfirmed_death_fails_closed(
     assert out['code'] == 'NAVIGATE_FAILED'
     assert 'tabB' in out['message']
     assert opened == []                        # 不多开 tab
+
+
+# ── B16：wait --idle 三阶——豁免类流量不刷 activity ─────────────
+# 46 任务跑批 13 fail 中 12×WAIT_FAILED：pending_ttl 已修但
+# zhihu/bing/jd 持续遥测/心跳仍让 idle 永假。三阶修复：
+# ① loadingFinished/Failed 只在案请求（pending 内）刷新
+#    last_activity——arm 前在途/未捕获 requestWillBeSent 的
+#    孤儿收尾不再挡 idle；
+# ② 站点遥测形态补白（applog/sc-profiler/blackhole/keepalive/
+#    aria.microsoft/clarity.ms，/log 尾 URL）；
+# ③ 豁免类请求（ignore_re/_long_lived/老化剔除）全链路不触
+#    last_activity——持续豁免流量下 idle 由不变量收敛。
+
+def test_b16_idle_orphan_finished_no_activity():
+    """①孤儿收尾不刷 activity——未捕获 requestWillBeSent 的
+    迟到 finished（arm 前在途请求/豁免外遗留事件）修复前
+    每次都重置 idle 计时，持续收尾使 idle 永假。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(page, idle_time=0.2,
+                                          timeout=3)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    # 真业务请求发起并完成——随后只剩孤儿收尾
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    # rid 从未入 pending 的持续 finished——修复前刷 activity 必超时
+    for i in range(10):
+        if 'v' in result:
+            break
+        cbs['Network.loadingFinished'](requestId=f'ghost{i}')
+        time.sleep(0.05)
+    th.join(3)
+    assert result.get('v') is True
+
+
+def test_b16_idle_telemetry_domains_whitelisted():
+    """②站点遥测补白：applog/sc-profiler/blackhole/keepalive/
+    aria.microsoft 持续豁免流量 → idle 收敛 + ignored_reqs 计数。"""
+    import threading, time
+    page = _IdlePage()
+    result, stats = {}, {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=3, stats=stats)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    urls = [
+        'https://mcs.volceapplog.com/list',           # 字节 APM
+        'https://www.zhihu.com/sc-profiler',          # 知乎探针
+        'https://blackhole.m.jd.com/getinfo',         # jd 埋点
+        'https://api.zhihu.com/notifications/log',    # */log 尾
+        'https://browser.pipe.aria.microsoft.com/x',  # bing 遥测
+        'https://a.com/keepalive',                    # 心跳
+    ]
+    for i in range(12):
+        if 'v' in result:
+            break
+        cbs['Network.requestWillBeSent'](
+            requestId=f't{i}',
+            request={'url': urls[i % len(urls)]})
+        time.sleep(0.05)
+    th.join(3)
+    assert result.get('v') is True
+    assert stats.get('ignored_reqs', 0) >= 1
+
+
+def test_b16_idle_real_polling_still_active():
+    """③非豁免业务轮询持续刷新 activity——仍判活跃超时
+    （豁免不误伤真业务请求）。"""
+    import threading, time
+    page = _IdlePage()
+    result = {}
+
+    def _run():
+        try:
+            result['v'] = _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=0.8)
+        except TimeoutError:
+            result['v'] = 'timeout'
+
+    th = threading.Thread(target=_run, daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    for i in range(30):
+        if 'v' in result:
+            break
+        # 持续短请求（发起+完成，间隔 < idle_time）刷 activity
+        cbs['Network.requestWillBeSent'](
+            requestId=f'p{i}',
+            request={'url': 'https://api.zhihu.com/api/v4/feed'})
+        cbs['Network.loadingFinished'](requestId=f'p{i}')
+        time.sleep(0.06)
+    th.join(3)
+    assert result.get('v') == 'timeout'
+
+
+def test_b16_idle_ignore_re_new_patterns():
+    """②补白形态命中断言 + 业务 API/登录类 path 不误伤。"""
+    rx = _utils._IDLE_IGNORE_RE
+    for url in (
+            'https://mcs.volceapplog.com/list',
+            'https://applog.zijieapi.com/log',
+            'https://www.zhihu.com/sc-profiler',
+            'https://www.zhihu.com/sc-profiler-timing',
+            'https://blackhole.m.jd.com/getinfo',
+            'https://api.zhihu.com/terms/log',
+            'https://a.com/logs',
+            'https://a.com/log.gif?v=1',
+            'https://bat.bing.com/action/0',
+            'https://browser.pipe.aria.microsoft.com/Collector',
+            'https://www.clarity.ms/tag/abc',
+            'https://a.com/keepalive',
+            'https://a.com/keep-alive?t=1'):
+        assert rx.search(url), url
+    for url in (
+            'https://www.zhihu.com/api/v4/search?q=x',
+            'https://api.zhihu.com/notifications',
+            'https://www.bing.com/search?q=a',
+            'https://www.jd.com/api/item',
+            'https://a.com/login',
+            'https://a.com/blog/post'):               # blog 非 /log
+        assert not rx.search(url), url

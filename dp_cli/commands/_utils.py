@@ -815,11 +815,18 @@ def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
 # （xhs 等长驻心跳页面"网络永不空闲"实测归因：心跳 XHR 使 pending
 # 恒非空，--idle 必超时）。requestWillBeSent 的 request.url 匹配即
 # 整链路忽略（requestId 入 ignored，其 response/fail 同步跳过）。
+# 46 任务跑批归因（zhihu/bing/jd 12×WAIT_FAILED）：补站点遥测形态——
+# applog/volceapp（字节 APM：mcs.volceapplog.com/list）、sc-profiler
+# （知乎性能探针）、blackhole（jd 埋点）、keep[_-]alive 心跳、
+# aria.microsoft/clarity.（bing 遥测）；"别硬编整域"——只补观测到
+# 的 path/host 片段，不误伤站点业务 API。
 _IDLE_IGNORE_RE = re.compile(
     r'(heartbeat|beacon|xlog|analytics|telemetry|'
-    r'/collect[/?&]|/track[/?&]|/metrics?[/?&]|/logs?[/?&]|/apm[/?&.]|'
-    r'sentry\.|umeng|cnzz|hm\.baidu|google-analytics|googletagmanager|'
-    r'doubleclick|facebook\.net|bat\.bing)',
+    r'/collect[/?&]|/track[/?&]|/metrics?[/?&]|/logs?(?:[/?&.]|$)|'
+    r'/apm[/?&.]|sentry\.|umeng|cnzz|hm\.baidu|google-analytics|'
+    r'googletagmanager|doubleclick|facebook\.net|bat\.bing|'
+    r'applog|sc-profiler|blackhole|keep[_-]?alive|'
+    r'aria\.microsoft|clarity\.ms)',
     re.IGNORECASE)
 
 
@@ -885,27 +892,31 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
         loadingFinished/Failed 的请求判"长挂"剔除 pending（普通
         fetch 长轮询兜底，WS/SSE 已由 _long_lived_request 豁免）；
         None → DPX_IDLE_PENDING_TTL 环境变量，默认 5s；<=0 关老化。
-    :param stats: 可选 dict 出参——返回时含 stale_dropped 计数。
+    :param stats: 可选 dict 出参——返回时含 stale_dropped/ignored_reqs
+        计数。
     :raises TimeoutError: 若 timeout 秒内未达成空闲条件
     """
     ttl = _idle_pending_ttl(pending_ttl)
     pending = {}          # rid → 入列时刻（老化修剪用）
     ignored = set()
     stale_dropped = 0
+    ignored_reqs = 0      # 豁免请求计数（stats 透出，归因用）
     last_activity = perf_counter()
 
     def _on_request(**kwargs):
-        nonlocal last_activity
+        nonlocal last_activity, ignored_reqs
         rid = kwargs.get('requestId', '')
         req = kwargs.get('request') or {}
         # WS/SSE 长连接先于 URL 白名单豁免——永不 finished 的请求
         # 无论 URL 形态都不入 pending（wss:// 不会被 ignore_re 命中）
         if _long_lived_request(req, kwargs.get('type')):
             ignored.add(rid)
+            ignored_reqs += 1
             return
         if ignore_re is not None \
                 and ignore_re.search(req.get('url') or ''):
             ignored.add(rid)
+            ignored_reqs += 1
             return
         pending[rid] = perf_counter()
         last_activity = perf_counter()
@@ -916,8 +927,11 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
         if rid in ignored:
             ignored.discard(rid)
             return
-        pending.pop(rid, None)
-        last_activity = perf_counter()
+        # 只在案请求的收尾算活跃——arm 前在途/未捕获
+        # requestWillBeSent 的迟到 finished/failed 不刷新
+        # activity（豁免类+遗留流量不挡 idle 的三阶兜底）
+        if pending.pop(rid, None) is not None:
+            last_activity = perf_counter()
 
     page.run_cdp('Network.enable')
     driver = page.driver
@@ -953,6 +967,7 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
         driver.set_callback('Network.loadingFailed', None)
         if stats is not None:
             stats['stale_dropped'] = stale_dropped
+            stats['ignored_reqs'] = ignored_reqs
 
 
 def records_to_csv(records: list) -> str:

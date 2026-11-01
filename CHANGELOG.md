@@ -2,6 +2,24 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.32] - 2026-11-01
+
+### 修复（B9/B10/B11 跑批自揪病灶——tab 绑定+表单写入+任务池基建）
+- **B9 tab 绑定假阴性复核**：attach 判定双路复核（tab_ids 枚举+目标对象双确认），单路探活假阴性不再误判绑定漂移；绑定失效统一 `TAB_FAILED` fail-closed——修"以为绑 A 实际写 B"的静默错 tab
+- **B10 fill `_clear_field` 前置清场（主/降双路径）**：by_js 降级追加不清空静默毁表单→显式清场；二阶补正常路径同样前置清场——React 受控框受控值追加污染根治（`value=""`+input/change 事件派发，React tracker 感知）
+- **B11 `open --auto-connect` 不劫持首 tab**：无 active_tab 绑定→new_tab 绑专属 tab（`ChromiumPage.get=tab_ids[0]` 劫持用户已开首 tab 归因）；已有绑定→绑定 tab 导航；绑定失效清绑定走新 tab；非 auto-connect 保持 `page.get` 原语义
+- **`sleep` 补 `-S` session 旗**：runner 统一补 `-S` 不再 `INVALID_ARGS`（mmb 真机归因）
+- **`wait --idle` 心跳白名单**：`_IDLE_IGNORE_RE` 埋点/遥测 URL 整链路不计入 pending/activity（xhs 心跳使 `--idle` 永假归因），`ignore_re=None` 可关
+- **JD 选择器更新**：`input.jd_pc_search_bar_react_search_input`+`[class*=_pagination_next]`+active 页码断言；xhs 任务改用 `--loaded`
+- **netlog CLI 直跑不 arm 判设计边界**：CDP 事件按 WebSocket 连接投递，短进程退出即断链——登记 AGENTS.md 防误修
+
+### 新增（任务池跑批基建）
+- **`bench/run_task_pool.py`**：jsonl 任务逐条回放 dpx 的跑批器——攒 netlog/decide 实测数据，`SESSIONLESS` 集防 `-S INVALID_ARGS`，reports/ 只留样例入库
+- **`bench/site_tasks.jsonl`**：jd/zhihu/xhs/mmb 四站 20 条站点任务集——真机归因语料源（B9-B11 全部来自跑批自揪）
+
+### 验证（真机跑批）
+- `test_realworld_bugs` B9-B11 新增用例；任务池 20 任务跑批产出归因实锤（首 tab 劫持/心跳永假/受控框污染逐条复现定位）
+
 ## [0.15.31] - 2026-11-01
 
 ### 修复（B1-B7 真机病灶——decide/agent 决策链+交互执行链）

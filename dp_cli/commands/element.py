@@ -7,9 +7,20 @@ import click
 from dp_cli.output import ok, error
 from dp_cli.commands._utils import (session_option, frame_option,
                                     _get_page, resolve_locator, frame_ctx,
-                                    _wait_ele)
+                                    _wait_ele, _resolve_ele,
+                                    _report_actionable_fail)
 from dp_cli.hints import attach_hints, touched_apis
 from dp_cli.human import human_options, human_click, human_type, human_clear
+
+
+def _occluded_retry(ctx, locator, index, timeout):
+    """B7 遮挡降级重定位：跳过命中检测短超时再取一次（by-js 执行前）。
+
+    返回 (ele, fail)；fail!=None 说明元素本身也解不出，应报原
+    occluded 错（信息量比 not_found 更有用）。
+    """
+    return _resolve_ele(ctx, locator, index=index,
+                        timeout=min(timeout, 3.0), hit_check=False)
 
 
 def register(cli):
@@ -98,18 +109,32 @@ def register(cli):
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
         try:
-            if force or by_js:
-                ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                                no_wait=no_wait, hit_check=False,
-                                code='CLICK_FAILED', label='点击')
-            else:
-                ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                                no_wait=no_wait, code='CLICK_FAILED',
-                                label='点击')
+            ele, fail = _resolve_ele(ctx, locator, index=index,
+                                     timeout=timeout, no_wait=no_wait,
+                                     hit_check=not (force or by_js))
+            fb = None   # 遮挡降级标记：None=未降级；occluder dict=已降 by-js
+            if fail is not None:
+                if fail.get('reason') == 'occluded':
+                    # 真实页浮层普遍（JD 商品卡/比价站弹层归因），遮挡
+                    # 硬失败逼 caller 手动 --by-js——自动降级 JS 派发
+                    # 一次；fallback/occluded 字段如实标注非静默。
+                    # 重定位也失败（元素没了）才按原 occluded 上报
+                    ele2, fail2 = _occluded_retry(ctx, locator, index,
+                                                  timeout)
+                    if fail2 is None:
+                        ele, fb = ele2, fail.get('occluder') or {}
+                    else:
+                        _report_actionable_fail(
+                            fail, locator, code='CLICK_FAILED', label='点击')
+                        return
+                else:
+                    _report_actionable_fail(
+                        fail, locator, code='CLICK_FAILED', label='点击')
+                    return
             if ele is None:
                 return
             _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
-            if by_js:
+            if fb is not None or by_js:
                 ele.run_js('this.click()')
             elif by_mouse:
                 ele.click.at()
@@ -130,8 +155,13 @@ def register(cli):
                     return
             else:
                 ele.click()
+            data = {'locator': locator}
+            if fb is not None:
+                data['fallback'] = 'by_js'   # advisory：明示非原路径
+                data['occluded'] = True
+                data['occluder'] = fb
             ok(attach_hints(
-                {'locator': locator},
+                data,
                 touched_apis=touched_apis(session, _t0)),
                msg='点击成功')
         except Exception as e:
@@ -202,20 +232,44 @@ def register(cli):
         page = _get_page(session)
         ctx = frame_ctx(page, frame, session)
         try:
-            ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                            no_wait=no_wait, code='FILL_FAILED', label='填入')
+            ele, fail = _resolve_ele(ctx, locator, index=index,
+                                     timeout=timeout, no_wait=no_wait)
+            fb = None   # 遮挡降级标记：None=未降级；occluder dict=已降 by-js
+            if fail is not None:
+                if fail.get('reason') == 'occluded':
+                    # 同 click B7：浮层遮挡自动降级 by-js 填入一次，
+                    # fallback/occluded 字段如实标注非静默
+                    ele2, fail2 = _occluded_retry(ctx, locator, index,
+                                                  timeout)
+                    if fail2 is None:
+                        ele, fb = ele2, fail.get('occluder') or {}
+                    else:
+                        _report_actionable_fail(
+                            fail, locator, code='FILL_FAILED', label='填入')
+                        return
+                else:
+                    _report_actionable_fail(
+                        fail, locator, code='FILL_FAILED', label='填入')
+                    return
             if ele is None:
                 return
             _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
-            if human:
+            if fb is not None:
+                ele.input(value, clear=clear, by_js=True)
+            elif human:
                 human_click(page, ele, human_min, human_max)
                 if clear:
                     human_clear(page)
                 human_type(page, value, human_min, human_max)
             else:
                 ele.input(value, clear=clear, by_js=by_js)
+            data = {'locator': locator, 'value': value}
+            if fb is not None:
+                data['fallback'] = 'by_js'   # advisory：明示非原路径
+                data['occluded'] = True
+                data['occluder'] = fb
             ok(attach_hints(
-                {'locator': locator, 'value': value},
+                data,
                 touched_apis=touched_apis(session, _t0)),
                msg='填入成功')
         except Exception as e:

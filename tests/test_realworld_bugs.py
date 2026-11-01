@@ -1,5 +1,5 @@
 # -*- coding:utf-8 -*-
-"""真机归因四修（B1-B4）。
+"""真机归因修复（B1-B4、B7）。
 
 B1  meta-rules 命中需 ref 的元素动作却 ref=None → 降 conf 走
     AGENT_UNSURE（tier=low/should_escalate=true），非 conf=1.0 空 ref；
@@ -10,6 +10,9 @@ B2  LLM/JEV/external 引擎 parse/网络失败 → 降级 reranker 链路
 B3  tab-select --index 旗 = 序号位置参数别名；两给校验一致
 B4  eval 多语句 JS（顶层 return）→ Illegal return statement 时
     自动 IIFE 兜底重试；运行时错误不双跑
+B7  click/fill actionability occluded → 自动降级 by-js 重试一次，
+    响应标 fallback:'by_js'+occluded:true（advisory 非静默）；
+    重定位也失败才按原 occluded 报错
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -20,6 +23,7 @@ from click.testing import CliRunner
 
 import dp_cli.agent as agent
 import dp_cli.commands._utils as _utils
+import dp_cli.commands.element as element_mod
 import dp_cli.commands.page as page_mod
 import dp_cli.commands.tab as tab_mod
 
@@ -368,3 +372,136 @@ def test_b4_eval_runtime_error_not_retried(monkeypatch):
     out = json.loads(r.output)
     assert out['code'] == 'JS_FAILED'
     assert page.calls == ['foo.bar()']             # 只跑一次
+
+
+# ── B7：click/fill 遮挡自动降级 by-js ─────────────────────────
+
+class _OccEle:
+    """actionability JS 恒报 occluded（elementFromPoint 命中浮层）；
+    hit_check=False 重定位时 wait_actionable 内部会把 occluded 转 ok——
+    与真机同一 JS 判定路径，非绕过 wait_actionable 的直接 mock。"""
+    def __init__(self):
+        self.clicked = []
+        self.inputs = []
+
+    def run_js(self, script, *a, **k):
+        if 'elementFromPoint' in script:
+            return {'ok': False, 'reason': 'occluded',
+                    'occluder': {'tag': 'div', 'id': 'mask',
+                                 'cls': 'overlay'},
+                    'rect': [0, 0, 10, 10], 'center': [5, 5]}
+        self.clicked.append(script)
+        return None
+
+    def input(self, value, clear=True, by_js=False):
+        self.inputs.append({'value': value, 'clear': clear,
+                            'by_js': by_js})
+
+
+class _ElePage:
+    def __init__(self, ele):
+        self._ele = ele
+        self.latest_tab = None
+        self.url = 'https://x/'
+        self.title = 't'
+
+    def ele(self, locator, index=1, timeout=10):
+        return self._ele
+
+
+def _ele_mocks(monkeypatch, ele):
+    page = _ElePage(ele)
+    monkeypatch.setattr(_utils, 'get_browser', lambda s: page)
+    monkeypatch.setattr(_utils, 'load_session', lambda s: {})
+    return page
+
+
+def test_b7_click_occluded_falls_back_by_js(monkeypatch):
+    """遮挡 → 自动 hit_check=False 重定位 + JS 派发，fallback 字段标注。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['click', 'css:#buy', '--timeout', '2'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    d = out['data']
+    assert d['fallback'] == 'by_js'
+    assert d['occluded'] is True
+    assert d['occluder']['id'] == 'mask'
+    # 真实执行的是 JS 派发，不是 ele.click()
+    assert ele.clicked == ['this.click()']
+
+
+def test_b7_fill_occluded_falls_back_by_js(monkeypatch):
+    """fill 遮挡 → input(by_js=True) 降级，fallback/occluded 标注。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['fill', 'css:#kw', '手机', '--timeout', '2'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    d = out['data']
+    assert d['fallback'] == 'by_js' and d['occluded'] is True
+    assert ele.inputs == [{'value': '手机', 'clear': True, 'by_js': True}]
+
+
+def test_b7_click_by_js_explicit_no_fallback_mark(monkeypatch):
+    """显式 --by-js 首过即 hit_check=False——不标 fallback（非降级）。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['click', 'css:#buy', '--by-js',
+                                 '--timeout', '2'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert 'fallback' not in out['data']
+    assert ele.clicked == ['this.click()']
+
+
+def test_b7_occluded_retry_also_fails_reports_original(monkeypatch):
+    """重定位也失败（元素消失）→ 按原 occluded 上报（信息量比
+    not_found 有用），且不执行动作。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    calls = []
+
+    def fake_resolve(ctx, locator, index=1, timeout=10.0, no_wait=False,
+                     hit_check=True):
+        calls.append(hit_check)
+        if len(calls) == 1:
+            return ele, {'reason': 'occluded',
+                         'occluder': {'tag': 'div', 'id': 'mask',
+                                      'cls': 'overlay'}}
+        return None, {'reason': 'not_found'}
+
+    monkeypatch.setattr(element_mod, '_resolve_ele', fake_resolve)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['click', 'css:#buy'])
+    out = json.loads(r.output)
+    assert out['status'] == 'error'
+    assert out['code'] == 'CLICK_FAILED'
+    assert '被遮挡' in out['message']
+    assert 'mask' in (out.get('detail') or '')
+    assert calls == [True, False]          # 首过命中检测 → 降级跳过
+    assert ele.clicked == []               # 未执行任何点击
+
+
+def test_b7_non_occluded_fail_no_retry(monkeypatch):
+    """hidden/disabled 等非遮挡失败不降级——一次判定直接上报。"""
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    calls = []
+
+    def fake_resolve(ctx, locator, index=1, timeout=10.0, no_wait=False,
+                     hit_check=True):
+        calls.append(hit_check)
+        return ele, {'reason': 'hidden'}
+
+    monkeypatch.setattr(element_mod, '_resolve_ele', fake_resolve)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['fill', 'css:#kw', 'x'])
+    out = json.loads(r.output)
+    assert out['code'] == 'FILL_FAILED'
+    assert '不可交互' in out['message']
+    assert calls == [True]                 # 无降级重试
+    assert ele.inputs == []

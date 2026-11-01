@@ -33,6 +33,7 @@
 - `page.listen` 跨进程不持久——`listen-stop` 需 `listening` 前置检查
 - `page.tab_ids` 在 `MixTab` 上不存在——popup 检测要走 `page.browser.tab_ids` 回退
 - `download_path` 默认是 cwd 而非"未配置"——不能当条件判据
+- adapter 导航模式：URL 直参可能因登录态/会话重定向打回首页——manmanbuy `historyLowest.aspx?url=` 未登录直跳首页，需先 open 工具页再填表单二次导航（B8 归因，勿把直参 URL 当稳定入口）
 
 ## 发版门禁
 

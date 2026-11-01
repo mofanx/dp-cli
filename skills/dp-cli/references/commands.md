@@ -83,7 +83,7 @@
 | 标签页 | `tab-close` | [index_or_id], [session] |
 | 标签页 | `tab-list` | [session] |
 | 标签页 | `tab-new` | [url], [session], [background], [new_window] |
-| 标签页 | `tab-select` | <target>, [session] |
+| 标签页 | `tab-select` | [target], [index], [session] |
 | 存储 | `cookie-clear` | [session] |
 | 存储 | `cookie-delete` | <name>, [session] |
 | 存储 | `cookie-export` | [session], [domain], [fmt], [output] |

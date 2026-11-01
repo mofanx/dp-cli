@@ -3963,6 +3963,10 @@ def test_daemon_routes_only_when_enabled(runner, monkeypatch, tmp_path):
     monkeypatch.delenv('DPX_DAEMON', raising=False)
     monkeypatch.setattr('dp_cli.daemon._sock_path',
                         lambda s: tmp_path / f'{s}.sock')
+    # meta 路径同须隔离——_meta_sock_path 读真 ~/.dp_cli/daemon/*.session
+    # 会拿到 meta.sock_path 权威源指向真在跑的 daemon，sock mock 白做
+    monkeypatch.setattr('dp_cli.daemon._meta_path',
+                        lambda s: tmp_path / f'{s}.session')
     assert try_daemon(['eval', '1']) is None
 
 

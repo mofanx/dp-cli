@@ -14,6 +14,29 @@ from dp_cli.commands._utils import (session_option, _get_page,
 
 _CONSOLE_FIELDS = {'level', 'text', 'source', 'timestamp'}
 
+# Runtime.evaluate 语法类报错特征——命中才值得 IIFE 重试；
+# 运行时错误（ReferenceError/TypeError 等）重跑同错还双跑副作用
+_JS_SYNTAX_MARK = ('illegal return statement', 'unexpected token',
+                   'unexpected identifier', 'unexpected end of input',
+                   'syntaxerror')
+
+
+def _run_js_expr(run, script, timeout):
+    """as_expr 表达式执行 + IIFE 兜底。
+
+    'var x=…;return x'/'arr.forEach(…);return out' 类多语句脚本顶层
+    return 在 Runtime.evaluate 下非法（真机 Illegal return statement
+    归因）——语法类失败自动按 (function(){…})() 重跑；运行时错误
+    原样上抛不双跑。
+    """
+    try:
+        return run(script, as_expr=True, timeout=timeout)
+    except Exception as e:
+        if any(m in str(e).lower() for m in _JS_SYNTAX_MARK):
+            return run(f'(function(){{{script}}})()',
+                       as_expr=True, timeout=timeout)
+        raise
+
 
 def _annotate_refs(page, session):
     """给快照 ref 元素画编号 overlay：返回清除 overlay 的 JS 表达式。
@@ -209,12 +232,12 @@ def register(cli):
                 if script.strip().startswith(('el =>', 'el=>', 'function')):
                     result = ele.run_js(f'return ({script})(this)', timeout=timeout)
                 else:
-                    result = ele.run_js(script, as_expr=True, timeout=timeout)
+                    result = _run_js_expr(ele.run_js, script, timeout)
             else:
                 if script.strip().startswith(('return ', 'function')):
                     result = page.run_js(script, timeout=timeout)
                 else:
-                    result = page.run_js(script, as_expr=True, timeout=timeout)
+                    result = _run_js_expr(page.run_js, script, timeout)
             ok({'result': result})
         except Exception as e:
             error(f'JavaScript 执行失败', code='JS_FAILED', detail=str(e))

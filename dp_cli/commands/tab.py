@@ -83,9 +83,11 @@ def register(cli):
             error(f'创建标签页失败', code='TAB_FAILED', detail=str(e))
 
     @cli.command('tab-select')
-    @click.argument('target')
+    @click.argument('target', required=False)
+    @click.option('--index', 'index', type=int, default=None,
+                  help='按标签页序号绑定（TARGET=序号 的等价旗）')
     @session_option
-    def tab_select(target, session):
+    def tab_select(target, index, session):
         """绑定到指定标签页，后续 dpx 命令在该标签页中执行。
 
         \b
@@ -94,7 +96,32 @@ def register(cli):
           tab_id  dpx tab-select ABC123   （按标签页 ID）
           URL     dpx tab-select example  （按 URL 关键词匹配）
           none    dpx tab-select none     （解除绑定，恢复默认行为）
+
+        \b
+        --index 是序号位置参数的等价旗：
+          dpx tab-select --index 1    ≡   dpx tab-select 1
+        两者同给时必须一致（'1 --index 1' 可，'1 --index 2' 报错）。
         """
+        # --index 是序号位置参数别名——用户/agent 自然猜旗形态
+        # （真机 'dpx tab-select --index 1' Usage 报错归因）。
+        # 两者同给必须一致；target 非纯数字时与 --index 语义冲突
+        if index is not None:
+            if target is None:
+                target = str(index)
+            else:
+                try:
+                    consistent = int(target) == index
+                except ValueError:
+                    consistent = False
+                if not consistent:
+                    error(f'TARGET ({target!r}) 与 --index {index} 不一致——'
+                          '同义参数二选一即可',
+                          code='INVALID_ARGS')
+                    return
+        if target is None:
+            error('缺 TARGET（序号/tab_id/URL/none）或 --index 序号',
+                  code='INVALID_ARGS')
+            return
         # 解除绑定
         if target.lower() == 'none':
             sess = load_session(session)

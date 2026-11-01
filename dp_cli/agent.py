@@ -40,6 +40,12 @@ def _models_dir() -> Path:
 _TOP_K = 20            # Julia-1 选项数上限（2-20）
 _ACTIONS = ['click', 'type', 'select', 'scroll_up', 'scroll_down',
             'back', 'wait', 'done', 'blocked']
+# 需要元素 ref 才可执行的动作族——meta 规则命中此类却解不出 ref 时
+# 不得按 conf=1.0 空 ref 放行（真机归因：规则命中 fill/submit 意图
+# 但无可执行元素，空 ref 建议比拒答更误事）；纯动作类
+# （done/wait/back/scroll/blocked）本就无 ref 需求不在此列
+_REF_ACTIONS = {'click', 'type', 'select', 'type_text', 'fill',
+                'dblclick', 'hover', 'check'}
 _CONF_FLOOR = 0.35     # 低于此置信 → AGENT_UNSURE
 _STUCK_WINDOW = 3      # 连续 N 步哈希不变 → stuck
 # refs epoch 签名纳入的交互属性子集——disabled/hidden/checked 等
@@ -1295,6 +1301,29 @@ def register(cli):
         if meta:
             cur_sig = state['epoch']
             _record_hash(session, cur_sig)
+            # 元素动作规则命中却解不出 ref——conf=1.0 空 ref 会让上层
+            # 拿"不可执行的建议"当真执行失败。降级 UNSURE：动作意图
+            # 保留、置信压 low+should_escalate，交上层重寻元素
+            if meta['action'] in _REF_ACTIONS and meta.get('ref') is None:
+                result = {
+                    'action': meta['action'], 'ref': None,
+                    'confidence': 0.0,
+                    'confidence_tier': 'low',
+                    'should_escalate': True,
+                    'alternatives': _alternatives(state, goal, {}, None),
+                    'deterministic': True, 'advisory': eng == 'reranker',
+                    'reason': meta['reason'], 'ref_missing': True,
+                    'epoch': cur_sig,
+                    'options_count': len(state['options']),
+                    'truncated': state['truncated'],
+                    'engine': 'meta-rules',
+                    'done': False, 'stuck': False}
+                attach_hints(result, adapter_hint=_ahint)
+                error(f"meta 规则命中 {meta['action']} 但解不出目标"
+                      f"元素 ref（{meta['reason']}）",
+                      code='AGENT_UNSURE',
+                      detail=json.dumps(result, ensure_ascii=False))
+                return
             ok(attach_hints(
                 {'action': meta['action'], 'ref': meta.get('ref'),
                  'confidence': 1.0,
@@ -1342,10 +1371,44 @@ def register(cli):
                                        answer, answer_file,
                                        no_cache=no_cache)
         if '_error' in resp:
-            error('决策引擎失败', code='DECIDE_FAILED',
-                  detail=resp['_error'])
-            return
+            # LLM/JEV 类引擎 parse/网络失败 → 降级 reranker 链路：
+            # 本地 CE 排序是免费二档，裸 DECIDE_FAILED 会把整页决策
+            # 打死（真机 JEV 空响应归因）；reranker 也失败才 UNSURE。
+            # reranker 自身故障无更低档可退——维持 DECIDE_FAILED
+            if eng != 'reranker':
+                fb_err = resp['_error']
+                resp, request = _ask_questions(
+                    state, goal, 'reranker', session, answer,
+                    answer_file, no_cache=no_cache)
+                if '_error' in resp:
+                    result = {
+                        'action': '', 'ref': None, 'confidence': 0.0,
+                        'confidence_tier': 'low',
+                        'should_escalate': True,
+                        'alternatives': _alternatives(
+                            state, goal, {}, None),
+                        'engine': 'reranker', 'engine_requested': eng,
+                        'degraded': True, 'fallback_reason': fb_err,
+                        'fallback_error': resp['_error'],
+                        'epoch': state['epoch'],
+                        'options_count': len(state['options']),
+                        'truncated': state['truncated'],
+                        'done': False, 'stuck': False}
+                    attach_hints(result, adapter_hint=_ahint)
+                    error(f'决策引擎失败（{eng}: {fb_err}），'
+                          f'reranker 降级亦失败: {resp["_error"]}',
+                          code='AGENT_UNSURE',
+                          detail=json.dumps(result, ensure_ascii=False))
+                    return
+                resp['_degraded'] = True
+                resp['_fallback_reason'] = fb_err
+            else:
+                error('决策引擎失败', code='DECIDE_FAILED',
+                      detail=resp['_error'])
+                return
         cached = bool(resp.pop('_cache_hit', False))
+        degraded = bool(resp.pop('_degraded', False))
+        fb_reason = resp.pop('_fallback_reason', None)
         action = str(resp.get('action') or resp.get('op') or '').lower()
         target = resp.get('target')
         done = bool(resp.get('done'))
@@ -1365,10 +1428,17 @@ def register(cli):
             'done_hash_changed': hash_changed,
             'stuck': stuck_m or stuck_h, 'epoch': cur_sig,
             'options_count': len(state['options']),
-            'truncated': state['truncated'], 'engine': eng,
+            'truncated': state['truncated'],
+            'engine': 'reranker' if degraded else eng,
             'cached': cached,
         }
-        if eng == 'reranker':
+        if degraded:
+            # 降级路径如实标注——实际作答引擎是 reranker，原请求引擎
+            # 与失败原因留痕（advisory 语义同 reranker：只建议不执行）
+            result['engine_requested'] = eng
+            result['degraded'] = True
+            result['fallback_reason'] = fb_reason
+        if eng == 'reranker' or degraded:
             result['advisory'] = True   # 只建议不执行——契约写入响应
             if resp.get('backend'):
                 result['backend'] = resp['backend']   # 'ort'/'st' 实载回显
@@ -1396,7 +1466,7 @@ def register(cli):
             msrc = 'conf_fallback'  # 无 probs——静默降级为置信度
         result['margin'] = round(margin, 4)
         result['margin_source'] = msrc
-        if eng == 'reranker':
+        if eng == 'reranker' or degraded:
             # bge 实测 conf/margin 分布 hit/miss 完全重叠（eval-68），
             # 无校准证据可达 act——封顶 confirm；MiniLM 保留 act 档
             tier_src = msrc if resp.get('backend') != 'bge-st' \

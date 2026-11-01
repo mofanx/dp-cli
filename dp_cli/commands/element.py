@@ -23,6 +23,18 @@ def _occluded_retry(ctx, locator, index, timeout):
                         timeout=min(timeout, 3.0), hit_check=False)
 
 
+def _clear_field(ele):
+    """B10 显式清场原语：value 置空 + dispatchEvent(input, bubbles)。
+
+    DP input(clear=True) 的清场语义在 React/Vue 受控输入框上真机
+    不可靠（追加串联毁表单）——JS 置空并派发 input 事件让框架
+    受控状态同步清空。fill 遮挡降级与正常路径共用。
+    """
+    ele.run_js('this.value="";'
+               'this.dispatchEvent('
+               'new Event("input",{bubbles:true}))')
+
+
 def register(cli):
 
     _MOD_MASK = {'alt': 1, 'control': 2, 'ctrl': 2, 'meta': 4,
@@ -258,11 +270,8 @@ def register(cli):
                 if clear:
                     # B10：遮挡降级先显式清场——input(by_js=True) 的
                     # 清场依赖 DP 版本语义（真机追加不清空，多个值
-                    # 串联废掉表单）；run_js 置空并派发 input 事件
-                    # 兼容 React/Vue 受控组件，然后 clear=False 填入
-                    ele.run_js('this.value="";'
-                               'this.dispatchEvent('
-                               'new Event("input",{bubbles:true}))')
+                    # 串联废掉表单），然后 clear=False 填入
+                    _clear_field(ele)
                 ele.input(value, clear=False, by_js=True)
             elif human:
                 human_click(page, ele, human_min, human_max)
@@ -270,7 +279,13 @@ def register(cli):
                     human_clear(page)
                 human_type(page, value, human_min, human_max)
             else:
-                ele.input(value, clear=clear, by_js=by_js)
+                if clear:
+                    # B10 二阶：正常路径同样前置显式清场——慢慢买
+                    # React 受控框上 input(clear=True) 真机追加串联
+                    # （旧值+新值黏连），显式清场后统一 clear=False
+                    # 走 DP 填入
+                    _clear_field(ele)
+                ele.input(value, clear=False, by_js=by_js)
             data = {'locator': locator, 'value': value}
             if fb is not None:
                 data['fallback'] = 'by_js'   # advisory：明示非原路径

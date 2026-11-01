@@ -19,7 +19,8 @@ B9  tab 绑定漂移——_cur_tab 对 get_tab 异常不再无条件清绑定：
     get_tab 假阴性时绕名单直接 attach 复核；真关才清绑定回退
 B10 fill 遮挡降级 by_js → input 前先 run_js 显式清场
     （value=''+input 事件），再 input(clear=False,by_js=True)；
-    正常 fill 路径语义不动
+    二阶：正常路径 clear=True 同样前置显式清场（React 受控框
+    追加污染根治），clear=False 显式传才不清场
 
 全程 mock——不依赖真浏览器/网络/决策模型。
 """
@@ -665,23 +666,61 @@ def test_b9_dead_tab_clears_binding_falls_back(monkeypatch):
     assert saved and 'active_tab' not in saved[-1]   # 失效绑定已清
 
 
-# ── B10：fill by_js 降级先清场 ──────────────────────────────────
+# ── B10：fill 清场（降级 + 正常路径）─────────────────────────────
 
-def test_b10_normal_fill_no_clear_js(monkeypatch):
-    """正常（非降级）fill 路径不加清场 run_js——原语义不动。"""
+def test_b10_normal_fill_clear_js_before_input(monkeypatch):
+    """B10 二阶：正常（非降级）fill 路径 clear=True 同样前置显式
+    清场——run_js 清场在 input 之前（顺序断言）。"""
     ele = _OccEle()
     _ele_mocks(monkeypatch, ele)
     monkeypatch.setattr(element_mod, '_resolve_ele',
                         lambda *a, **k: (ele, None))
+    seq = []
+
+    orig_run_js = ele.run_js
+    def run_js(script, *a, **k):
+        if 'elementFromPoint' not in script:
+            seq.append(('run_js', script))
+        return orig_run_js(script, *a, **k)
+    ele.run_js = run_js
+    orig_input = ele.input
+    def _input(value, clear=True, by_js=False):
+        seq.append(('input', value, clear, by_js))
+        return orig_input(value, clear=clear, by_js=by_js)
+    ele.input = _input
+
     from dp_cli.main import cli
     r = CliRunner().invoke(cli, ['fill', 'css:#kw', 'x'])
     out = json.loads(r.output)
     assert out['status'] == 'ok', out
     assert 'fallback' not in out['data']
-    # 正常路径：input 保持原签名语义（clear=True 由 DP 处理），
-    # 无任何额外清场 run_js
-    assert ele.inputs == [{'value': 'x', 'clear': True, 'by_js': False}]
-    assert ele.clicked == []
+    # 显式清场先跑，随后 input(clear=False) 走 DP 追加填入——
+    # 不再依赖 DP input(clear=True) 的清场语义（真机 React 受控
+    # 框追加串联归因）
+    assert seq == [
+        ('run_js', 'this.value="";this.dispatchEvent('
+                   'new Event("input",{bubbles:true}))'),
+        ('input', 'x', False, False)]
+
+
+def test_b10_normal_fill_clear_false_no_clear_js(monkeypatch):
+    """clear=False 显式传 → 无清场 run_js，input(clear=False) 追加。
+
+    --clear 是 is_flag default=True 关不掉，直调 callback 注入
+    clear=False 验证语义分支。
+    """
+    ele = _OccEle()
+    _ele_mocks(monkeypatch, ele)
+    monkeypatch.setattr(element_mod, '_resolve_ele',
+                        lambda *a, **k: (ele, None))
+    from dp_cli.main import cli
+    cli.commands['fill'].callback(
+        locator='css:#kw', value='v2', session='default', index=1,
+        clear=False, by_js=False, frame=None, timeout=10,
+        no_wait=False, human=False, human_min=0.1, human_max=0.3)
+    assert ele.inputs == [{'value': 'v2', 'clear': False,
+                           'by_js': False}]
+    assert ele.clicked == []               # 无清场 run_js
 
 
 def test_b10_fallback_clear_runs_before_input(monkeypatch):

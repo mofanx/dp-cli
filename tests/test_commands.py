@@ -5525,3 +5525,31 @@ def test_har_dump_output_atomic_no_tmp_leftover(runner, monkeypatch,
     har = json.loads(out_file.read_text(encoding='utf-8'))
     assert har['log']['version'] == '1.2'
     assert not (tmp_path / 't.har.tmp').exists()
+
+
+@pytest.mark.unit
+def test_refs_clear_cli(runner, monkeypatch, tmp_path):
+    """refs-clear CLI：清池文件 refs=[]、exit 0、JSON 契约输出。"""
+    import dp_cli.session as sess_mod
+    from dp_cli.main import cli
+
+    monkeypatch.setattr(sess_mod, '_session_dir', lambda: tmp_path)
+    sess_mod.save_refs('default', 'https://x', {'1': {'locator': '#a'}})
+
+    r = runner.invoke(cli, ['refs-clear'])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out['status'] == 'ok'
+    assert out['data']['session'] == 'default'
+    assert out['data']['refs_file_existed'] is True
+
+    data = json.loads((tmp_path / 'refs' / 'default.json')
+                      .read_text(encoding='utf-8'))
+    assert data['refs'] == []
+    assert sess_mod.load_refs('default') == {}
+
+    # -S 指定会话
+    r2 = runner.invoke(cli, ['refs-clear', '-S', 'work'])
+    assert r2.exit_code == 0, r2.output
+    assert json.loads(r2.output)['data']['session'] == 'work'
+    assert (tmp_path / 'refs' / 'work.json').exists()

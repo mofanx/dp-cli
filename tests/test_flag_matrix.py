@@ -27,6 +27,7 @@ _SESSION_CMDS = {
     'kill-all', 'bridge', 'find', 'focus', 'scroll-into-view',
     'snapshot-diff', 'config', 'batch', 'serve', 'sh', 'fill-form',
     'dialog', 'install', 'whoami',  # whoami 假想项记录
+    'refs-clear',
 }
 
 

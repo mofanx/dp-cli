@@ -590,15 +590,90 @@ def test_detect_headless_network_error(monkeypatch):
 
 @pytest.mark.unit
 def test_save_and_load_refs(session_dir):
-    """save_refs 后 load_refs 返回相同 refs 字典。"""
+    """save_refs 后 load_refs 返回相同 refs 字典（非文本字段原样往返）。"""
     refs = {
-        'ref:1': {'selector': '#button', 'text': 'Submit'},
-        'ref:2': {'selector': '#input', 'text': 'Username'}
+        'ref:1': {'selector': '#button', 'role': 'button'},
+        'ref:2': {'selector': '#input', 'role': 'textbox'}
     }
     session.save_refs('test_session', 'https://example.com', refs)
-    
+
     loaded = session.load_refs('test_session')
     assert loaded == refs
+
+
+@pytest.mark.unit
+def test_save_refs_scrubs_sensitive_text_default(session_dir):
+    """默认脱敏：name/text 明文不落盘，存 fnv32 hash+len；locator/attrs 保留。"""
+    secret = '绩效评分：张三 85分'
+    refs = {'1': {'locator': 'css:.btn', 'name': secret,
+                  'backendNodeId': 42, 'role': 'button'}}
+    session.save_refs('test_session', 'https://example.com', refs)
+
+    raw = (session_dir / 'refs' / 'test_session.json').read_text(
+        encoding='utf-8')
+    assert secret not in raw
+    assert '张三' not in raw and '绩效' not in raw
+
+    e = session.load_refs('test_session')['1']
+    assert 'name' not in e
+    assert e['name_hash'] == session._fnv1a32(secret)
+    assert e['name_len'] == len(secret)
+    # 解析所需字段原样保留
+    assert e['locator'] == 'css:.btn'
+    assert e['backendNodeId'] == 42
+    assert e['role'] == 'button'
+
+
+@pytest.mark.unit
+def test_save_refs_scrubs_text_locator_pw_options(session_dir):
+    """text: 定位器/pw_locator/options 均为页面明文——脱敏清除。"""
+    refs = {'1': {'locator': 'text:登录后台', 'name': '登录后台',
+                  'pw_locator': 'page.get_by_role("button", name="登录后台")',
+                  'options': ['机密甲', '机密乙'], 'role': 'combobox'}}
+    session.save_refs('test_session', 'https://example.com', refs)
+
+    raw = (session_dir / 'refs' / 'test_session.json').read_text(
+        encoding='utf-8')
+    assert '登录后台' not in raw and '机密' not in raw
+
+    e = session.load_refs('test_session')['1']
+    assert e['locator'] == ''
+    assert 'pw_locator' not in e
+    assert 'options' not in e
+    assert e['options_count'] == 2
+    assert e['name_hash'] == session._fnv1a32('登录后台')
+
+
+@pytest.mark.unit
+def test_save_refs_private_off_keeps_plaintext(session_dir, monkeypatch):
+    """DPX_REFS_PRIVATE=0 恢复明文存储（调试/旧管线兼容）。"""
+    monkeypatch.setenv('DPX_REFS_PRIVATE', '0')
+    refs = {'1': {'name': '登录后台', 'locator': 'text:登录后台'}}
+    session.save_refs('test_session', 'https://example.com', refs)
+
+    e = session.load_refs('test_session')['1']
+    assert e['name'] == '登录后台'
+    assert e['locator'] == 'text:登录后台'
+
+
+@pytest.mark.unit
+def test_clear_refs_empties_pool(session_dir):
+    """clear_refs 后文件 refs=[]、load_refs={}；返回清前文件存在性。"""
+    session.save_refs('test_session', 'https://example.com',
+                      {'1': {'locator': '#a', 'name': 'x'}})
+    assert session.clear_refs('test_session') is True
+
+    data = json.loads(
+        (session_dir / 'refs' / 'test_session.json').read_text(
+            encoding='utf-8'))
+    assert data['refs'] == []
+    assert session.load_refs('test_session') == {}
+
+    # 幂等：文件已在，再清仍 True
+    assert session.clear_refs('test_session') is True
+    # 从未有 refs 文件的 session → False，但仍产出空池文件
+    assert session.clear_refs('never_existed') is False
+    assert session.load_refs('never_existed') == {}
 
 
 @pytest.mark.unit

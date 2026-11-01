@@ -236,6 +236,28 @@ def register(cli):
         except Exception as e:
             error(f'加载状态失败', code='STATE_FAILED', detail=str(e))
 
+    @cli.command('refs-clear')
+    @session_option
+    def refs_clear(session):
+        """清空会话的 ref 编号映射池（敏感页快照后的隐私清场）。
+
+        \b
+        dpx snapshot/scan/agent-state 会把 ref→locator 映射写入
+        ~/.dp_cli/sessions/refs/<session>.json。落盘默认脱敏
+        （name→name_hash，DPX_REFS_PRIVATE=0 恢复明文），但操作完
+        绩效/后台/登录等敏感页仍建议手动清场。清空后 ref:N/@eN
+        引用失效，需重新快照。
+
+        \b
+        示例:
+          dpx refs-clear          # 清空 default 会话 refs 池
+          dpx refs-clear -S work  # 清空指定会话
+        """
+        from dp_cli.session import clear_refs
+        existed = clear_refs(session)
+        ok({'session': session, 'refs_file_existed': existed},
+           msg='refs 池已清空')
+
     @cli.command('config-set')
     @click.option('-p', '--browser-path', default=None, help='设置浏览器路径')
     @click.option('-u', '--user-path', default=None, help='设置用户数据路径')

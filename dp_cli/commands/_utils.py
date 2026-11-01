@@ -469,6 +469,50 @@ def _mark_element_by_backend_id(page, backend_node_id: int) -> str:
     return marker
 
 
+def _mark_element_by_name_hash(page, ref_data: dict) -> str:
+    """脱敏 ref 的页内定位：候选元素文本哈希匹配 name_hash → data-dp-ref 打标。
+
+    refs 默认脱敏落盘（session._scrub_ref_entry）：name 只存 fnv32。
+    解析不回放原文——页内对每个候选元素计算同算法哈希
+    （utf-8 字节流 FNV-1a 32bit，与 session._fnv1a32 双向复现）比对，
+    命中即 setAttribute 打标。候选文本 = aria-label/value/alt/title/
+    placeholder 属性 + value 现值 + textContent（<200 字符），各取
+    原样/trim/空白折叠三个变体并截 100（name 收集端截 100）。
+    JS 异常或未命中返回 None。
+    """
+    nhash = ref_data.get('name_hash')
+    if not nhash:
+        return None
+    import uuid
+    marker = 'dp' + uuid.uuid4().hex[:12]
+    js = (
+        '(function(){'
+        f'var H="{nhash}",M="{marker}",enc=new TextEncoder();'
+        'function fnv(s){var b=enc.encode(s),x=0x811c9dc5>>>0;'
+        'for(var i=0;i<b.length;i++){x^=b[i];x=Math.imul(x,16777619)>>>0;}'
+        'return("0000000"+x.toString(16)).slice(-8);}'
+        'function cand(s){if(!s)return[];'
+        'return[s.slice(0,100),s.trim().slice(0,100),'
+        's.replace(/\\s+/g," ").trim().slice(0,100)];}'
+        'var attrs=["aria-label","value","alt","title","placeholder"],'
+        'els=document.querySelectorAll("*"),i,j,k,el,v;'
+        'for(i=0;i<els.length;i++){el=els[i];var c=[];'
+        'for(j=0;j<attrs.length;j++){'
+        'v=el.getAttribute&&el.getAttribute(attrs[j]);if(v)c.push(v);}'
+        'if(typeof el.value==="string"&&el.value)c.push(el.value);'
+        'var t=el.textContent||"";if(t.length<200)c.push(t);'
+        'for(j=0;j<c.length;j++){var vs=cand(c[j]);'
+        'for(k=0;k<vs.length;k++){if(fnv(vs[k])===H){'
+        'try{el.setAttribute("data-dp-ref",M);}catch(e){}return M;}}}}'
+        'return null;})()'
+    )
+    try:
+        hit = page.run_js(js, as_expr=True)
+    except Exception:
+        return None
+    return marker if hit == marker else None
+
+
 def _resolve_pw(expr: str, session: str, page) -> str:
     """解析 pw: 表达式 → 在页面上打标 → 返回 @data-dp-ref=<marker>。
 
@@ -563,10 +607,25 @@ def resolve_locator(locator: str, session: str = 'default', page=None) -> str:
     if real_loc and not real_loc.startswith('t:'):
         return real_loc
 
-    # 3. 再回退：用 name 作文字定位
+    # 3. 再回退：用 name 作文字定位（明文 refs——DPX_REFS_PRIVATE=0
+    #    或脱敏前旧文件）
     name = ref_data.get('name', '')
     if name and len(name) <= 50:
         return f'text:{name}'
+
+    # 3b. 脱敏 refs：name_hash 页内哈希比对打标（不落明文也不回放原文）
+    if ref_data.get('name_hash'):
+        if page is None:
+            try:
+                page = _get_page(session)
+            except SystemExit:
+                page = None
+            except Exception:
+                page = None
+        if page is not None:
+            marker = _mark_element_by_name_hash(page, ref_data)
+            if marker:
+                return f'@data-dp-ref={marker}'
 
     error(f'ref:{ref_id} 无法解析为有效定位器 (role={ref_data.get("role")})',
           code='REF_UNRESOLVABLE')

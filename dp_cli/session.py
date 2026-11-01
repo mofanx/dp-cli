@@ -778,9 +778,61 @@ def _connect_browser(session_name: str = 'default', headless: bool = False,
 # ── Ref 映射管理 ─────────────────────────────────────────────────────────────
 
 
+# refs 文本脱敏：name/text/innerText 是页面明文（绩效/后台/登录页文字
+# 落盘即持久泄漏），默认以 fnv32 短哈希替代存储——resolve 侧页内哈希
+# 比对定位，不回放原文（见 _utils._mark_element_by_name_hash）。
+# DPX_REFS_PRIVATE=0 显式关脱敏恢复明文（调试/旧管线兼容）。
+_REFS_TEXT_FIELDS = ('name', 'text', 'innerText')
+
+
+def _refs_private() -> bool:
+    """refs 落盘脱敏开关：默认开；=0/false/off/no 恢复明文存储。"""
+    return os.environ.get('DPX_REFS_PRIVATE', '1').strip().lower() \
+        not in ('0', 'false', 'off', 'no')
+
+
+def _fnv1a32(text: str) -> str:
+    """FNV-1a 32bit（utf-8 字节流）——与 resolve 侧页内 JS 同算法，
+    py/js 双向可复现的短哈希。"""
+    h = 0x811C9DC5
+    for b in text.encode('utf-8', 'replace'):
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return f'{h:08x}'
+
+
+def _scrub_ref_entry(entry: dict) -> dict:
+    """脱敏单个 ref 条目（非原地——返回新 dict，内存侧 refs 保留明文）。
+
+    - name/text/innerText → <key>_hash（fnv32）+ <key>_len
+    - locator 为 text: 前缀 → 置空（定位器字符串本身就是页面文本）
+    - pw_locator（表达式内嵌 accname 明文）→ 移除
+    - options（combobox 选项明文）→ 移除，留 options_count
+    - @attr= 属性定位器保留（重解析所必需，attrs 属结构信息——
+      本设计的脱敏边界，见 AGENTS.md 教训登记）
+    """
+    e = dict(entry)
+    for k in _REFS_TEXT_FIELDS:
+        v = e.get(k)
+        if v:
+            s = str(v)
+            e[f'{k}_hash'] = _fnv1a32(s)
+            e[f'{k}_len'] = len(s)
+            e.pop(k, None)
+    loc = e.get('locator')
+    if isinstance(loc, str) and loc.startswith('text:'):
+        e['locator'] = ''
+    e.pop('pw_locator', None)
+    if 'options' in e:
+        e['options_count'] = len(e.pop('options') or [])
+    return e
+
+
 def save_refs(session_name: str, url: str, refs: dict) -> None:
-    """保存快照编号映射到 refs.json"""
+    """保存快照编号映射到 refs.json（默认脱敏，见 _scrub_ref_entry）"""
     from datetime import datetime
+    if _refs_private() and isinstance(refs, dict):
+        refs = {k: (_scrub_ref_entry(v) if isinstance(v, dict) else v)
+                for k, v in refs.items()}
     data = {
         'url': url,
         'timestamp': datetime.now().isoformat(),
@@ -797,15 +849,38 @@ def save_refs(session_name: str, url: str, refs: dict) -> None:
 
 
 def load_refs(session_name: str) -> dict:
-    """加载快照编号映射，返回 {ref_id: {locator, role, name, backendNodeId}}"""
+    """加载快照编号映射，返回 {ref_id: {locator, role, name|name_hash, backendNodeId}}"""
     f = get_session_dir() / 'refs' / f'{session_name}.json'
     if not f.exists():
         return {}
     try:
         data = json.loads(f.read_text(encoding='utf-8'))
-        return data.get('refs', {})
+        refs = data.get('refs', {})
+        # 清场文件存 refs=[]——非 dict 一律归一为空映射，防 .get/.items 崩
+        return refs if isinstance(refs, dict) else {}
     except Exception:
         return {}
+
+
+def clear_refs(session_name: str) -> bool:
+    """清空 session refs 池（文件 refs 置 []）——敏感页快照后的手动清场。
+
+    返回清前 refs 文件是否已存在。沿用 tmp+os.replace 原子写。
+    """
+    from datetime import datetime
+    refs_dir = get_session_dir() / 'refs'
+    refs_dir.mkdir(exist_ok=True)
+    f = refs_dir / f'{session_name}.json'
+    existed = f.exists()
+    data = {
+        'url': '',
+        'timestamp': datetime.now().isoformat(),
+        'refs': [],
+    }
+    tmp = f.with_suffix(f.suffix + f'.{os.getpid()}.tmp')
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp, f)
+    return existed
 
 
 def _dl_path(session_name: str) -> str | None:

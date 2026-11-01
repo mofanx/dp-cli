@@ -24,6 +24,7 @@
 | 浏览器 | `throttle` | [session], [profile], [latency], [down], [up], [cpu], [off] |
 | 导航/页面 | `config-set` | [browser_path], [user_path], [copy_config] |
 | 导航/页面 | `maximize` | [session] |
+| 导航/页面 | `refs-clear` | [session] |
 | 导航/页面 | `resize` | <width>, <height>, [session] |
 | 导航/页面 | `state-load` | [filename], [session] |
 | 导航/页面 | `state-save` | [filename], [fmt], [session] |

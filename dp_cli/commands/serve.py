@@ -243,13 +243,15 @@ _NAV_CMDS = {'open', 'goto', 'go-back', 'go-forward', 'back',
              'forward', 'reload', 'close', 'new', 'switch',
              'tab-new', 'tab-select', 'tab-close'}
 _REF_SRC = {'snapshot', 'agent-state'}
+# refs-clear 主动清池——补全缓存同步失效（同导航语义）
+_REF_CLEAR = {'refs-clear'}
 
 
 def _refresh_refs(cmd: str, session: str) -> None:
     """补全缓存失效契约（A+：编号+范围，meta 仅提示不担保）：
-    snapshot/agent-state 覆盖；导航类清空；其余不动。"""
+    snapshot/agent-state 覆盖；导航类/refs-clear 清空；其余不动。"""
     global _REF_CACHE
-    if cmd in _NAV_CMDS:
+    if cmd in _NAV_CMDS or cmd in _REF_CLEAR:
         _REF_CACHE = {}
         return
     if cmd in _REF_SRC:

@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """resolve_locator 的鲁棒解析测试（不依赖真实浏览器）。"""
 import json
+import re
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -182,3 +183,86 @@ def test_resolve_locator_at_example_not_alias():
         assert _utils.resolve_locator('@example', session='x',
                                       page=None) == '@example'
         mock_load.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 脱敏 refs：name_hash 页内哈希比对打标（隐私修复——明文不落盘不回放）
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_mark_element_by_name_hash_hit():
+    """JS 命中返回 marker → 函数返回同一 marker；哈希值进了 JS。"""
+    page = MagicMock()
+    page.run_js.side_effect = lambda js, **kw: \
+        re.search(r'"dp[0-9a-f]{12}"', js).group(0).strip('"')
+    m = _utils._mark_element_by_name_hash(page, {'name_hash': 'abcd1234'})
+    assert m and m.startswith('dp') and len(m) == 14
+    js_arg = page.run_js.call_args.args[0]
+    assert 'abcd1234' in js_arg
+    assert m in js_arg
+
+
+def test_mark_element_by_name_hash_miss_returns_none():
+    """JS 未命中（return null）→ None。"""
+    page = MagicMock()
+    page.run_js.return_value = None
+    assert _utils._mark_element_by_name_hash(
+        page, {'name_hash': 'abcd1234'}) is None
+
+
+def test_mark_element_by_name_hash_js_error_returns_none():
+    """run_js 抛异常 → None（不炸 resolve 主链路）。"""
+    page = MagicMock()
+    page.run_js.side_effect = RuntimeError('js eval failed')
+    assert _utils._mark_element_by_name_hash(
+        page, {'name_hash': 'abcd1234'}) is None
+
+
+def test_mark_element_by_name_hash_no_hash_returns_none():
+    """无 name_hash → 直接 None，不跑 JS。"""
+    page = MagicMock()
+    assert _utils._mark_element_by_name_hash(page, {}) is None
+    page.run_js.assert_not_called()
+
+
+def test_resolve_locator_scrubbed_ref_uses_name_hash_mark():
+    """脱敏 ref（无 bid、locator 空、仅 name_hash）→ 页内哈希打标。"""
+    refs = {'5': {'locator': '', 'name_hash': 'abcd1234',
+                  'role': 'button', 'backendNodeId': None}}
+    page = MagicMock()
+    with patch.object(_utils, 'load_refs', return_value=refs), \
+         patch.object(_utils, '_mark_element_by_name_hash',
+                      return_value='dpfake123456') as mk:
+        result = _utils.resolve_locator('ref:5', session='x', page=page)
+    assert result == '@data-dp-ref=dpfake123456'
+    mk.assert_called_once_with(page, refs['5'])
+
+
+def test_resolve_locator_scrubbed_ref_hash_mark_fails_exits():
+    """name_hash 打标也失败 → REF_UNRESOLVABLE，不静默漂。"""
+    refs = {'5': {'locator': '', 'name_hash': 'abcd1234',
+                  'role': 'button'}}
+    page = MagicMock()
+    with patch.object(_utils, 'load_refs', return_value=refs), \
+         patch.object(_utils, '_mark_element_by_name_hash',
+                      return_value=None), \
+         patch.object(_utils, 'error') as mock_err:
+        mock_err.side_effect = SystemExit(1)
+        with pytest.raises(SystemExit):
+            _utils.resolve_locator('ref:5', session='x', page=page)
+        assert 'REF_UNRESOLVABLE' in str(mock_err.call_args)
+
+
+def test_resolve_locator_scrubbed_ref_locator_still_direct():
+    """脱敏 ref 但 locator 是 css:/@attr → 直接返回，不碰页内 JS。"""
+    refs = {'9': {'locator': 'css:#save', 'name_hash': 'abcd1234'}}
+    with patch.object(_utils, 'load_refs', return_value=refs):
+        assert _utils.resolve_locator('ref:9', session='x',
+                                      page=None) == 'css:#save'
+
+
+def test_resolve_locator_plaintext_name_fallback_unchanged():
+    """旧文件/DPX_REFS_PRIVATE=0 明文 name 仍走 text: 回退（不回归）。"""
+    refs = {'5': {'locator': 't:p', 'name': '提交', 'backendNodeId': None}}
+    with patch.object(_utils, 'load_refs', return_value=refs):
+        result = _utils.resolve_locator('ref:5', session='x', page=None)
+    assert result == 'text:提交'

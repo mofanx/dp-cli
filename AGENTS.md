@@ -37,6 +37,9 @@
 - `open --auto-connect <url>` 曾走 `ChromiumPage.get`=tab_ids[0] 劫持用户首个 tab（跑批归因）——`browser._open_navigate` 分流：无 active_tab 绑定→new_tab+绑，有绑定→绑定 tab 导航；`--port` 未分流（如需同款行为另行评估）
 - netlog 仅 serve/daemon 长驻进程 arm（设计边界）——CDP Network 事件按 WebSocket 连接投递，逐条 `dpx <cmd>` 短进程退出即断链，arm 只能捕存活期残段且污染 `requests` 的"未挂载"降级语义；CLI 路径 `touched_apis` 恒空属预期，被动日志走 `dpx serve`/daemon 或 `listen`
 - `wait --idle` 埋点/心跳白名单（`_IDLE_IGNORE_RE`）——遥测 URL 不计入 pending/activity；站点私有心跳 endpoint 漏网时用 `--loaded`/`--text` 替代
+- cookie HttpOnly 不可见→登录态探针走 DOM meta——GitHub `logged_in`/`z_c0`/`BDUSS` 类会话 cookie 设 HttpOnly，`document.cookie` 探不到；登录态断言改 `meta[name="user-login"]:not([content=""])` 或登录/注册链接 DOM（GitHub 新头像 class `prc-Avatar-*`，`img.avatar` 已废）；cookie 探针只能测非 HttpOnly 的 `_octo`/`_device_id`（站点事实非代码 bug，B/N2 归因）
+- daemon build_id 漂移警告（stderr "daemon 代码漂移 build vX vs vY-dirty"）是机制实证非 bug——开发期代码改动后 `daemon-stop` 重开消警告，发版后 build_id 自然对齐，无需改码（N4 归因）
+- 站点风控页 title 可含站点名——京东"京东验证"滑块页 title 也含"京东"，`document.title contains 站点名` 断言假阳性；详情页断言改用 URL+非验证标题+商品 DOM 标记（`.specification-item-sku`/`.cross_platform_card_btn_cart`/`#comment-root`，`#choose-attr-1` 已废）复合判定（N3 归因）
 
 ## 发版门禁
 

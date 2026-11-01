@@ -1,0 +1,580 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+"""任务池跑批器——"做任务攒数据"：逐条回放 jsonl 任务，攒 netlog/decide 实测数据。
+
+输入  bench/tasks/site_tasks.jsonl   schema:
+  {task_id, site, goal,
+   steps: [{cmd, args?, opts?, timeout?, optional?, expect?} | {"nl": 自然语言} | "自然语言"],
+   expect: {kind, ...}}
+
+step.cmd → dpx argv 直组（args 为位置参数，opts 为旗表）：
+  open/eval/fill/click/decide/sleep/api/snapshot/press/wait/tab-select/autoscroll...
+  {"cmd":"assert"} 即时判定（step.expect 优先，缺省回落 task.expect）
+  首个 open 步自动注入 --auto-connect --browser <path>（--no-auto-connect 关）
+
+expect.kind:
+  json_field      {path, eq|ne|contains|gt|lt|truthy, step?}  对指定步 JSON 取虚线路径
+  eval_contains   {expr?=document.body.innerText, needle|any_of|all_of}
+  url_contains    {needle|any_of|all_of}
+  stdout_contains {needle|any_of|all_of, step?}
+  status_ok       {}                                          全部步 status==ok
+
+任务级聚合:
+  {task_id, verdict pass/fail/partial, total_ms, steps_n,
+   decide_calls:[{engine,conf,tier,action,escalate}],
+   bugs:[现象关键词], netlog_delta:~/.dp_cli/netlog-<session>.jsonl 前后行差}
+
+输出  bench/reports/taskpool_<ts>.json + 终端表格式摘要。
+
+用法:
+  python bench/run_task_pool.py                          # 全量
+  python bench/run_task_pool.py --only jd_item_detail,mmb_history_query
+  python bench/run_task_pool.py --session taskpool --timeout 120
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import statistics
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TASKS = ROOT / 'bench' / 'tasks' / 'site_tasks.jsonl'
+REPORT_DIR = ROOT / 'bench' / 'reports'
+
+# 失败步 stdout/code/message 里扫这些现象词 → bugs 分类计数
+BUG_KEYWORDS = [
+    'occluded', 'UNSERE', 'UNSURE', 'AGENT_UNSURE', 'JS_FAILED',
+    'ELEMENT_NOT_FOUND', 'REF_NOT_FOUND', 'REF_UNRESOLVABLE', 'NO_REFS',
+    'TIMEOUT', 'WAIT_TIMEOUT', 'WAIT_FAILED', 'TAB_FAILED',
+    'SESSION_NOT_FOUND', 'SESSION_DISCONNECTED',
+    'NAVIGATE_FAILED', 'CLICK_FAILED', 'FILL_FAILED', 'TYPE_FAILED',
+    'AUTOCONNECT_FAILED', 'BROWSER_START_FAILED', 'API_FETCH_FAILED',
+    'HTTP_FAILED', 'DECIDE_FAILED', 'ASSERT_FAILED', 'NON_JSON',
+    'NONZERO_EXIT', 'captcha', '验证码', 'blocked',
+]
+BUG_RE = re.compile('|'.join(re.escape(k) for k in BUG_KEYWORDS), re.IGNORECASE)
+
+STDOUT_TAIL = 500        # 每步 stdout 摘要截断
+DPX = 'dpx'
+
+# 无 -S/--session 旗的命令——统一补 -S 会 INVALID_ARGS（mmb 真机归因：
+# dpx sleep 不接 session 旗，批跑 sleep 步全灭——sleep 已补 -S 空操作旗）
+SESSIONLESS = {'kill-all', 'close-all', 'list', 'catalog',
+               'install', 'model', 'model-status'}
+
+
+# ── dpx 调用 ──────────────────────────────────────────────────────────────
+
+def _opts_argv(opts: dict) -> list:
+    """opts dict → CLI 旗表：True→--flag；False/None 跳过；其余→--flag v。"""
+    argv = []
+    for k, v in (opts or {}).items():
+        if v is None or v is False:
+            continue
+        flag = '--' + k.replace('_', '-')
+        if v is True:
+            argv.append(flag)
+        else:
+            argv += [flag, str(v)]
+    return argv
+
+
+def step_calls(step: dict, cfg) -> list:
+    """step dict → dpx argv 列表（多数步 1 条；open 在 auto-connect
+    共享 Chrome 下翻译为 attach+pin/navigate 子调用组——见下行注释）。
+
+    open 翻译（实测归因：auto-connect 下 `dpx open <url>` 曾走
+    ChromiumPage.get=tab_ids[0] 劫持用户首个标签页——dpx 侧已修：
+    open --auto-connect 无 active_tab 绑定时自带 new_tab+绑定，
+    故首 open 直传 URL 一条命令完成 attach+专属 tab 导航；且跨进程
+    _cur_tab 无 active_tab 绑定时 latest_tab 随焦点漂移，wait/fill
+    打到无关 tab 报 ELEMENT_NOT_FOUND——首跑 3/4 fail 归因）：
+      未 attach:  open --auto-connect --browser B <url>
+                  （attach + 自动建专属 tab 并绑 active_tab）
+      未 pin:     tab-new <url>
+      已 pin:     goto <url>                        (在绑定 tab 内导航)
+    --no-auto-connect（独立浏览器）下 open 原样透传。
+    """
+    cmd = step['cmd']
+    args = [str(a) for a in step.get('args') or []]
+    extra = _opts_argv(step.get('opts'))
+
+    if cmd == 'open' and cfg.auto_connect:
+        url = args[0] if args else None
+        if not cfg.attached:
+            cfg.attached = True
+            cfg.pinned = bool(url)
+            return [['open', '--auto-connect', '--browser', cfg.browser,
+                     *([url] if url else []), *extra]]
+        if not cfg.pinned:
+            cfg.pinned = bool(url)
+            return [['tab-new', url]] if url else []
+        return [['goto', url, *extra]] if url else []
+
+    return [[cmd, *args, *extra]]
+
+
+def run_dpx(argv: list, session: str, timeout: int) -> dict:
+    """子进程跑 dpx，返回归一化记录 {status,code,message,data,stdout,elapsed_ms}。"""
+    full = ([DPX, *argv] if argv and argv[0] in SESSIONLESS
+            else [DPX, *argv, '-S', session])
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(full, capture_output=True, text=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {'status': 'timeout', 'code': 'TIMEOUT', 'data': None,
+                'message': f'step 超时 {timeout}s',
+                'stdout': '', 'elapsed_ms': int((time.monotonic() - t0) * 1000),
+                'exit': -1}
+    ms = int((time.monotonic() - t0) * 1000)
+    out = (proc.stdout or '').strip()
+    parsed = None
+    try:
+        parsed = json.loads(out)
+    except ValueError:
+        m = re.search(r'\{.*\}', out, re.DOTALL)   # stdout 混入非 JSON 前缀时兜底
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except ValueError:
+                parsed = None
+    if parsed is None:
+        return {'status': 'error', 'code': 'NON_JSON', 'data': None,
+                'message': f'非 JSON 输出(exit {proc.returncode})',
+                'stdout': out[-STDOUT_TAIL:], 'elapsed_ms': ms,
+                'exit': proc.returncode}
+    status = parsed.get('status', 'error')
+    return {'status': 'ok' if status == 'ok' and proc.returncode == 0 else 'error',
+            'code': parsed.get('code') or ('' if status == 'ok' else 'NONZERO_EXIT'),
+            'message': parsed.get('message') or '',
+            'detail': parsed.get('detail') or '',
+            'data': parsed.get('data'),
+            'stdout': out[-STDOUT_TAIL:],
+            'elapsed_ms': ms, 'exit': proc.returncode}
+
+
+# ── expect 判定 ────────────────────────────────────────────────────────────
+
+def _dig(obj, path: str):
+    """虚线路径取值（dict key / list 下标），miss 返回 _MISS。"""
+    cur = obj
+    for part in path.split('.'):
+        if isinstance(cur, dict):
+            cur = cur.get(part, _MISS)
+        elif isinstance(cur, list) and part.isdigit():
+            i = int(part)
+            cur = cur[i] if i < len(cur) else _MISS
+        else:
+            return _MISS
+        if cur is _MISS:
+            return _MISS
+    return cur
+
+
+_MISS = object()
+
+
+def _needle_hit(text: str, exp: dict) -> tuple:
+    """needle|any_of|all_of 三形态统一判定。"""
+    if 'any_of' in exp:
+        needles = exp['any_of']
+        hit = [n for n in needles if str(n) in text]
+        return bool(hit), f'any_of {needles} → 命中 {hit}'
+    if 'all_of' in exp:
+        needles = exp['all_of']
+        miss = [n for n in needles if str(n) not in text]
+        return not miss, f'all_of {needles} → 缺 {miss}'
+    n = exp.get('needle', '')
+    return str(n) in text, f'needle {n!r} {"命中" if str(n) in text else "未命中"}'
+
+
+def _field_cmp(val, exp: dict) -> tuple:
+    if 'eq' in exp:
+        return val == exp['eq'], f'{val!r} == {exp["eq"]!r}'
+    if 'ne' in exp:
+        return val != exp['ne'], f'{val!r} != {exp["ne"]!r}'
+    if 'gt' in exp:
+        try:
+            return float(val) > float(exp['gt']), f'{val!r} > {exp["gt"]}'
+        except (TypeError, ValueError):
+            return False, f'{val!r} 不可比 gt {exp["gt"]}'
+    if 'lt' in exp:
+        try:
+            return float(val) < float(exp['lt']), f'{val!r} < {exp["lt"]}'
+        except (TypeError, ValueError):
+            return False, f'{val!r} 不可比 lt {exp["lt"]}'
+    if 'contains' in exp:
+        return str(exp['contains']) in str(val), \
+            f'{exp["contains"]!r} in {str(val)[:80]!r}'
+    if exp.get('truthy'):
+        ok = val not in (None, False, '', 0, _MISS)
+        return ok, f'{val!r} truthy={ok}'
+    return bool(val) and val is not _MISS, f'{val!r} 真值判定'
+
+
+def eval_expect(exp: dict, records: list, session: str, cfg) -> tuple:
+    """返回 (ok:bool, detail:str)。records=已执行步记录。"""
+    kind = exp.get('kind')
+    if kind == 'status_ok':
+        bad = [r for r in records
+               if r.get('status') != 'ok' and r.get('cmd') != 'nl']
+        return (not bad), f'非 ok 步: {[r.get("cmd") for r in bad]}'
+
+    if kind == 'json_field':
+        idx = exp.get('step')
+        src = None
+        if idx is not None and 0 <= idx < len(records):
+            src = records[idx].get('json')
+        else:
+            src = next((r.get('json') for r in reversed(records)
+                        if r.get('json')), None)
+        if src is None:
+            return False, '无可判定 JSON 步输出'
+        val = _dig(src, exp.get('path', ''))
+        if val is _MISS:
+            return False, f'path {exp.get("path")} miss'
+        ok, det = _field_cmp(val, exp)
+        return ok, f'path={exp.get("path")} {det}'
+
+    if kind == 'eval_contains':
+        expr = exp.get('expr') or 'document.body.innerText'
+        r = run_dpx(['eval', expr], session, cfg.timeout)
+        if r['status'] != 'ok':
+            return False, f'eval 判定步失败: {r["code"]} {r["message"][:80]}'
+        text = json.dumps(r.get('data'), ensure_ascii=False)
+        ok, det = _needle_hit(text, exp)
+        return ok, f'eval({expr[:40]}) {det}'
+
+    if kind == 'url_contains':
+        r = run_dpx(['eval', 'location.href'], session, cfg.timeout)
+        if r['status'] != 'ok':
+            return False, f'url 判定步失败: {r["code"]} {r["message"][:80]}'
+        url = str((r.get('data') or {}).get('result') or '')
+        ok, det = _needle_hit(url, exp)
+        return ok, f'url={url[:90]} {det}'
+
+    if kind == 'stdout_contains':
+        idx = exp.get('step')
+        src = records[idx].get('stdout', '') \
+            if idx is not None and 0 <= idx < len(records) else \
+            ''.join(r.get('stdout', '') for r in records[-2:])
+        ok, det = _needle_hit(src, exp)
+        return ok, det
+
+    return False, f'未知 expect.kind: {kind}'
+
+
+# ── netlog ─────────────────────────────────────────────────────────────────
+
+def netlog_lines(session: str) -> int:
+    p = Path.home() / '.dp_cli' / f'netlog-{session}.jsonl'
+    try:
+        return sum(1 for _ in p.open('rb'))
+    except OSError:
+        return 0
+
+
+# ── 任务执行 ──────────────────────────────────────────────────────────────
+
+def extract_bugs(rec: dict) -> list:
+    blob = ' '.join(str(rec.get(k) or '')
+                    for k in ('code', 'message', 'detail', 'stdout'))
+    return sorted(set(m.group(0).upper() if m.group(0).isascii()
+                      else m.group(0) for m in BUG_RE.finditer(blob)))
+
+
+def run_task(task: dict, cfg) -> dict:
+    tid = task.get('task_id', '?')
+    steps = task.get('steps') or []
+    t0 = time.monotonic()
+    nlog0 = netlog_lines(cfg.session)
+    records, asserts, decide_calls, bugs = [], [], [], []
+    hard_fail = False
+
+    for i, st in enumerate(steps):
+        # 自然语言步——记档不执行
+        if isinstance(st, str):
+            st = {'nl': st}
+        nl = st.get('nl') or st.get('step')
+        if nl and 'cmd' not in st:
+            records.append({'i': i, 'cmd': 'nl', 'status': 'skipped_nl',
+                            'note': str(nl)[:120]})
+            continue
+
+        cmd = st.get('cmd')
+        optional = bool(st.get('optional'))
+        timeout = int(st.get('timeout') or cfg.timeout)
+
+        if hard_fail:
+            records.append({'i': i, 'cmd': cmd, 'status': 'not_run'})
+            continue
+
+        if cmd == 'assert':
+            exp = st.get('expect') or task.get('expect')
+            if not exp:
+                records.append({'i': i, 'cmd': 'assert', 'status': 'ok',
+                                'assert': 'skip:no_expect'})
+                continue
+            ok, det = eval_expect(exp, records, cfg.session, cfg)
+            asserts.append({'i': i, 'ok': ok, 'detail': det})
+            records.append({'i': i, 'cmd': 'assert',
+                            'status': 'ok' if ok else 'error',
+                            'assert': det, 'optional': optional})
+            if not ok and not optional:
+                # assert 失败不中止——继续跑完记 partial
+                pass
+            continue
+
+        calls = step_calls(st, cfg)
+        step_rec = {'i': i, 'cmd': cmd, 'calls': [], 'status': 'ok',
+                    'optional': optional}
+        worst = 'ok'
+        for argv in calls:
+            r = run_dpx(argv, cfg.session, timeout)
+            call_rec = {'argv': argv, 'status': r['status'],
+                        'code': r.get('code'),
+                        'elapsed_ms': r['elapsed_ms'],
+                        'stdout_tail': r.get('stdout', '')[-200:]}
+            if r.get('message'):
+                call_rec['message'] = r['message'][:160]
+            step_rec['calls'].append(call_rec)
+            step_rec['elapsed_ms'] = \
+                step_rec.get('elapsed_ms', 0) + r['elapsed_ms']
+            if r.get('data') is not None:
+                step_rec['json'] = {'status': 'ok', 'data': r['data']}
+                step_rec['data_summary'] = json.dumps(
+                    r['data'], ensure_ascii=False)[:300]
+            if cmd == 'decide' and r.get('data'):
+                d = r['data']
+                decide_calls.append({
+                    'i': i, 'engine': d.get('engine'),
+                    'conf': d.get('confidence'),
+                    'tier': d.get('confidence_tier'),
+                    'action': d.get('action'),
+                    'escalate': d.get('should_escalate'),
+                    'cached': d.get('cached'),
+                    'elapsed_ms': r['elapsed_ms']})
+            if r['status'] != 'ok':
+                worst = 'error'
+                step_rec['code'] = r.get('code')
+                if r.get('message'):
+                    step_rec['message'] = r['message'][:160]
+                bugs += extract_bugs(r)
+                step_rec['bugs'] = extract_bugs(r)
+                break            # 子调用组内首败即停
+        step_rec['status'] = worst
+        if worst != 'ok' and not optional:
+            hard_fail = True
+            step_rec['fatal'] = True
+        records.append(step_rec)
+
+    # 任务级 expect：无 assert 步消费时在末尾统一判定
+    expects = []
+    if not any(r.get('cmd') == 'assert' for r in records) and task.get('expect'):
+        ok, det = eval_expect(task['expect'], records, cfg.session, cfg)
+        expects.append({'kind': task['expect'].get('kind'), 'ok': ok,
+                        'detail': det})
+    for a in asserts:
+        expects.append({'kind': 'assert', 'ok': a['ok'],
+                        'detail': a['detail']})
+
+    n_ok = sum(1 for r in records if r.get('status') == 'ok')
+    n_run = sum(1 for r in records
+                if r.get('status') not in ('skipped_nl', 'not_run'))
+    if hard_fail:
+        verdict = 'fail'
+    elif expects and all(e['ok'] for e in expects):
+        verdict = 'pass'
+    elif expects:
+        verdict = 'partial'
+    else:
+        verdict = 'pass' if n_ok == n_run else 'partial'
+
+    return {'task_id': tid, 'site': task.get('site'),
+            'goal': task.get('goal'), 'verdict': verdict,
+            'total_ms': int((time.monotonic() - t0) * 1000),
+            'steps_n': n_run, 'steps_ok': n_ok,
+            'expects': expects, 'decide_calls': decide_calls,
+            'bugs': sorted(set(bugs)),
+            'netlog_delta': netlog_lines(cfg.session) - nlog0,
+            'steps': records}
+
+
+# ── 汇总 ─────────────────────────────────────────────────────────────────
+
+def summarize(results: list) -> dict:
+    n = len(results)
+    v = {'pass': 0, 'partial': 0, 'fail': 0}
+    for r in results:
+        v[r['verdict']] = v.get(r['verdict'], 0) + 1
+
+    # 命令耗时分布
+    cmd_ms = {}
+    for r in results:
+        for s in r['steps']:
+            if s.get('elapsed_ms') is not None:
+                cmd_ms.setdefault(s['cmd'], []).append(s['elapsed_ms'])
+    timing = {c: {'n': len(v_), 'mean_ms': int(statistics.mean(v_)),
+                  'p50_ms': int(statistics.median(v_)),
+                  'max_ms': max(v_)}
+              for c, v_ in sorted(cmd_ms.items(),
+                                  key=lambda kv: -statistics.mean(kv[1]))}
+
+    # decide / reranker 表现
+    calls = [c for r in results for c in r['decide_calls']]
+    eng_stat = {}
+    for c in calls:
+        e = eng_stat.setdefault(c.get('engine') or 'unknown',
+                                {'n': 0, 'confs': [], 'tiers': {},
+                                 'escalate': 0, 'cached': 0})
+        e['n'] += 1
+        if isinstance(c.get('conf'), (int, float)):
+            e['confs'].append(c['conf'])
+        t = c.get('tier') or 'n/a'
+        e['tiers'][t] = e['tiers'].get(t, 0) + 1
+        e['escalate'] += 1 if c.get('escalate') else 0
+        e['cached'] += 1 if c.get('cached') else 0
+    for e in eng_stat.values():
+        e['avg_conf'] = round(statistics.mean(e['confs']), 3) \
+            if e['confs'] else None
+        e.pop('confs')
+
+    bug_counts = {}
+    for r in results:
+        for b in r['bugs']:
+            bug_counts[b] = bug_counts.get(b, 0) + 1
+
+    return {'tasks_n': n, 'verdicts': v,
+            'pass_rate': round(v['pass'] / n, 3) if n else 0,
+            'cmd_timing': timing, 'decide_engines': eng_stat,
+            'decide_calls_n': len(calls),
+            'bug_counts': dict(sorted(bug_counts.items(),
+                                      key=lambda kv: -kv[1])),
+            'netlog_delta_total': sum(r['netlog_delta'] for r in results)}
+
+
+def print_table(results: list, summary: dict, report: Path):
+    w = max((len(r['task_id']) for r in results), default=8)
+    print('\n' + '=' * 78)
+    print(f'{"task_id":<{w}}  verdict  total_ms  steps  netlog+  bugs')
+    print('-' * 78)
+    for r in results:
+        print(f'{r["task_id"]:<{w}}  {r["verdict"]:<8}  '
+              f'{r["total_ms"]:>7}  {r["steps_ok"]}/{r["steps_n"]:<4} '
+              f'{r["netlog_delta"]:>6}  {",".join(r["bugs"]) or "-"}')
+    print('-' * 78)
+    v = summary['verdicts']
+    print(f'verdict: pass {v.get("pass", 0)} / partial '
+          f'{v.get("partial", 0)} / fail {v.get("fail", 0)}   '
+          f'pass_rate={summary["pass_rate"] * 100:.0f}%')
+    if summary['cmd_timing']:
+        top = ', '.join(f'{c} avg={t["mean_ms"]}ms(n={t["n"]})'
+                        for c, t in list(summary['cmd_timing'].items())[:6])
+        print(f'耗时分布: {top}')
+    if summary['decide_engines']:
+        eng = '; '.join(
+            f'{e}: n={s["n"]} avg_conf={s["avg_conf"]} '
+            f'tiers={s["tiers"]} escalate={s["escalate"]}'
+            for e, s in summary['decide_engines'].items())
+        print(f'decide 引擎: {eng}')
+    if summary['bug_counts']:
+        print('bug 分类: ' + ', '.join(f'{k}×{v_}' for k, v_ in
+                                       summary['bug_counts'].items()))
+    print(f'netlog 增量: +{summary["netlog_delta_total"]} 行')
+    print(f'report → {report}')
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--tasks', default=str(DEFAULT_TASKS),
+                    help='任务 jsonl 路径')
+    ap.add_argument('--session', '-S', default='taskpool',
+                    help='共用 session 池名（默认 taskpool）')
+    ap.add_argument('--only', default=None,
+                    help='只跑逗号分隔的 task_id 子集')
+    ap.add_argument('--browser', default='/usr/bin/google-chrome',
+                    help='--auto-connect 注入的浏览器路径')
+    ap.add_argument('--auto-connect', dest='auto_connect',
+                    action='store_true', default=True)
+    ap.add_argument('--no-auto-connect', dest='auto_connect',
+                    action='store_false')
+    ap.add_argument('--timeout', type=int, default=120,
+                    help='单步超时秒数（默认 120）')
+    ap.add_argument('--daemon', dest='daemon', action='store_true',
+                    default=True,
+                    help='预启动 daemon（netlog arm+命令免启动税，默认开）')
+    ap.add_argument('--no-daemon', dest='daemon', action='store_false')
+    cfg = ap.parse_args()
+    cfg.attached = False      # auto-connect attach 状态（跨任务共享 session）
+    cfg.pinned = False        # active_tab 绑定状态
+
+    tasks = []
+    for line in Path(cfg.tasks).read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if line:
+            tasks.append(json.loads(line))
+    if cfg.only:
+        wanted = set(cfg.only.split(','))
+        tasks = [t for t in tasks if t.get('task_id') in wanted]
+    if not tasks:
+        print('无匹配任务', file=sys.stderr)
+        return 2
+
+    print(f'任务池: {len(tasks)} 条  session={cfg.session}  '
+          f'auto_connect={cfg.auto_connect}  daemon={cfg.daemon}')
+
+    # preflight：先 attach（首个任务的 open 步也会做，这里只是让
+    # daemon-start 有 session 可依）；daemon 常驻 → netlog arm +
+    # decide 模型免冷启。失败不阻断——后续步如实记 fail。
+    preflight = []
+    if cfg.auto_connect and not cfg.attached:
+        r = run_dpx(['open', '--auto-connect', '--browser', cfg.browser],
+                    cfg.session, cfg.timeout)
+        cfg.attached = r['status'] == 'ok'
+        preflight.append({'argv': ['open', '--auto-connect'],
+                          'status': r['status'], 'code': r.get('code'),
+                          'elapsed_ms': r['elapsed_ms']})
+        print(f'  preflight attach: {r["status"]} '
+              f'{r.get("code") or ""}'.rstrip(), flush=True)
+    if cfg.daemon and cfg.attached:
+        r = run_dpx(['daemon-start'], cfg.session, 30)
+        preflight.append({'argv': ['daemon-start'], 'status': r['status'],
+                          'code': r.get('code'),
+                          'elapsed_ms': r['elapsed_ms']})
+        print(f'  preflight daemon-start: {r["status"]} '
+              f'{r.get("code") or ""}'.rstrip(), flush=True)
+
+    results = []
+    for t in tasks:
+        print(f'  ▶ {t.get("task_id")} ...', flush=True)
+        r = run_task(t, cfg)
+        print(f'    {r["verdict"]}  {r["total_ms"]}ms  '
+              f'{r["steps_ok"]}/{r["steps_n"]} 步  '
+              f'netlog+{r["netlog_delta"]}'
+              + (f'  bugs={r["bugs"]}' if r['bugs'] else ''), flush=True)
+        results.append(r)
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    report = REPORT_DIR / f'taskpool_{ts}.json'
+    summary = summarize(results)
+    report.write_text(json.dumps(
+        {'generated_at': datetime.now().isoformat(timespec='seconds'),
+         'session': cfg.session, 'tasks_file': cfg.tasks,
+         'preflight': preflight,
+         'summary': summary, 'tasks': results},
+        ensure_ascii=False, indent=2), encoding='utf-8')
+    print_table(results, summary, report)
+    return 0 if summary['verdicts'].get('fail', 0) == 0 else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

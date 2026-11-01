@@ -33,3 +33,6 @@ netlog-*.jsonl
 adapters/
 *.dp_cli
 sessions/*.session
+
+# 任务池跑批报告（运行产物——只留样例入库）
+bench/reports/

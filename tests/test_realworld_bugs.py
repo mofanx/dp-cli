@@ -1606,3 +1606,60 @@ def test_b16_idle_ignore_re_new_patterns():
             'https://a.com/login',
             'https://a.com/blog/post'):               # blog 非 /log
         assert not rx.search(url), url
+
+
+# ── B17：wait --idle blob:/data: 本地 scheme 豁免 ────────────────
+# 知乎双站残留 WAIT_FAILED 实锤归因：/hot 页 prefetch/worker 持续
+# 加载同一 blob: Script（CDP 实测 7×/15s，netlog-zhhot 80×/31min），
+# blob:/data: 由内存解析不走网络栈永不 loadingFinished——pending
+# 恒非空且每发必刷 activity，TTL 老化刚剔除新 blob 又入列，
+# idle 永假。scheme 级豁免（与 WS/SSE 同通道）：非网络请求不入
+# pending 不刷 activity。
+
+def test_b17_idle_blob_data_scheme_exempt():
+    """blob:/data: 请求永不 finished 也不挡 idle——反复重生形态
+    下收敛 + 计入 ignored_reqs（zhihu /hot blob Script 实锤）。"""
+    import threading, time
+    page = _IdlePage()
+    result, stats = {}, {}
+    th = threading.Thread(
+        target=lambda: result.setdefault(
+            'v', _utils.wait_network_idle(
+                page, idle_time=0.2, timeout=3, stats=stats)),
+        daemon=True)
+    th.start()
+    time.sleep(0.05)
+    cbs = page.driver.cbs
+    cbs['Network.requestWillBeSent'](
+        requestId='r1', request={'url': 'https://a.com/api/data'})
+    cbs['Network.loadingFinished'](requestId='r1')
+    # 同一 blob URL 反复重生（prefetch/worker 轮发，间隔<idle_time）
+    # + data: fetch——修复前 pending 恒非空+刷 activity 必超时
+    for i in range(15):
+        if 'v' in result:
+            break
+        cbs['Network.requestWillBeSent'](
+            requestId=f'b{i}', type='Script',
+            request={'url': 'blob:https://www.zhihu.com/uuid-x'})
+        cbs['Network.requestWillBeSent'](
+            requestId=f'd{i}',
+            request={'url': 'data:application/json;base64,e30='})
+        time.sleep(0.05)
+    th.join(3)
+    assert result.get('v') is True
+    assert stats.get('ignored_reqs', 0) >= 1
+
+
+def test_b17_long_lived_request_blob_data():
+    """_long_lived_request scheme 判据：blob:/data: 豁免，
+    http(s) 普通 URL 不误伤。"""
+    assert _utils._long_lived_request(
+        {'url': 'blob:https://www.zhihu.com/uuid'}, 'Script')
+    assert _utils._long_lived_request(
+        {'url': 'BLOB:https://x.com/u'}, None)      # 大小写
+    assert _utils._long_lived_request(
+        {'url': 'data:text/plain;base64,aGk='}, 'Fetch')
+    assert not _utils._long_lived_request(
+        {'url': 'https://www.zhihu.com/api/v4/me'}, 'XHR')
+    assert not _utils._long_lived_request(
+        {'url': 'https://a.com/blob-store'}, 'Fetch')  # path 含 blob 不误伤

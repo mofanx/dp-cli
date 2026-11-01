@@ -39,6 +39,8 @@
 - `wait --idle` 埋点/心跳白名单（`_IDLE_IGNORE_RE`）——遥测 URL 不计入 pending/activity；站点私有心跳 endpoint 漏网时用 `--loaded`/`--text` 替代
 - cookie HttpOnly 不可见→登录态探针走 DOM meta——GitHub `logged_in`/`z_c0`/`BDUSS` 类会话 cookie 设 HttpOnly，`document.cookie` 探不到；登录态断言改 `meta[name="user-login"]:not([content=""])` 或登录/注册链接 DOM（GitHub 新头像 class `prc-Avatar-*`，`img.avatar` 已废）；cookie 探针只能测非 HttpOnly 的 `_octo`/`_device_id`（站点事实非代码 bug，B/N2 归因）
 - daemon build_id 漂移警告（stderr "daemon 代码漂移 build vX vs vY-dirty"）是机制实证非 bug——开发期代码改动后 `daemon-stop` 重开消警告，发版后 build_id 自然对齐，无需改码（N4 归因）
+- `wait --idle` blob:/data: scheme 残留——CDP 对本地资源请求发 requestWillBeSent 但永不 loadingFinished/Failed（知乎 /hot blob: Script 7×/15s、netlog-zhhot 80×/31min 实锤：prefetch/worker 反复重生，TTL 老化刚剔又入列+每发刷 activity→idle 永假）——`_long_lived_request` 加 scheme 判据豁免，与 WS/SSE 同通道
+- 跑批/service 类入口 daemon 漂移防陈旧码：build_id 警告**只告警不拦截**——`ExecStartPre=-python3.13 -m dp_cli.main daemon-stop -S <session>` 物理停（`-` 前缀容错，daemon 不在也继续；`dpx-taskpool.service` 已配）；bench 脚本/新 service 接入前同款前置，勿依赖 client 侧警告兜底
 - 站点风控页 title 可含站点名——京东"京东验证"滑块页 title 也含"京东"，`document.title contains 站点名` 断言假阳性；详情页断言改用 URL+非验证标题+商品 DOM 标记（`.specification-item-sku`/`.cross_platform_card_btn_cart`/`#comment-root`，`#choose-attr-1` 已废）复合判定（N3 归因）
 
 ## 发版门禁

@@ -831,21 +831,25 @@ _IDLE_IGNORE_RE = re.compile(
 
 
 def _long_lived_request(req: dict, rtype) -> bool:
-    """requestWillBeSent 事件 → 是否为长连接（WS/SSE）请求。
+    """requestWillBeSent 事件 → 是否为永不 loadingFinished 的请求。
 
-    WebSocket 握手/SSE 建立后永不 loadingFinished——计入 pending
-    则集合恒非空，wait --idle 必超时（zhihu/search.jd.com wss
-    长挂实锤）。四判据任一即豁免（同 ignore_re 语义：requestId
-    入 ignored，其 response/fail 同步跳过）：
+    长连接（WS/SSE）握手后永不收尾；blob:/data: 本地 scheme 资源
+    由内存解析不走网络栈，CDP 同样不发 loadingFinished/Failed。
+    计入 pending 则集合恒非空+每发必刷 activity，wait --idle 必
+    超时（zhihu/search.jd.com wss 长挂；知乎 /hot blob: Script
+    7×/15s 实锤——页面 prefetch/worker 加载同一 blob 反复重生）。
+    五判据任一即豁免（同 ignore_re 语义：requestId 入 ignored，
+    其 response/fail 同步跳过）：
       ① CDP type=WebSocket/EventSource
       ② ws:// / wss:// scheme
-      ③ Upgrade: websocket 请求头（type 缺失的老内核兜底）
-      ④ Accept: text/event-stream 请求头
+      ③ blob: / data: scheme（本地资源，非网络请求）
+      ④ Upgrade: websocket 请求头（type 缺失的老内核兜底）
+      ⑤ Accept: text/event-stream 请求头
     """
     if str(rtype or '').lower() in ('websocket', 'eventsource'):
         return True
     url = str(req.get('url') or '').lower()
-    if url.startswith(('ws://', 'wss://')):
+    if url.startswith(('ws://', 'wss://', 'blob:', 'data:')):
         return True
     headers = req.get('headers') or {}
     if not isinstance(headers, dict):

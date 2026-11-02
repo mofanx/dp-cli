@@ -2,6 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.34] - 2026-11-02
+
+### 修复
+- **download missions 记录字段补齐 `size`**：DP mission 事件路径补 `received_bytes`，与目录回扫 `_dl_file_info` 字段对称——`wait --downloads-done`/`download` 输出两路径字段不齐，size 断言按命中路径随机 miss（dl_file_validation flake 归因，真机 3 连 pass）
+
 ## [0.15.33] - 2026-11-02
 
 ### 隐私与安全

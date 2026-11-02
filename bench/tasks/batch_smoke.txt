@@ -1,0 +1,3 @@
+open https://example.com
+eval document.title
+count a

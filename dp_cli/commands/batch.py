@@ -128,6 +128,26 @@ def _screenshot_evidence(shot_dir: str, seq: int, argv: list,
         return None
 
 
+def _has_session_flag(argv: list) -> bool:
+    return any(a in ('-S', '--session') or a.startswith('--session=')
+               for a in argv)
+
+
+def _accepts_session(cmd_name: str) -> bool:
+    """该子命令是否定义了 --session 选项（决定是否可注入默认会话）。
+    与 serve._accepts_session 同实现——serve 反向依赖 batch._invoke，
+    此处独立副本防循环 import。"""
+    try:
+        from dp_cli.main import cli as _cli
+        sub = _cli.commands.get(cmd_name)
+        if sub is None:
+            return False
+        return any('--session' in (getattr(p, 'opts', None) or [])
+                   for p in getattr(sub, 'params', []))
+    except Exception:
+        return False
+
+
 def _invalid(msg: str) -> tuple:
     """参数错误统一入口——serve/daemon 三渠道共用；错误应答一律
     补齐 status/code/message/detail 契约字段。"""
@@ -149,7 +169,10 @@ def _invalid(msg: str) -> tuple:
               help='不在末尾输出统计行')
 @click.option('--screenshot-on-fail', 'shot_dir', default=None, metavar='DIR',
               help='命令失败时自动截图到目录（留证排查）')
-def batch(file, keep_going, on_error, verbose, no_summary, shot_dir):
+@click.option('-S', '--session', 'default_session', default=None,
+              help='默认会话名——注入到未显式携带 -S/--session 的命令行（同 serve 默认会话注入语义）')
+def batch(file, keep_going, on_error, verbose, no_summary, shot_dir,
+          default_session):
     """批量顺序执行 dpx 子命令（FILE 或 stdin，每行一条）。
 
     同一进程内执行，浏览器 attach 结果在各命令间复用，远快于逐条
@@ -212,6 +235,9 @@ def batch(file, keep_going, on_error, verbose, no_summary, shot_dir):
                 code, result = _invalid(f'批处理内不允许嵌套 {cmd_name}')
                 break
             else:
+                if (default_session and not _has_session_flag(argv)
+                        and _accepts_session(cmd_name)):
+                    argv = argv + ['-S', default_session]
                 code, result = _invoke((['-v'] if verbose else []) + argv)
                 if code == 0:
                     if part_i > 0:

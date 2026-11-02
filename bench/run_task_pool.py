@@ -181,12 +181,26 @@ def run_dpx(argv: list, session: str, timeout: int) -> dict:
     try:
         parsed = json.loads(out)
     except ValueError:
-        m = re.search(r'\{.*\}', out, re.DOTALL)   # stdout 混入非 JSON 前缀时兜底
-        if m:
-            try:
-                parsed = json.loads(m.group(0))
-            except ValueError:
-                parsed = None
+        # JSONL 多行输出（batch/serve 类命令逐条 JSON）——取末行
+        # summary/结果 JSON 兜底，整串 parse 必挂
+        for ln in reversed(out.splitlines()):
+            ln = ln.strip()
+            if ln.startswith('{'):
+                try:
+                    parsed = json.loads(ln)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
+            m = re.search(r'\{.*\}', out, re.DOTALL)   # stdout 混入非 JSON 前缀时兜底
+            if m:
+                try:
+                    parsed = json.loads(m.group(0))
+                except ValueError:
+                    parsed = None
+    if isinstance(parsed, dict) and 'status' not in parsed \
+            and 'summary' in parsed:
+        parsed = {'status': 'ok', 'data': parsed}
     if parsed is None:
         return {'status': 'error', 'code': 'NON_JSON', 'data': None,
                 'message': f'非 JSON 输出(exit {proc.returncode})',

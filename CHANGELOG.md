@@ -2,9 +2,11 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.15.35] - 2026-11-02
 
 ### 修复
+- **state-save/state-load 默认路径拨正**（`d6f089a`）：缺省落 `~/.dp_cli/states/state.json` 防 cwd 污染——显式参数优先+读侧兼容旧 `./state.json`
+- **任务池定义双修**（`3d1ac47`）：xhs 改落 `search_result` 页（explore 搜索 UI 全 hidden 实测）；w_gh_issue_draft 换 GitHub React 版 placeholder 选择器，旧 `#issue_*` 收 locators 兼容——真机双 pass
 - **Windows exe launcher 入口归属误判**：`install --skills --check` 只读 launcher 前 4KB 文本匹配 `dp_cli`——pip/distlib 的 `.exe` 把入口脚本打包在文件尾部（实测标记位于 108134/108336 字节），Windows 上把自家 `dpx`/`dp` 误判 `stolen` 并提示 force-reinstall。改为 head + 尾部 64KB 扫描，补二进制 launcher 单测
 - **`.claude-plugin` 版本对齐**：`plugin.json`/`marketplace.json` 仍为 0.15.32，`test_docs::test_plugin_manifest_version_sync` 发版守卫在 v0.15.34 上失败——对齐 `0.15.34`
 

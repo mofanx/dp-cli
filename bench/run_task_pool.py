@@ -61,6 +61,15 @@ BUG_KEYWORDS = [
 ]
 BUG_RE = re.compile('|'.join(re.escape(k) for k in BUG_KEYWORDS), re.IGNORECASE)
 
+# 风控/验证页特征——命中则任务降级 partial+RISK_CONTROL 归因
+# （JD 凌晨风控实测：验证页 DOM 无目标元素，ELEMENT_NOT_FOUND
+# 会被误记为产品 fail；URL/title 双源判定）
+RISK_RE = re.compile(
+    r'risk_handler|/privatedomain/|京东验证|验证中心|sec-captcha|'
+    r'__jsl_clearance|punish\?|captcha[-_]verify|waf_|slide[-_]verify',
+    re.IGNORECASE)
+NAV_CMDS = {'open', 'goto', 'tab-new', 'press'}
+
 STDOUT_TAIL = 500        # 每步 stdout 摘要截断
 DPX = 'dpx'
 
@@ -305,6 +314,15 @@ def extract_bugs(rec: dict) -> list:
                       else m.group(0) for m in BUG_RE.finditer(blob)))
 
 
+def _risk_check(session: str) -> str:
+    """探当前页是否风控/验证页——命中返回 'url | title' 串，未命中空串。"""
+    r = run_dpx(['eval', "location.href+' | '+document.title"], session, 15)
+    if r['status'] != 'ok' or not isinstance(r.get('data'), dict):
+        return ''
+    page = str(r['data'].get('result') or '')
+    return page if RISK_RE.search(page) else ''
+
+
 def run_task(task: dict, cfg) -> dict:
     tid = task.get('task_id', '?')
     steps = task.get('steps') or []
@@ -312,6 +330,7 @@ def run_task(task: dict, cfg) -> dict:
     nlog0 = netlog_lines(cfg.session)
     records, asserts, decide_calls, bugs = [], [], [], []
     hard_fail = False
+    risk_blocked = False
 
     for i, st in enumerate(steps):
         # 自然语言步——记档不执行
@@ -327,7 +346,7 @@ def run_task(task: dict, cfg) -> dict:
         optional = bool(st.get('optional'))
         timeout = int(st.get('timeout') or cfg.timeout)
 
-        if hard_fail:
+        if hard_fail or risk_blocked:
             records.append({'i': i, 'cmd': cmd, 'status': 'not_run'})
             continue
 
@@ -347,44 +366,73 @@ def run_task(task: dict, cfg) -> dict:
                 pass
             continue
 
-        calls = step_calls(st, cfg)
+        # 多选择器 OR 回退：args[0] 为主选择器，locators 为候选追加
+        # （DOM 漂移机制级防漂——站点改版后次候选自动顶上，记 locator_hit）
+        alt_locs = [str(l) for l in (st.get('locators') or [])]
+        base_args = [str(a) for a in (st.get('args') or [])]
+        loc_cands = (base_args[:1] + alt_locs) if (alt_locs and base_args) \
+            else [None]
         step_rec = {'i': i, 'cmd': cmd, 'calls': [], 'status': 'ok',
                     'optional': optional}
-        worst = 'ok'
-        for argv in calls:
-            r = run_dpx(argv, cfg.session, timeout)
-            call_rec = {'argv': argv, 'status': r['status'],
-                        'code': r.get('code'),
-                        'elapsed_ms': r['elapsed_ms'],
-                        'stdout_tail': r.get('stdout', '')[-200:]}
-            if r.get('message'):
-                call_rec['message'] = r['message'][:160]
-            step_rec['calls'].append(call_rec)
-            step_rec['elapsed_ms'] = \
-                step_rec.get('elapsed_ms', 0) + r['elapsed_ms']
-            if r.get('data') is not None:
-                step_rec['json'] = {'status': 'ok', 'data': r['data']}
-                step_rec['data_summary'] = json.dumps(
-                    r['data'], ensure_ascii=False)[:300]
-            if cmd == 'decide' and r.get('data'):
-                d = r['data']
-                decide_calls.append({
-                    'i': i, 'engine': d.get('engine'),
-                    'conf': d.get('confidence'),
-                    'tier': d.get('confidence_tier'),
-                    'action': d.get('action'),
-                    'escalate': d.get('should_escalate'),
-                    'cached': d.get('cached'),
-                    'elapsed_ms': r['elapsed_ms']})
-            if r['status'] != 'ok':
-                worst = 'error'
-                step_rec['code'] = r.get('code')
+        used_loc = None
+        for loc in loc_cands:
+            st_eff = st if loc is None else \
+                dict(st, args=[loc, *base_args[1:]])
+            calls = step_calls(st_eff, cfg)
+            worst = 'ok'
+            for argv in calls:
+                r = run_dpx(argv, cfg.session, timeout)
+                call_rec = {'argv': argv, 'status': r['status'],
+                            'code': r.get('code'),
+                            'elapsed_ms': r['elapsed_ms'],
+                            'stdout_tail': r.get('stdout', '')[-200:]}
                 if r.get('message'):
-                    step_rec['message'] = r['message'][:160]
-                bugs += extract_bugs(r)
-                step_rec['bugs'] = extract_bugs(r)
-                break            # 子调用组内首败即停
-        step_rec['status'] = worst
+                    call_rec['message'] = r['message'][:160]
+                step_rec['calls'].append(call_rec)
+                step_rec['elapsed_ms'] = \
+                    step_rec.get('elapsed_ms', 0) + r['elapsed_ms']
+                if r.get('data') is not None:
+                    step_rec['json'] = {'status': 'ok', 'data': r['data']}
+                    step_rec['data_summary'] = json.dumps(
+                        r['data'], ensure_ascii=False)[:300]
+                if cmd == 'decide' and r.get('data'):
+                    d = r['data']
+                    decide_calls.append({
+                        'i': i, 'engine': d.get('engine'),
+                        'conf': d.get('confidence'),
+                        'tier': d.get('confidence_tier'),
+                        'action': d.get('action'),
+                        'escalate': d.get('should_escalate'),
+                        'cached': d.get('cached'),
+                        'elapsed_ms': r['elapsed_ms']})
+                if r['status'] != 'ok':
+                    worst = 'error'
+                    step_rec['code'] = r.get('code')
+                    if r.get('message'):
+                        step_rec['message'] = r['message'][:160]
+                    bugs += extract_bugs(r)
+                    step_rec['bugs'] = sorted(set(
+                        step_rec.get('bugs', []) + extract_bugs(r)))
+                    break            # 子调用组内首败即停
+            step_rec['status'] = worst
+            used_loc = loc
+            if worst == 'ok':
+                break          # 首个可用选择器即停
+        if len(loc_cands) > 1:
+            step_rec['locator_tried'] = [l for l in loc_cands if l]
+            if step_rec['status'] == 'ok' and used_loc != base_args[0]:
+                step_rec['locator_hit'] = used_loc
+        # 风控页探针：导航步后+任意步失败后各查一次——命中降级
+        # RISK_CONTROL partial 而非产品 fail
+        if not risk_blocked and (cmd in NAV_CMDS or worst != 'ok'):
+            hit = _risk_check(cfg.session)
+            if hit:
+                risk_blocked = True
+                step_rec['risk_page'] = hit[:160]
+                bugs.append('RISK_CONTROL')
+                step_rec.setdefault('bugs', [])
+                if 'RISK_CONTROL' not in step_rec['bugs']:
+                    step_rec['bugs'].append('RISK_CONTROL')
         if worst != 'ok' and not optional:
             hard_fail = True
             step_rec['fatal'] = True
@@ -403,7 +451,9 @@ def run_task(task: dict, cfg) -> dict:
     n_ok = sum(1 for r in records if r.get('status') == 'ok')
     n_run = sum(1 for r in records
                 if r.get('status') not in ('skipped_nl', 'not_run'))
-    if hard_fail:
+    if risk_blocked:
+        verdict = 'partial'
+    elif hard_fail:
         verdict = 'fail'
     elif expects and all(e['ok'] for e in expects):
         verdict = 'pass'

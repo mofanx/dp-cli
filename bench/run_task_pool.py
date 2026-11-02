@@ -35,6 +35,7 @@ expect.kind:
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import re
 import statistics
@@ -69,6 +70,37 @@ RISK_RE = re.compile(
     r'__jsl_clearance|punish\?|captcha[-_]verify|waf_|slide[-_]verify',
     re.IGNORECASE)
 NAV_CMDS = {'open', 'goto', 'tab-new', 'press'}
+
+# 风控避让：命中风控的站点进 quarantine（TTL 内同站任务整批跳过，
+# 不再硬撞加深风控画像——同站每轮硬撞越撞越黑实测归因）；
+# 落盘持久化跨批生效。DPX_RISK_QUAR_TTL=0 关隔离；
+# DPX_RISK_RETRY_DELAY=0 关命中后重试（滑块常一次自过）。
+QUAR_FILE = Path.home() / '.dp_cli' / 'risk_quarantine.json'
+QUAR_TTL = int(os.environ.get('DPX_RISK_QUAR_TTL', '7200'))
+RISK_RETRY_DELAY = float(os.environ.get('DPX_RISK_RETRY_DELAY', '45'))
+
+
+def _quar_load() -> dict:
+    """过期的隔离项自动剔除。"""
+    try:
+        d = json.loads(QUAR_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+    now = time.time()
+    return {s: t for s, t in d.items() if now - t < QUAR_TTL}
+
+
+def _quar_mark(site: str) -> None:
+    if not site or QUAR_TTL <= 0:
+        return
+    q = _quar_load()
+    q[site] = time.time()
+    try:
+        QUAR_FILE.parent.mkdir(parents=True, exist_ok=True)
+        QUAR_FILE.write_text(json.dumps(q), encoding='utf-8')
+    except OSError:
+        pass
+
 
 STDOUT_TAIL = 500        # 每步 stdout 摘要截断
 DPX = 'dpx'
@@ -426,8 +458,19 @@ def run_task(task: dict, cfg) -> dict:
         # RISK_CONTROL partial 而非产品 fail
         if not risk_blocked and (cmd in NAV_CMDS or worst != 'ok'):
             hit = _risk_check(cfg.session)
+            if hit and RISK_RETRY_DELAY > 0:
+                # 命中风控先 sleep 复探——滑块页常一次自过；仍中才降级
+                time.sleep(RISK_RETRY_DELAY)
+                retry_hit = _risk_check(cfg.session)
+                if retry_hit:
+                    hit = retry_hit
+                else:
+                    hit = ''
+                    step_rec['risk_retried'] = 'cleared'
             if hit:
                 risk_blocked = True
+                _quar_mark(task.get('site'))
+                step_rec['quarantined'] = task.get('site')
                 step_rec['risk_page'] = hit[:160]
                 bugs.append('RISK_CONTROL')
                 step_rec.setdefault('bugs', [])
@@ -619,6 +662,20 @@ def main():
 
     results = []
     for t in tasks:
+        site = t.get('site')
+        quar = _quar_load()
+        if site and site in quar:
+            left = int(QUAR_TTL - (time.time() - quar[site]))
+            print(f'  ▶ {t.get("task_id")} ... quarantined({site} '
+                  f'剩余 {left}s)', flush=True)
+            results.append({
+                'task_id': t.get('task_id'), 'site': site,
+                'goal': t.get('goal'), 'verdict': 'partial',
+                'total_ms': 0, 'steps_n': 0, 'steps_ok': 0,
+                'expects': [], 'decide_calls': [],
+                'bugs': ['RISK_CONTROL'], 'netlog_delta': 0,
+                'quarantined': True, 'steps': []})
+            continue
         print(f'  ▶ {t.get("task_id")} ...', flush=True)
         r = run_task(t, cfg)
         print(f'    {r["verdict"]}  {r["total_ms"]}ms  '

@@ -43,3 +43,6 @@ bench/reports/
 /*.crdownload
 /*.partial
 /*.part
+
+# Mind2Web 转换训练数据（m2w_convert.py 一条命令可再生——2.7M/1.1M 产物不入库）
+bench/data/

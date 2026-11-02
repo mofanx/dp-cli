@@ -22,7 +22,7 @@ from dp_cli.session import (get_browser, close_browser, list_sessions,
                             sniff_auto_user_data_dir)
 from dp_cli.output import ok, error, format_page_info, debug
 from dp_cli.commands._utils import (session_option, _get_page, normalize_url,
-                                    resolve_locator, CdpWaitGate,
+                                    resolve_locator, CdpWaitGate, _bind_tab,
                                     _attach_bound_tab, _tab_confirmed_dead)
 from dp_cli.hints import adapter_hint, attach_hints
 from dp_cli.stealth import apply_stealth, stealth_check, PRESETS, DEFAULT_UA
@@ -112,7 +112,7 @@ def _open_navigate(page, session: str, url: str):
     new_tid = getattr(new_tab, 'tab_id', None)
     if new_tid:
         sess = load_session(session) or {}
-        sess['active_tab'] = new_tid
+        _bind_tab(sess, new_tid)
         save_session(session, sess)
     return new_tab
 

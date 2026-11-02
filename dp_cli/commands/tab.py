@@ -4,7 +4,9 @@ import click
 
 from dp_cli.output import ok, error, debug
 from dp_cli.session import load_session, save_session
-from dp_cli.commands._utils import session_option, _get_page, normalize_url
+from dp_cli.commands._utils import (
+    session_option, _get_page, normalize_url, _bind_tab,
+    _rebind_from_history)
 
 
 def register(cli):
@@ -72,7 +74,7 @@ def register(cli):
             # 非 background 时自动绑定
             if not background:
                 sess = load_session(session)
-                sess['active_tab'] = new_tid
+                _bind_tab(sess, new_tid)
                 save_session(session, sess)
                 msg += '（已绑定，dpx 命令将在此标签页执行）'
 
@@ -144,7 +146,7 @@ def register(cli):
             tab = page.get_tab(tab_id)
             tab.set.activate()
             sess = load_session(session)
-            sess['active_tab'] = tab_id
+            _bind_tab(sess, tab_id)
             save_session(session, sess)
             if sess.get('recording'):
                 try:
@@ -170,11 +172,12 @@ def register(cli):
             pinned_id = sess.get('active_tab')
 
             if index_or_id is None:
-                # 优先关闭绑定的标签页
+                # 优先关闭绑定的标签页——回落 tab_history 存活绑定
+                # 而非裸解绑（裸解绑下次 _cur_tab 漂 latest_tab 到无关页）
                 if pinned_id:
                     tab = page.get_tab(pinned_id)
                     tab.close()
-                    sess.pop('active_tab', None)
+                    _rebind_from_history(page, sess)
                     save_session(session, sess)
                     ok({'id': pinned_id}, msg='绑定的标签页已关闭（绑定已解除）')
                 else:
@@ -186,9 +189,9 @@ def register(cli):
                     return
                 tab = page.get_tab(tab_id)
                 tab.close()
-                # 如果关闭的是绑定的标签页，清除绑定
+                # 如果关闭的是绑定的标签页，同样走历史回落
                 if tab_id == pinned_id:
-                    sess.pop('active_tab', None)
+                    _rebind_from_history(page, sess)
                     save_session(session, sess)
                 ok({'id': tab_id}, msg='标签页已关闭')
         except Exception as e:

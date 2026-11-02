@@ -130,6 +130,51 @@ def _tab_confirmed_dead(page, tab_id) -> bool:
     return True                        # 两次成功枚举均缺席 = 确证死亡
 
 
+def _bind_tab(sess: dict, new_tid: str) -> None:
+    """绑定新 tab——旧绑定压入 tab_history（上限 8）供死后回落。
+    纯 mutator：调用方负责 save_session 落盘（保持各模块统一
+    保存点口径，mock 面不变）。"""
+    old = sess.get('active_tab')
+    if old and old != new_tid:
+        hist = [t for t in (sess.get('tab_history') or []) if t != old]
+        hist.append(old)
+        sess['tab_history'] = hist[-8:]
+    sess['active_tab'] = new_tid
+
+
+def _rebind_from_history(page, sess: dict):
+    """绑定 tab 死后回落——tab_history 取最近存活绑定重新 attach。
+    返回重绑的 tab 或 None（无存活历史→清 active_tab 按无绑处理）。
+    纯 mutator：调用方负责 save_session 落盘。修 tab-close/外部关闭
+    后无绑漂 latest_tab 到无关页（multi_tab_cycle 哨兵归因：
+    close 绑 tab 后 eval 打到 JD 风控页而非原绑定页）。"""
+    hist = sess.get('tab_history') or []
+    live = None
+    while hist:
+        cand = hist.pop()
+        if live is None:
+            try:
+                live = set(page.tab_ids or [])
+            except Exception:
+                live = set()
+        if cand not in live:
+            continue
+        t = _attach_bound_tab(page, cand)
+        if t is not None:
+            sess['active_tab'] = cand
+            break
+    if hist:
+        sess['tab_history'] = hist
+    else:
+        sess.pop('tab_history', None)     # 空栈不落 key——保持 sess 形状
+    if sess.get('active_tab') is None or \
+            sess.get('active_tab') not in (live or set()):
+        # 循环走完仍无存活重绑→清绑定（live 未枚举过时按无存活处理）
+        sess.pop('active_tab', None)
+    return _attach_bound_tab(page, sess['active_tab']) \
+        if sess.get('active_tab') else None
+
+
 def _cur_tab(page, session: str, sess: dict = None):
     """session 当前 tab——与 _get_page 同一选取语义。
 
@@ -164,8 +209,12 @@ def _cur_tab(page, session: str, sess: dict = None):
         # 失败分支：宁可 TAB_FAILED 不误清绑定漂错页）。
         if not _tab_confirmed_dead(page, tab_id):
             return None
-        sess.pop('active_tab', None)
+        # 确证已死——先尝试 tab_history 回落（最近存活绑定），
+        # 无历史才清绑定漂 latest_tab（收口 tab 漂移面）
+        t = _rebind_from_history(page, sess)
         save_session(session, sess)
+        if t is not None:
+            return t
     try:
         return page.latest_tab or page
     except Exception:

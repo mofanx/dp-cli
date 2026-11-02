@@ -4019,6 +4019,10 @@ def test_daemon_spawn_concurrent_once(tmp_path, monkeypatch):
     # 就绪判定按 POSIX 语义走 sock 文件——Windows 的 meta+TCP 探活
     # 由 test_windows_ready_* 专项覆盖，此处聚焦锁的互斥语义
     monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', True)
+    # 模拟 POSIX 分支但宿主无 AF_UNIX（Windows）时，_unix_alive 无法建
+    # socket——用文件存在性等价替换，避免线程内 AttributeError 噪声。
+    monkeypatch.setattr(dm, '_unix_alive',
+                        lambda s: (tmp_path / f'{s}.sock').exists())
     spawns = []
 
     def fake_popen(*a, **k):
@@ -4444,8 +4448,10 @@ def test_daemon_tcp_transport_windows(tmp_path, monkeypatch):
     # meta 缺 port → 端点退化 0 号
     (tmp_path / 'bad.session').write_text('{"pid":1}', encoding='utf-8')
     assert dm._connect_endpoint('bad') == ('127.0.0.1', 0)
-    # POSIX 分支不动
+    # POSIX 分支不动（显式固定 sock 路径，避免深 tmp_path 触发
+    # sun_path 兜底后与 Windows TCP 断言纠缠）
     monkeypatch.setattr(dm, '_HAS_UNIX_SOCK', True)
+    monkeypatch.setattr(dm, '_sock_path', lambda s: tmp_path / f'{s}.sock')
     assert dm._connect_endpoint('s') == str(tmp_path / 's.sock')
 
 

@@ -2,6 +2,15 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 修复
+- **Windows exe launcher 入口归属误判**：`install --skills --check` 只读 launcher 前 4KB 文本匹配 `dp_cli`——pip/distlib 的 `.exe` 把入口脚本打包在文件尾部（实测标记位于 108134/108336 字节），Windows 上把自家 `dpx`/`dp` 误判 `stolen` 并提示 force-reinstall。改为 head + 尾部 64KB 扫描，补二进制 launcher 单测
+- **`.claude-plugin` 版本对齐**：`plugin.json`/`marketplace.json` 仍为 0.15.32，`test_docs::test_plugin_manifest_version_sync` 发版守卫在 v0.15.34 上失败——对齐 `0.15.34`
+
+### 测试
+- **非集成套件跨平台 12 红修复**：`test_embed_recall`/`test_model` 的 numpy 依赖改 `pytest.importorskip`（无 `[agent]` extra 不再 fail）；`test_bge_dirs` 去掉 Linux 硬编码 `/media/yan/Data/` 前缀，改断言候选顺序；`test_isolation` 的 sun_path 兜底仅在 `_HAS_UNIX_SOCK` 下判定；`test_daemon_tcp_transport_windows` 固定 `_sock_path` 避免深 `tmp_path` 触发兜底；模拟 POSIX 分支时 mock `_unix_alive`，消除 Windows 线程内 `AF_UNIX` AttributeError 噪声
+
 ## [0.15.34] - 2026-11-02
 
 ### 修复

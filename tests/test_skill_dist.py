@@ -412,6 +412,26 @@ def test_check_dp_entry_partial_steal(tmp_path, monkeypatch):
 
 
 @pytest.mark.unit
+def test_check_dp_entry_binary_launcher_tail(tmp_path, monkeypatch):
+    """Windows pip .exe launcher：入口脚本打包在文件尾部，只扫前 4KB
+    会把自家 dpx.exe 误判 stolen（0.15.34 真机归因）。"""
+    from dp_cli.commands import meta
+    ours = tmp_path / 'dpx.exe'
+    ours.write_bytes(b'MZ' + b'\x00' * 8192
+                     + b'\nfrom dp_cli.main import main\n')
+    his = tmp_path / 'dp.exe'
+    his.write_bytes(b'MZ' + b'\x00' * 8192
+                    + b'\nfrom DrissionPage._functions.cli import main\n')
+    monkeypatch.setattr('shutil.which',
+                        lambda n: {'dpx': str(ours),
+                                   'dp': str(his)}.get(n))
+    ep = meta.check_dp_entry()
+    assert ep['dpx']['status'] == 'ours'
+    assert ep['dp']['status'] == 'stolen'
+    assert ep['dp']['owner'] == 'DrissionPage'
+
+
+@pytest.mark.unit
 def test_install_check_reports_stolen_entry(runner, fake_home,
                                             tmp_path, monkeypatch):
     """--check 输出携带 entrypoint 块；抢占时 msg/detail 含修复指引。"""

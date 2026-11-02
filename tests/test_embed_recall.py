@@ -2,7 +2,11 @@
 import sys
 import types
 
+import pytest
+
 from dp_cli import agent
+
+pytest.importorskip('numpy', reason='embedding 召回层依赖 numpy（dp-cli[agent]）')
 
 
 class _FakeEmbed:

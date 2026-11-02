@@ -56,8 +56,10 @@ def test_isolated_home_drives_lazy_paths(isolated_home, monkeypatch):
     # 的 macOS CI 会命中）；未超限时仍须跟 HOME。
     import os
     import tempfile
+    # 只有 POSIX（有 AF_UNIX）才可能因 sun_path 超限退 TMPDIR；
+    # Windows 无 AF_UNIX，_sock_path 不启用兜底，路径始终跟 HOME。
     sp = dm._sock_path('s')
-    deep = len(os.fsencode(str(
+    deep = dm._HAS_UNIX_SOCK and len(os.fsencode(str(
         isolated_home / '.dp_cli' / 'daemon' / 's.sock'))) > 100
     if deep:
         assert str(sp).startswith(str(Path(tempfile.gettempdir()))), \

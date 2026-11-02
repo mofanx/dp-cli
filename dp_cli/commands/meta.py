@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """元信息命令：install --skills（skill 安装）/ catalog（命令面导出）"""
 import json
+import os
 from pathlib import Path
 
 import click
@@ -30,7 +31,15 @@ def _entry_status(name: str) -> dict:
         return {'status': 'missing', 'path': None,
                 'fix': 'pip 安装 dp-cli 或检查 PATH'}
     try:
-        head = open(p, encoding='utf-8', errors='ignore').read(4096)
+        with open(p, 'rb') as f:
+            blob = f.read(4096)
+            if b'dp_cli' not in blob and b'DrissionPage' not in blob:
+                # Windows pip .exe launcher（distlib）把入口脚本打包在
+                # 文件尾部——只读前 4KB 会把自家 dpx.exe 误判 stolen。
+                f.seek(0, os.SEEK_END)
+                f.seek(max(0, f.tell() - 64 * 1024), os.SEEK_SET)
+                blob += f.read()
+        head = blob.decode('utf-8', errors='ignore')
     except OSError as e:
         return {'status': 'unreadable', 'path': p, 'fix': str(e)}
     if 'dp_cli' in head:

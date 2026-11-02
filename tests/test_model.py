@@ -383,7 +383,10 @@ def test_bge_dirs_user_deploy_outranks_dev_paths(tmp_path, monkeypatch):
     dirs = agent_mod._bge_dirs()
     user_dir = str(tmp_path / '.dp_cli' / 'bge_model')
     assert dirs[0] == Path(user_dir)
-    assert all(str(d).startswith('/media/yan/Data/') for d in dirs[1:])
+    # 开发机遗留路径随平台变形（Windows 下 Path('/media/...') 变盘符相对
+    # 路径），只断言顺序/名字，不硬编码 Linux 绝对前缀。
+    assert [d.name for d in dirs[1:]] == [
+        'bge_v28_tuned', 'bge_v24_tuned', 'bge_v19_tuned', 'bge_tuned']
     monkeypatch.setenv('DPX_BGE_MODEL', '/tmp/custom_model')
     assert agent_mod._bge_dirs()[0] == Path('/tmp/custom_model')
 
@@ -406,7 +409,7 @@ class _FakeSess:
         return self._inputs
 
     def run(self, outs, feed):
-        import numpy as np
+        np = pytest.importorskip('numpy')
         self.feeds.append(sorted(feed))
         n = len(next(iter(feed.values())))
         return [np.array([[1.0]] * n)]
@@ -428,7 +431,7 @@ class _FakeOrt:
 
 class _FakeTok:
     def __call__(self, qs, ts, **kw):
-        import numpy as np
+        np = pytest.importorskip('numpy')
         n = len(qs)
         return {'input_ids': np.zeros((n, 2)),
                 'attention_mask': np.ones((n, 2))}
@@ -485,7 +488,7 @@ def test_ort_feed_filters_by_session_inputs(reset_reranker, monkeypatch):
     """_engine_reranker ort 分支按 sess.get_inputs() 动态喂参——
     tokenizer 多出 token_type_ids 不喂，session 不需要的键一律剔除
     （XLM-R tokenizer 无 token_type_ids 的反向：旧硬编码必 KeyError）。"""
-    import numpy as np
+    np = pytest.importorskip('numpy')
     agent_mod = reset_reranker
     sess = _FakeSess(('input_ids', 'attention_mask'))
 
@@ -512,7 +515,7 @@ def test_ort_feed_includes_token_type_ids_when_required(
 
     class _Tok(_FakeTok):
         def __call__(self, qs, ts, **kw):
-            import numpy as np
+            np = pytest.importorskip('numpy')
             enc = dict(super().__call__(qs, ts, **kw))
             enc['token_type_ids'] = np.zeros_like(enc['input_ids'])
             return enc

@@ -97,6 +97,21 @@ def _playwright_storage_state(page):
     return {'cookies': cookies, 'origins': origins}
 
 
+def _state_path(filename, for_write: bool) -> Path:
+    """state 文件默认路径：显式参数优先；缺省拨 ~/.dp_cli/states/
+    state.json（防 cwd 污染，同 _arm_default_download_dir 根治款）。
+    读侧向后兼容：默认路径不存在而 ./state.json 存在→用旧位置。"""
+    if filename:
+        return Path(filename)
+    p = Path.home() / '.dp_cli' / 'states' / 'state.json'
+    if for_write:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        return p
+    if not p.exists() and Path('state.json').exists():
+        return Path('state.json')
+    return p
+
+
 def register(cli):
 
     @cli.command('resize')
@@ -130,7 +145,7 @@ def register(cli):
             error(f'最大化失败', code='WINDOW_FAILED', detail=str(e))
 
     @cli.command('state-save')
-    @click.argument('filename', default='state.json')
+    @click.argument('filename', required=False, default=None)
     @click.option('--format', 'fmt',
                   type=click.Choice(['dp', 'playwright']), default='dp',
                   show_default=True,
@@ -165,19 +180,19 @@ def register(cli):
             # tmp+os.replace 原子产出——写一半中断不留截断的 state 文件
             # （同 cookie-export --output 模式）
             import os as _os
-            _p = Path(filename)
+            _p = _state_path(filename, for_write=True)
             _tmp = _p.with_name(_p.name + '.tmp')
             _tmp.write_text(
                 json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
             _os.replace(_tmp, _p)
-            ok({'filename': str(Path(filename).absolute()),
+            ok({'filename': str(_p.absolute()),
                 'cookies_count': len(state['cookies']), 'format': fmt},
                msg='状态已保存')
         except Exception as e:
             error(f'保存状态失败', code='STATE_FAILED', detail=str(e))
 
     @cli.command('state-load')
-    @click.argument('filename', default='state.json')
+    @click.argument('filename', required=False, default=None)
     @session_option
     def state_load(filename, session):
         """从文件加载浏览器状态（Cookie + localStorage）。
@@ -189,7 +204,9 @@ def register(cli):
         """
         page = _get_page(session)
         try:
-            state = json.loads(Path(filename).read_text(encoding='utf-8'))
+            state = json.loads(
+                _state_path(filename, for_write=False)
+                .read_text(encoding='utf-8'))
             cookies = state.get('cookies')
             n_cookies = 0
             if isinstance(cookies, list):

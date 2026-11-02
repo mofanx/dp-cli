@@ -1,5 +1,6 @@
 # -*- coding:utf-8 -*-
 """元素交互命令: click / dblclick / fill / clear / select / hover / drag / check / upload / count"""
+import json
 import time
 
 import click
@@ -33,6 +34,27 @@ def _clear_field(ele):
     ele.run_js('this.value="";'
                'this.dispatchEvent('
                'new Event("input",{bubbles:true}))')
+
+
+def _fill_by_js(ele, value, clear=True):
+    """by-js 填入分派：input/textarea 走 DP input(by_js)；contenteditable
+    （无 .value 槽——tinymce/富文本框）走 innerText 写入+input 事件。
+
+    DP input(by_js=True) 只设 .value，对 contenteditable 静默空转——
+    报"填入成功"实际没写的假成功病灶（ti_iframe_fill 预跑揪出）。
+    """
+    if ele.run_js('return !!this.isContentEditable'):
+        v = json.dumps(value, ensure_ascii=False)
+        if clear:
+            js = f'this.innerText={v}'
+        else:
+            js = f'this.innerText+={v}'
+        ele.run_js(js + ';this.dispatchEvent('
+                       'new Event("input",{bubbles:true}))')
+    else:
+        if clear:
+            _clear_field(ele)
+        ele.input(value, clear=False, by_js=True)
 
 
 def register(cli):
@@ -270,17 +292,14 @@ def register(cli):
                 return
             _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
             if fb is not None:
-                if clear:
-                    # B10：遮挡降级先显式清场——input(by_js=True) 的
-                    # 清场依赖 DP 版本语义（真机追加不清空，多个值
-                    # 串联废掉表单），然后 clear=False 填入
-                    _clear_field(ele)
-                ele.input(value, clear=False, by_js=True)
+                _fill_by_js(ele, value, clear=clear)
             elif human:
                 human_click(page, ele, human_min, human_max)
                 if clear:
                     human_clear(page)
                 human_type(page, value, human_min, human_max)
+            elif by_js:
+                _fill_by_js(ele, value, clear=clear)
             else:
                 if clear:
                     # B10 二阶：正常路径同样前置显式清场——慢慢买
@@ -288,7 +307,7 @@ def register(cli):
                     # （旧值+新值黏连），显式清场后统一 clear=False
                     # 走 DP 填入
                     _clear_field(ele)
-                ele.input(value, clear=False, by_js=by_js)
+                ele.input(value, clear=False, by_js=False)
             data = {'locator': locator, 'value': value}
             if fb is not None:
                 data['fallback'] = 'by_js'   # advisory：明示非原路径

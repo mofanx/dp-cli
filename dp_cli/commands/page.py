@@ -631,7 +631,8 @@ def register(cli):
                 done = [{'name': getattr(m, 'name', None),
                          'path': getattr(m, 'final_path', None)
                                  or str(getattr(m, 'folder', '') or ''),
-                         'state': getattr(m, 'state', None)}
+                         'state': getattr(m, 'state', None),
+                         'size': getattr(m, 'received_bytes', None)}
                         for m in active]
                 if active and all(
                         getattr(m, 'is_done', True) for m in active):

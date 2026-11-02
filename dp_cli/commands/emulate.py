@@ -431,6 +431,7 @@ def register(cli):
                 'url': getattr(m, 'url', None),
                 'state': getattr(m, 'state', None),
                 'path': getattr(m, 'final_path', None) or str(getattr(m, 'folder', '') or ''),
+                'size': getattr(m, 'received_bytes', None),
             } for m in active]
             result = {
                 'download_dir': (download_dir or _cfg_dir

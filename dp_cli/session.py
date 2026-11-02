@@ -514,7 +514,24 @@ def get_browser(session_name: str = 'default', headless: bool = False,
                             user_data_dir=user_data_dir,
                             proxy=proxy, port=port)
     _PAGE_CACHE[session_name] = page
+    _arm_default_download_dir(page, session_name)
     return page
+
+
+def _arm_default_download_dir(page, session_name: str) -> None:
+    """下载默认目录拨正：session 未显式配置 download_dir 时，把
+    DrissionPage 默认的 cwd 下载目录指到 ~/.dp_cli/downloads——根治
+    浏览器触发式下载（attachment/裸 octet-stream）产物落执行 cwd
+    的复发（repo 根 xlsx/UUID/2048/dpx-bench.json 三次清扫归因）。
+    `download --dir` 的显式配置优先，失败只告警不影响主流程。"""
+    try:
+        if _dl_path(session_name):
+            return                                   # 显式配置优先
+        d = Path.home() / '.dp_cli' / 'downloads'
+        d.mkdir(parents=True, exist_ok=True)
+        page.set.download_path(str(d))
+    except Exception as e:
+        debug(f'默认下载目录拨正失败（不影响主流程）: {e}')
 
 
 def _dir_writable(d) -> bool:

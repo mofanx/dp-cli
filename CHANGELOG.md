@@ -2,6 +2,30 @@
 
 本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.15.33] - 2026-11-02
+
+### 隐私与安全
+- **refs 池脱敏落盘**：`name`/`text`/`innerText` 等页面语义字段存 FNV-1a 32bit hash（locator/backend/role 结构原样保重解析）；resolve 走页内 `data-dp-ref` 哈希比对不回放原文，旧明文文件兼容可读；`DPX_REFS_PRIVATE=0` 恢复明文；新增 `dpx refs-clear -S` 手动清场（绩效页 98 条明文泄漏实测归因）
+- **下载默认目录拨正 `~/.dp_cli/downloads`**：DrissionPage `download_path` 默认 cwd——浏览器触发式下载落执行目录（repo 根 xlsx/UUID 三次清扫归因）；session 显式 `download --dir` 配置优先；`.gitignore` 补 UUID/分块产物防线
+
+### 修复（tab 绑定+跑批韧性——70 池真机归因）
+- **tab-close 绑定漂移**：绑定 tab 关闭后 `active_tab` 裸解绑→`_cur_tab` 漂 `latest_tab` 到无关页（multi_tab_cycle 哨兵归因：eval 打到风控页）——新增 `tab_history` 回落栈（绑新压栈上限 8，死后取最近存活绑定重绑）；`_cur_tab` 确证死亡分支同款回落
+- **`batch` 补 `-S/--session` 默认注入**：未显式携带 session 的命令行继承（同 serve 注入语义）——此前批量命令全部跑 default session 断层
+- **跑批熔断+归因**：导航步后探 `chrome-error://` 落地页归 `NET_DOWN`（6.6s 归因不再 90s 硬等）；连续 3 任务同码超时类→熔断收尾写 partial 报告；`TimeoutStartSec` 5400 配齐 70 池
+- **跑批 tab 清场**：本批 `open`/`tab-new` 返回 id 记账，跑完 `tab-close`——只关 dpx 自建 tab，用户 tab 零误伤（防 Chrome 标签爆炸）
+- **风控避让三件套**：`RISK_CONTROL` 命中→站点 quarantine 持久化（`~/.dp_cli/risk_quarantine.json` TTL 2h，`DPX_RISK_QUAR_TTL` 调）同站任务整批跳过不硬撞；命中后 sleep 复探一次再降级（滑块常自过，`DPX_RISK_RETRY_DELAY` 调）；timer 错峰 08-23/3h+jitter 1800
+- **smoke 遮挡断言对齐 B7 语义**：遮挡自动降级 `ok+occluded+fallback=by_js`（CLICK_FAILED 仅元素消失）——断言过时非回归
+- **download missions 恒空**：seen 快照+stale TTL（`DPX_DL_STALE_TTL`）+目录增量回扫+dropped 防复活——`wait --downloads-done` 真机闭环
+- **idle 三阶**：WS/SSE/长轮询/`blob:`/`data:` 豁免+pending TTL（`DPX_IDLE_PENDING_TTL`）+orphan response 不刷 activity+遥测域名补白——`wait --idle` 永假根治
+- **daemon `build_id` 握手**：`git describe` 版本探测，漂移 stderr 告警；service `ExecStartPre daemon-stop` 物理防陈旧码
+- **adapter body JSON 参数化**：`{body}` 槽位+`kw=v` 顶层字段覆盖（int/float/bool 类型保持）+`body_params_keys` 元数据
+
+### 基建（任务池 61→70 覆盖矩阵）
+- **9 新任务零同型扩充**：写类×2（httpbin 表单+gh issue 草稿）、adapter 重放×1、多 tab 周期×1、batch/serve 调度×1、下载文件校验×1、decide 双端×2、idle blob 回归×1——按命令面覆盖矩阵非数量堆叠
+- **step `locators` OR 回退**：主选择器 miss 自动试候选，首个可用即停，`locator_hit`/`locator_tried` 全量记档——DOM 漂移机制级防漂
+- **runner JSONL 兜底**：batch/serve 多行输出末行 JSON+summary 包装——不再整串 parse 恒 NON_JSON
+- 70 池首轮实证 52 pass/18 partial/0 fail（16min），partial 全归因（风控隔离/登录墙/哨兵留档）
+
 ## [0.15.32] - 2026-11-01
 
 ### 修复（B9/B10/B11 跑批自揪病灶——tab 绑定+表单写入+任务池基建）

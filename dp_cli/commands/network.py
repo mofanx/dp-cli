@@ -839,9 +839,24 @@ def _register_requests(cli):
                       code='INVALID_ARGS')
                 return
         else:
-            row = next((r for r in reversed(rows)
-                        if (r.get('type') or '').lower() in _API_TYPES
-                        and r.get('url')), None)
+            def _last_api_row():
+                return next((r for r in reversed(rows)
+                             if (r.get('type') or '').lower() in _API_TYPES
+                             and r.get('url')), None)
+            row = _last_api_row()
+            # netlog 落盘竞态：上游 eval/fetch 的请求经 daemon CDP 事件
+            # 写盘有毫秒~秒级延迟，一次性读空是 flake 源（httpbin
+            # adapter 任务二连 EMPTY_LIST 归因）——有界轮询重扫
+            if row is None and findex is None:
+                for _ in range(30):        # ~3s 上界
+                    import time as _t
+                    _t.sleep(0.1)
+                    entries2 = read_entries(session)
+                    if entries2:
+                        rows = _netlog_rows(entries2)
+                        row = _last_api_row()
+                        if row is not None:
+                            break
             if row is None:
                 error('netlog 中无 XHR/Fetch 端点可录制（先 serve 托管 '
                       '产生请求，或 --index 指定）', code='EMPTY_LIST')

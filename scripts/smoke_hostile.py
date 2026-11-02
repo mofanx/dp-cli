@@ -36,7 +36,9 @@ CASES = [
     ('--by-mouse 坐标级', ['click', 'css:#md-only', '--by-mouse'],
      lambda h: h['mousedown'] >= 1),
     ('disabled 不可点→错误', ['click', 'css:#dis'], 'CLICK_FAILED'),
-    ('遮挡元素→行动性', ['click', 'css:#cov'], 'CLICK_FAILED'),
+    # B7 遮挡自动降级（c3017bd 起）：元素可解→自动 --by-js 派发返回
+    # ok+occluded+fallback=by_js；CLICK_FAILED 只在元素消失才出
+    ('遮挡元素→自动降级 by-js', ['click', 'css:#cov'], 'ok_occluded'),
     # --force 语义=跳过 actionability；坐标点击仍落在 overlay
     # 上，被挡元素 onclick 不触发——只断言命令返回 ok
     ('--force 强点遮挡(绕过检查)', ['click', 'css:#cov', '--force'],
@@ -58,6 +60,10 @@ def main():
         r = run(*args)
         if expect == 'ok_status':
             hit = r.get('status') == 'ok'
+        elif expect == 'ok_occluded':
+            hit = (r.get('status') == 'ok'
+                   and (r.get('data') or {}).get('occluded')
+                   and (r.get('data') or {}).get('fallback') == 'by_js')
         elif isinstance(expect, str):   # 期望错误码
             hit = r.get('code') == expect or \
                 expect in str(r)

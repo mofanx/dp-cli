@@ -58,7 +58,7 @@ BUG_KEYWORDS = [
     'NAVIGATE_FAILED', 'CLICK_FAILED', 'FILL_FAILED', 'TYPE_FAILED',
     'AUTOCONNECT_FAILED', 'BROWSER_START_FAILED', 'API_FETCH_FAILED',
     'HTTP_FAILED', 'DECIDE_FAILED', 'ASSERT_FAILED', 'NON_JSON',
-    'NONZERO_EXIT', 'captcha', '验证码', 'blocked',
+    'NONZERO_EXIT', 'captcha', '验证码', 'blocked', 'NET_DOWN',
 ]
 BUG_RE = re.compile('|'.join(re.escape(k) for k in BUG_KEYWORDS), re.IGNORECASE)
 
@@ -360,6 +360,18 @@ def extract_bugs(rec: dict) -> list:
                       else m.group(0) for m in BUG_RE.finditer(blob)))
 
 
+def _net_down_check(session: str) -> str:
+    """导航后探 chrome-error 落地页——网络层故障归因 NET_DOWN
+    （区别于 WAIT_TIMEOUT 语义：chrome-error://chromewebdata 是
+    浏览器已判导航失败，不该再等 90s 超时才认）。"""
+    r = run_dpx(['eval', "location.protocol+'|'+location.href"],
+                session, 15)
+    if r['status'] != 'ok':
+        return ''
+    v = str((r.get('data') or {}).get('result') or '')
+    return v if v.startswith('chrome-error:') else ''
+
+
 def _risk_check(session: str) -> str:
     """探当前页是否风控/验证页——命中返回 'url | title' 串，未命中空串。"""
     r = run_dpx(['eval', "location.href+' | '+document.title"], session, 15)
@@ -439,6 +451,12 @@ def run_task(task: dict, cfg) -> dict:
                     step_rec.get('elapsed_ms', 0) + r['elapsed_ms']
                 if r.get('data') is not None:
                     step_rec['json'] = {'status': 'ok', 'data': r['data']}
+                    # 记录本批自建 tab id——跑批结束统一清场
+                    # （只关 dpx 命令返回 id 的 tab，用户 tab 绝不动）
+                    if cmd in ('open', 'tab-new') and r['status'] == 'ok':
+                        new_tab_id = (r['data'] or {}).get('id')
+                        if new_tab_id:
+                            cfg.created_tabs.add(new_tab_id)
                     step_rec['data_summary'] = json.dumps(
                         r['data'], ensure_ascii=False)[:300]
                 if cmd == 'decide' and r.get('data'):
@@ -464,6 +482,22 @@ def run_task(task: dict, cfg) -> dict:
             used_loc = loc
             if worst == 'ok':
                 break          # 首个可用选择器即停
+        # chrome-error 归因：导航步后探落地页——chrome-error:// 是
+        # 浏览器已判导航失败（网络层），归 NET_DOWN 非 WAIT_TIMEOUT
+        if cmd in NAV_CMDS:
+            nd = _net_down_check(cfg.session)
+            if nd:
+                step_rec['net_down'] = nd[:120]
+                if step_rec.get('code') in (None, '', 'WAIT_TIMEOUT',
+                                            'TIMEOUT'):
+                    step_rec['code'] = 'NET_DOWN'
+                if worst == 'ok':
+                    worst = 'error'
+                    step_rec['status'] = 'error'
+                bugs.append('NET_DOWN')
+                step_rec.setdefault('bugs', [])
+                if 'NET_DOWN' not in step_rec['bugs']:
+                    step_rec['bugs'].append('NET_DOWN')
         if len(loc_cands) > 1:
             step_rec['locator_tried'] = [l for l in loc_cands if l]
             if step_rec['status'] == 'ok' and used_loc != base_args[0]:
@@ -674,7 +708,10 @@ def main():
         print(f'  preflight daemon-start: {r["status"]} '
               f'{r.get("code") or ""}'.rstrip(), flush=True)
 
+    cfg.created_tabs = set()
     results = []
+    breaker_codes = {'WAIT_TIMEOUT', 'NET_DOWN', 'TIMEOUT'}
+    consec, last_code, aborted = 0, None, False
     for t in tasks:
         site = t.get('site')
         quar = _quar_load()
@@ -697,11 +734,41 @@ def main():
               f'netlog+{r["netlog_delta"]}'
               + (f'  bugs={r["bugs"]}' if r['bugs'] else ''), flush=True)
         results.append(r)
+        # 全局熔断：连续 3 任务同码超时类失败（网络 blip 时不再
+        # 90s×N 串行硬等烧满窗口）——提前收尾照样写 partial 报告
+        tcode = next((s.get('code') for s in r.get('steps', [])
+                      if s.get('status') == 'error' and s.get('code')),
+                     None)
+        if r.get('quarantined'):
+            pass
+        elif tcode in breaker_codes and tcode == last_code:
+            consec += 1
+        elif tcode in breaker_codes:
+            consec, last_code = 1, tcode
+        else:
+            consec, last_code = 0, None
+        if consec >= 3:
+            aborted = True
+            print(f'  ⛔ 熔断：连续 {consec} 任务同码 {tcode}——'
+                  f'疑似环境级故障，批跑提前收尾', flush=True)
+            break
+
+    # 清场：关本批自建 tab（只关 dpx 命令返回 id 的——用户 tab
+    # 绝不动；tab-close 走绑定会话，失败如实忽略）
+    if cfg.created_tabs:
+        print(f'  清场: 关闭 {len(cfg.created_tabs)} 个本批 tab',
+              flush=True)
+        for tid in sorted(cfg.created_tabs):
+            run_dpx(['tab-close', tid], cfg.session, 15)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     report = REPORT_DIR / f'taskpool_{ts}.json'
     summary = summarize(results)
+    if aborted:
+        summary['aborted'] = True
+        summary['abort_reason'] = \
+            f'consecutive {consec} tasks code={last_code}'
     report.write_text(json.dumps(
         {'generated_at': datetime.now().isoformat(timespec='seconds'),
          'session': cfg.session, 'tasks_file': cfg.tasks,

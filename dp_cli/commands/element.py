@@ -201,7 +201,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                            no_wait=no_wait, code='DBLCLICK_FAILED', label='双击')
+                            no_wait=no_wait, code='DBLCLICK_FAILED', label='双击', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             if human:
@@ -245,7 +245,8 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele, fail = _resolve_ele(ctx, locator, index=index,
-                                     timeout=timeout, no_wait=no_wait)
+                                     timeout=timeout, no_wait=no_wait,
+                                     exists_only=by_js)
             fb = None   # 遮挡降级标记：None=未降级；occluder dict=已降 by-js
             if fail is not None:
                 if fail.get('reason') == 'occluded':
@@ -257,11 +258,13 @@ def register(cli):
                         ele, fb = ele2, fail.get('occluder') or {}
                     else:
                         _report_actionable_fail(
-                            fail, locator, code='FILL_FAILED', label='填入')
+                            fail, locator, code='FILL_FAILED', label='填入',
+                            bypass='use --by-js or --no-wait to bypass')
                         return
                 else:
                     _report_actionable_fail(
-                        fail, locator, code='FILL_FAILED', label='填入')
+                        fail, locator, code='FILL_FAILED', label='填入',
+                        bypass='use --by-js or --no-wait to bypass')
                     return
             if ele is None:
                 return
@@ -312,7 +315,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                            no_wait=no_wait, code='CLEAR_FAILED', label='清空')
+                            no_wait=no_wait, code='CLEAR_FAILED', label='清空', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             ele.clear()
@@ -344,7 +347,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                            no_wait=no_wait, code='SELECT_FAILED', label='选择')
+                            no_wait=no_wait, code='SELECT_FAILED', label='选择', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             if sel_by_index is not None:
@@ -393,7 +396,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, index=index, timeout=timeout,
-                            no_wait=no_wait, code='HOVER_FAILED', label='悬停')
+                            no_wait=no_wait, code='HOVER_FAILED', label='悬停', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             ele.hover(offset_x=offset_x, offset_y=offset_y)
@@ -424,7 +427,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             src = _wait_ele(ctx, from_locator, timeout=timeout,
-                            no_wait=no_wait, code='DRAG_FAILED', label='拖拽')
+                            no_wait=no_wait, code='DRAG_FAILED', label='拖拽', bypass='use --no-wait to bypass')
             if src is None:
                 return
             dst = ctx.ele(to_locator, timeout=timeout)
@@ -457,7 +460,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, timeout=timeout,
-                            no_wait=no_wait, code='CHECK_FAILED', label='checkbox 操作')
+                            no_wait=no_wait, code='CHECK_FAILED', label='checkbox 操作', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             current = ele.states.is_checked
@@ -487,7 +490,7 @@ def register(cli):
         ctx = frame_ctx(page, frame, session)
         try:
             ele = _wait_ele(ctx, locator, timeout=timeout,
-                            no_wait=no_wait, code='UPLOAD_FAILED', label='文件上传')
+                            no_wait=no_wait, code='UPLOAD_FAILED', label='文件上传', bypass='use --no-wait to bypass')
             if ele is None:
                 return
             ele.input(file_path)

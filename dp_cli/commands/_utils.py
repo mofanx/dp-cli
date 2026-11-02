@@ -866,7 +866,7 @@ def wait_actionable(ctx, locator, index=1, timeout=10.0, settle=0.15,
 
 
 def _resolve_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
-                 hit_check=True):
+                 hit_check=True, exists_only=False):
     """定位+actionability 等待的纯判定层：返回 (ele, fail)，不上报。
 
     fail=None 成功；否则 {'reason': 'not_found'|'occluded'|..., ...}——
@@ -876,9 +876,10 @@ def _resolve_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
     def _missing(e):
         return e is None or e.__class__.__name__ == 'NoneElement'
 
-    if no_wait:
+    if no_wait or exists_only:
         try:
-            ele = ctx.ele(locator, index=index, timeout=0)
+            ele = ctx.ele(locator, index=index,
+                          timeout=0 if no_wait else timeout)
         except Exception:
             ele = None
         if _missing(ele):
@@ -889,8 +890,13 @@ def _resolve_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
 
 
 def _report_actionable_fail(fail, locator, code='ELEMENT_FAILED',
-                            label='操作'):
-    """wait_actionable 失败明细 → 统一 error 上报（_wait_ele 原语义）。"""
+                            label='操作',
+                            bypass='use --force to bypass actionability'):
+    """wait_actionable 失败明细 → 统一 error 上报（_wait_ele 原语义）。
+
+    :param bypass: 降级提示文案——按命令真实旗面给（--force 仅
+        click 有；fill 用 --by-js/--no-wait；其余 --no-wait）。
+    """
     reason = fail.get('reason', 'timeout')
     if reason == 'not_found':
         error(f'未找到元素: {locator}', code='ELEMENT_NOT_FOUND')
@@ -902,11 +908,12 @@ def _report_actionable_fail(fail, locator, code='ELEMENT_FAILED',
         error(f'{label}失败: 元素被遮挡 {locator}', code=code, detail=detail)
         return
     error(f'{label}失败: 元素不可交互({reason}) {locator} '
-          f'——use --force to bypass actionability', code=code)
+          f'——{bypass}', code=code)
 
 
 def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
-              hit_check=True, code='ELEMENT_FAILED', label='操作'):
+              hit_check=True, code='ELEMENT_FAILED', label='操作',
+              bypass='use --force to bypass actionability'):
     """actionability 等待的统一入口：命中失败即 error 输出并返回 None。
 
     :returns: 元素对象，或 None（错误已输出，调用方直接 return）
@@ -915,7 +922,8 @@ def _wait_ele(ctx, locator, index=1, timeout=10.0, no_wait=False,
                              no_wait=no_wait, hit_check=hit_check)
     if fail is None:
         return ele
-    _report_actionable_fail(fail, locator, code=code, label=label)
+    _report_actionable_fail(fail, locator, code=code, label=label,
+                            bypass=bypass)
     return None
 
 

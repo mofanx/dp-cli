@@ -47,6 +47,8 @@
 - 跑批/service 类入口 daemon 漂移防陈旧码：build_id 警告**只告警不拦截**——`ExecStartPre=-python3.13 -m dp_cli.main daemon-stop -S <session>` 物理停（`-` 前缀容错，daemon 不在也继续；`dpx-taskpool.service` 已配）；bench 脚本/新 service 接入前同款前置，勿依赖 client 侧警告兜底
 - 站点风控页 title 可含站点名——京东"京东验证"滑块页 title 也含"京东"，`document.title contains 站点名` 断言假阳性；详情页断言改用 URL+非验证标题+商品 DOM 标记（`.specification-item-sku`/`.cross_platform_card_btn_cart`/`#comment-root`，`#choose-attr-1` 已废）复合判定（N3 归因）
 
+- 模拟 click 对 React 页**偶发**静默空转：`ele.click()`/裸 CDP `Input.dispatchMouseEvent` 均返回 ok 但 handler 未触发（saucedemo 实测，eval `.click()` 同刻立生效）——fresh 态三条路径又全工作，未复现确定性路径；疑似会话态/水合竞态。任务层对策：React SPA 加购类动作走 eval 点击+效果断言兜底（saucedemo_full 归因）
+
 ## 发版门禁
 
 发版前必跑 `make test-all`（单元 + `scripts/smoke_hostile.py` 真机冒烟）。

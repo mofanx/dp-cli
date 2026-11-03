@@ -53,13 +53,12 @@ def to_pairs(rows: list[dict]) -> list[dict]:
 
 
 def main() -> int:
-    src = next(
-        (a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--src=")),
-        str(Path.home() / ".dp_cli/sessions/decide_train.jsonl"),
-    )
-    out = next(
-        (a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--out=")), None
-    )
+    import argparse
+    ap = argparse.ArgumentParser(prog="verify_pairs.py")
+    ap.add_argument("--src", default=str(Path.home() / ".dp_cli/sessions/decide_train.jsonl"))
+    ap.add_argument("--out", default=None)
+    a = ap.parse_args()
+    src, out = a.src, a.out
     rows = [json.loads(l) for l in open(src) if l.strip()]
     ver = verified_rows(rows)
     pairs = to_pairs(ver)

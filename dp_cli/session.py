@@ -504,7 +504,13 @@ def get_browser(session_name: str = 'default', headless: bool = False,
         cached = _PAGE_CACHE.get(session_name)
         if cached is not None:
             try:
-                cached.tab_ids  # CDP Target.getTargets 探活，成本远小于 attach
+                tids = cached.tab_ids   # CDP Target.getTargets 探活
+                # 浏览器活着但绑定 tab 已死（Chrome 重启/崩溃后 WS
+                # 复活的 browser 级探活过得了、tab 级是死 attach——
+                # bigp 续跑批录制静默归零实证）：同样逐出重连
+                tid = getattr(cached, 'tab_id', None)
+                if tid and tid not in tids:
+                    raise ConnectionError('bound tab stale')
                 return cached
             except Exception:
                 _PAGE_CACHE.pop(session_name, None)

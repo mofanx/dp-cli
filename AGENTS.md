@@ -49,6 +49,8 @@
 
 - 模拟 click 对 React 页**偶发**静默空转：`ele.click()`/裸 CDP `Input.dispatchMouseEvent` 均返回 ok 但 handler 未触发（saucedemo 实测，eval `.click()` 同刻立生效）——fresh 态三条路径又全工作，未复现确定性路径；疑似会话态/水合竞态。任务层对策：React SPA 加购类动作走 eval 点击+效果断言兜底（saucedemo_full 归因）
 
+- daemon netlog arm 集合不含 `tab-new` 新建 tab——eval fetch 类请求在新 tab 发出时零捕获（netlog grep=0 实锤），`api-record` EMPTY_LIST 三连归因；任务定义需 fetch 捕获时走 `open`（绑定 tab 已 arm）勿 `tab-new`，或 eval 前先 tab-select 回绑定 tab（httpbin_api_adapter 修复路径）
+
 ## 数据产物入库纪律
 
 `bench/data/`、`bench/reports/`、`decide_train*.jsonl`、`hard_cases*.jsonl`、`netlog-*.jsonl` 全为**可再生产物不入库**（gitignore 已登记）——Mind2Web 转换产物经 `python3 bench/m2w_convert.py --out bench/data/m2w_train.jsonl` 一条命令再生；训练脚本引用本地路径，缺了先跑转换器。

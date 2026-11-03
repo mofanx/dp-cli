@@ -1,6 +1,17 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。## [0.15.37] - 2026-11-03
+
+### 修复
+- **api-record netlog 落盘竞态根治**（`e24433b`）：EMPTY_LIST 前有界轮询 3s 重扫——eval fetch→daemon CDP 事件写盘延迟一次性读空是 flake 源
+- **saucedemo 跨轮持久修**（`542fd0b`/`24c5e86`）：购物车态改 eval UI 清场；click 假成功复核三路径实证派发未坏（React 会话态偶发登记）
+
+### 新增
+- **Mind2Web 离线转换管线**（`2718e83`）：`m2w_convert.py` pos/neg→训练对，cleaned_html 抽可见文本 name 96% 覆盖；743 行训 reranker top1 52.5%→90%/top3 72.5%→97.5%（held-out 10 站泛化 92.5%/97.5% vs v28 基线 70%/90%）
+- **model-v29 微调包分发**（`fe10fd0`）：`dpx model pull` 通道端到端实证；默认翻 fp32 防 --int8 静默拉旧权重
+
+### 变更
+- **数据产物入库纪律**（`968c9ec`）：`bench/data/` gitignore 登记可再生产物不入库
 
 ## [0.15.35] - 2026-11-02
 

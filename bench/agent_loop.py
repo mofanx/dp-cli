@@ -15,6 +15,7 @@ import argparse, json, os, sys, time
 
 _CUR_SESSION=''
 _CUR_GOAL=''
+_CONNECT=['--auto-connect']
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -29,6 +30,39 @@ _SIDE_FX = ('purchase', 'buy ', 'checkout', 'add to cart', 'add-to-cart',
             '购买', '下单', '支付', '提交', '注册', '登录', '发帖', '评论',
             '上传', '删除', '发送', '预订', '预约', '关注', '取消')
 _STEP_TIMEOUT = 60
+_OPEN_DEAD_STREAK = 3          # 连续 open 超时此数→判浏览器死亡熔断
+_CKPT_DIR = Path.home() / '.dp_cli' / 'agentloop_ckpt'
+
+
+def _ckpt_file(session: str) -> Path:
+    return _CKPT_DIR / f'{session}.json'
+
+
+def _ckpt_save(session: str, done_ids: set, results: list) -> None:
+    """进度持久化——批中断后 --resume 从断点续非重跑。"""
+    _CKPT_DIR.mkdir(parents=True, exist_ok=True)
+    (_CKPT_DIR / f'{session}.json').write_text(
+        json.dumps({'done_ids': sorted(done_ids), 'results': results},
+                   ensure_ascii=False))
+
+
+def _ckpt_load(session: str) -> tuple:
+    p = _ckpt_file(session)
+    if not p.exists():
+        return set(), []
+    try:
+        d = json.loads(p.read_text())
+        return set(d.get('done_ids') or []), d.get('results') or []
+    except Exception:
+        return set(), []
+
+
+def _chrome_alive(session: str) -> bool:
+    """浏览器健康探针——tab-list 走完整 attach+daemon 链路，
+    短超时失败即死亡（DevToolsActivePort 文件会 stale 残留，
+    文件存在≠活着，必须走真链路探测）。"""
+    r = run_dpx(['tab-list'], session, 15)
+    return r['status'] == 'ok'
 
 
 def _quarantined(site: str) -> int:
@@ -137,7 +171,7 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
     before = _rows_now()
     rec = {'id': g['id'], 'site': site, 'verdict': 'partial', 'steps': [],
            'verified_delta': 0}
-    r = run_dpx(['open', g['url'], '--auto-connect'], session, 60)
+    r = run_dpx(['open', g['url'], *_CONNECT], session, 60)
     rec['steps'].append({'cmd': 'open', 'status': r['status']})
     if r['status'] != 'ok':
         rec['verdict'] = 'fail'
@@ -185,20 +219,46 @@ def main():
     ap.add_argument('--max-steps', type=int, default=6)
     ap.add_argument('-S', '--session', default='agentp')
     ap.add_argument('--auto-connect', action='store_true')
+    ap.add_argument('--port', type=int, default=0,
+                    help='显式调试端口（headless Chrome 场景，覆盖 --auto-connect）')
     ap.add_argument('--report', default='')
+    ap.add_argument('--resume', action='store_true',
+                    help='读 session 断点文件——跳过已完成任务续跑')
     a = ap.parse_args()
     goals = filtered_goals(a.goals, a.limit)
-    if a.auto_connect:
+    done_ids, out = (_ckpt_load(a.session) if a.resume else (set(), []))
+    if done_ids:
+        goals = [g for g in goals if g['id'] not in done_ids]
+        print(f'resume: 跳过已完成 {len(done_ids)}，续跑 {len(goals)}')
+    global _CONNECT
+    _CONNECT = ['--port', str(a.port)] if a.port else ['--auto-connect']
+    if a.auto_connect or a.port:
         run_dpx(['daemon-start'], a.session, 30)
     t0 = time.time()
-    out = []
+    open_dead = 0
+    aborted = False
     for g in goals:
+        if open_dead >= _OPEN_DEAD_STREAK:
+            # Chrome 死亡级联熔断——tab-list 真链路探活复核后 break
+            if not _chrome_alive(a.session):
+                print(f'  ✗ 浏览器死亡熔断（{open_dead} 连 open 超时+探活败），'
+                      '断点已存可 --resume', flush=True)
+                aborted = True
+                break
+            open_dead = 0
         print(f"  ▶ {g['id']} [{g.get('site','')}] {g['goal'][:50]}",
               flush=True)
         r = run_task(a.session, g, a.max_steps)
         print(f"    {r['verdict']} steps={len(r['steps'])} "
               f"verified+{r['verified_delta']}", flush=True)
         out.append(r)
+        done_ids.add(g['id'])
+        _ckpt_save(a.session, done_ids, out)
+        st0 = r['steps'][0] if r['steps'] else {}
+        if r['verdict'] == 'fail' and st0.get('status') == 'timeout':
+            open_dead += 1
+        else:
+            open_dead = 0
     vd = {'done': sum(1 for r in out if r['verdict'] == 'done'),
           'blocked': sum(1 for r in out if r['verdict'] == 'blocked'),
           'max_steps': sum(1 for r in out if r['verdict'] == 'max_steps'),
@@ -208,7 +268,7 @@ def main():
                            if r['verdict'] == 'op_unsupported'),
           'quarantined': sum(1 for r in out
                            if r['verdict'] == 'quarantined')}
-    rep = {'goals': len(goals), 'verdicts': vd,
+    rep = {'goals': len(goals), 'verdicts': vd, 'aborted': aborted,
            'verified_delta_total': sum(r['verified_delta'] for r in out),
            'elapsed_s': round(time.time() - t0, 1), 'tasks': out}
     path = a.report or f'bench/reports/agentloop_{time.strftime("%Y%m%d_%H%M%S")}.json'

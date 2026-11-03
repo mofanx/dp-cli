@@ -23,7 +23,7 @@ import click
 from dp_cli.output import ok, error, debug, _write_err
 
 _MODEL_URL = ('https://github.com/mofanx/dp-cli/releases/download/'
-              'model-v29/dpx-reranker-v29.tar.gz')
+              'model-v30/dpx-reranker-v30.tar.gz')
 _MODEL_SHA256 = ('112926a34c17578d6c32d677ecce3cc89e5'
                '45474231370c478a551d378a580fe')
 # int8-only 变体：同 release 第二 asset，自包含 tokenizer——
@@ -32,7 +32,7 @@ _MODEL_URL_INT8 = ('https://github.com/mofanx/dp-cli/releases/download/'
                    'model-v28/dpx-reranker-v28-int8.tar.gz')
 _MODEL_SHA256_INT8 = ('af8b6ba1f31d98548e60edca031a5670047b'
                       '9d43ede96ba4b91dfcbb5f98dce2')
-_ARCHIVE_ROOT = 'bge_v29_tuned'        # tar 内顶层目录名
+_ARCHIVE_ROOT = 'bge_v30_tuned'        # tar 内顶层目录名
 _CHUNK = 4 * 1024 * 1024               # 4MB 读块
 _HTTP_TIMEOUT = 60                     # 单请求超时（含重定向后的数据流）
 
@@ -307,7 +307,7 @@ def register(cli):
     @click.option('--force', is_flag=True, default=False,
                   help='忽略已有完整安装，强制重新下载部署')
     @click.option('--int8/--fp32', 'int8', default=False,
-                  help='默认 fp32 全量包（v29 微调版，int8 资产未发布会拉 v28 旧权重）；'
+                  help='默认 fp32 全量包（v30 微调版，int8 资产未发布会拉 v28 旧权重）；'
                        '--fp32 拉全量权重（~941MB，top1 逐例严格无损）')
     def model_pull(force, int8):
         """从 GitHub Release 下载 bge reranker 并部署到 ~/.dp_cli/bge_model。

@@ -343,9 +343,19 @@ def record(session: str, argv: list, refs: dict,
     cmd = argv[0]
     if cmd in _SKIP:
         return
-    opts = [{'ref': int(k), 'role': v.get('role', ''),
+    opts = []
+    for k, v in refs.items():
+        if not str(k).isdigit():
+            continue
+        o = {'ref': int(k), 'role': v.get('role', ''),
              'name': v.get('name', '')}
-            for k, v in refs.items() if str(k).isdigit()]
+        # 脱敏态下 name 被剥成 name_hash/name_len——结构信息随候选
+        # 落盘（去重/难负样本挖掘可用），不回放明文
+        if v.get('name_hash'):
+            o['name_hash'] = v['name_hash']
+        if v.get('name_len') is not None:
+            o['name_len'] = v['name_len']
+        opts.append(o)
     if not opts:
         return
     entry = {'ts': int(time.time()), 'session': session,
@@ -359,6 +369,12 @@ def record(session: str, argv: list, refs: dict,
         entry['unsure'] = True
     if engine_ref is not None:
         entry['engine_ref'] = engine_ref
+    # 候选内联选中标记——训练侧直读 state.refs[].chosen 不必跨字段对账
+    _pick = chosen_ref if chosen_ref is not None else engine_ref
+    if _pick is not None:
+        for o in opts:
+            if o['ref'] == _pick:
+                o['chosen'] = True
     if pre_state:
         entry['pre_state'] = pre_state
     if post_state:

@@ -1,6 +1,17 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。## [0.15.37] - 2026-11-03
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.38] - 2026-11-03
+
+### 修复
+- **daemon attach 自愈**（`c0b7c1d`）：get_browser 探活升绑定 tab 级——Chrome 重启/崩溃后死 attach 逐出重连（录制静默归零二级病灶根治）
+- **httpbin_api_adapter 改 open 走绑定 tab**（`8353ae0`）：tab-new 新建 tab 不在 daemon netlog arm 集合致 eval fetch 零捕获 EMPTY_LIST 三连；AGENTS 登记 netlog arm 边界教训
+
+### 新增
+- **agent_loop 批量执行回路**（`24c5674`）：goal→decide→执行→验证自举飞轮——Mind2Web/WebVoyager 只读 goal 源+副作用过滤+quarantine 复用
+- **evidence schema 升级**（`8f2c0ed`）：decide 候选落盘补 name_hash/name_len+chosen 内联标记（fnv32 脱敏基建复用）
+- **批量耐力三件套**（`2307091`）：Chrome 健康探针+3 连 open 超时级联熔断+断点持久化续跑（ckpt+--resume）+--port headless 接线
+
+## [0.15.37] - 2026-11-03
 
 ### 修复
 - **api-record netlog 落盘竞态根治**（`e24433b`）：EMPTY_LIST 前有界轮询 3s 重扫——eval fetch→daemon CDP 事件写盘延迟一次性读空是 flake 源

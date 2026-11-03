@@ -88,6 +88,9 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 - **验证**：新平台分支必须 mock 该平台常量跑分支（`_HAS_UNIX_SOCK=False` 模拟）——不能只靠开发机原生环境。
 
 ## decide_train verified 判据（核验层）
+- **refs 脱敏断链教训（四次微调证伪真根因）**：decide 行 `state.refs` 取自 `load_refs`（已脱敏，`name:''`）——verified 对 positive 只剩 role 串、negatives 全空，训出的混训模型必然劣化（域差误诊纠正）。**飞轮训练批必须 `DPX_REFS_PRIVATE=0`**（明文 name）才产可训对；存量 7400+ 脱敏行不可救（hash 不可逆），verify_pairs 已加 `name 空即拒+无 named negs 即拒` 硬过滤。
+
+
 
 `bench/verify_pairs.py` 把弱标升强标：decide 行需 `goal + 候选带 chosen 标记 + post_delta 非空`（执行后有页面效果=选中被行为结果验证）；非 decide 命令行需 `post_delta 非空`。v30 两轮实证：全 real 混入/chosen-only 均劣化（弱标噪声稀释），verified-only 混入 top1 持平 top3 -2.5pt——**real 对未达千级+核验层攒量前不混训分发**。
 

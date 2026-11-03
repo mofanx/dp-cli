@@ -34,7 +34,8 @@ def to_pairs(rows: list[dict]) -> list[dict]:
     for r in rows:
         refs = (r.get("state") or {}).get("refs") or []
         ch = next((x for x in refs if x.get("chosen")), None)
-        if not ch:
+        if not ch or not ch.get("name"):
+            # 脱敏态 refs name=''（DPX_REFS_PRIVATE 默认开）——无文本对是噪声必拒
             continue
         pos = f"{ch.get('role', '')} {ch.get('name', '')}".strip()
         if not pos:
@@ -45,7 +46,7 @@ def to_pairs(rows: list[dict]) -> list[dict]:
             if x["ref"] != ch["ref"] and x.get("name")
         ]
         q = r.get("goal") or (r.get("chosen") or "").split(" -S ")[0]
-        if not q:
+        if not q or not negs:
             continue
         pairs.append({"query": q, "positive": pos, "negatives": negs, "src": "verified"})
     return pairs

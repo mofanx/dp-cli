@@ -1,6 +1,15 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.38] - 2026-11-03
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.39] - 2026-11-03
+
+### 修复
+- **refs 脱敏断链修**（`cd1a74c`）：decide_train refs 取自 load_refs（已脱敏 name=''）致 verified 训练对 positive 只剩 role 串、negatives 全空——verify_pairs 加 name 空/无 named negs 硬过滤；AGENTS 登记"飞轮训练批必须 DPX_REFS_PRIVATE=0"判据
+- **chosen→verified 核验层**（`f6c7212`）：verify_pairs.py——goal+chosen+post_delta 非空升级 verified 强标；判据登记 AGENTS
+
+### 新增
+- **model pull → model-v30**（`42a082f`）：首个明文 verified_real 对微调（743 m2w+169 real）——held-out unseen-site top1 92.5% 持平、top3 双样本 +2.5/+1.2pt
+
+## [0.15.38] - 2026-11-03
 
 ### 修复
 - **daemon attach 自愈**（`c0b7c1d`）：get_browser 探活升绑定 tab 级——Chrome 重启/崩溃后死 attach 逐出重连（录制静默归零二级病灶根治）

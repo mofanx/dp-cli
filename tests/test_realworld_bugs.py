@@ -492,8 +492,10 @@ def test_b7_fill_occluded_falls_back_by_js(monkeypatch):
     assert d['fallback'] == 'by_js' and d['occluded'] is True
     # B10：降级路径先 run_js 清场（value=''+input 事件），
     # 再 input(clear=False, by_js=True)——不再靠 DP input 自带
-    # clear 语义（真机追加不清空归因）
+    # clear 语义（真机追加不清空归因）；contenteditable 修复后
+    # 首步多一发 isContentEditable 探测（tinymce 无 .value 槽病灶）
     assert ele.clicked == [
+        'return !!this.isContentEditable',
         'this.value="";this.dispatchEvent('
         'new Event("input",{bubbles:true}))']
     assert ele.inputs == [{'value': '手机', 'clear': False, 'by_js': True}]
@@ -547,7 +549,7 @@ def test_b7_non_occluded_fail_no_retry(monkeypatch):
     calls = []
 
     def fake_resolve(ctx, locator, index=1, timeout=10.0, no_wait=False,
-                     hit_check=True):
+                     hit_check=True, exists_only=False):
         calls.append(hit_check)
         return ele, {'reason': 'hidden'}
 
@@ -786,6 +788,7 @@ def test_b10_fallback_clear_runs_before_input(monkeypatch):
     out = json.loads(r.output)
     assert out['status'] == 'ok', out
     assert seq == [
+        ('run_js', 'return !!this.isContentEditable'),
         ('run_js', 'this.value="";this.dispatchEvent('
                    'new Event("input",{bubbles:true}))'),
         ('input', 'u3', False, True)]

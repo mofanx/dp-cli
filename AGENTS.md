@@ -87,6 +87,10 @@ smoke 用 `tests/fixtures/hostile.html`（file:// 无外网依赖）对 click �
 - **禁单平台特有方法**：进程/文件/网络原语一律走双/三平台分流（`_HAS_UNIX_SOCK`/`os.name` 判定一处），不得裸写 `if linux else pass`。
 - **验证**：新平台分支必须 mock 该平台常量跑分支（`_HAS_UNIX_SOCK=False` 模拟）——不能只靠开发机原生环境。
 
+## decide_train verified 判据（核验层）
+
+`bench/verify_pairs.py` 把弱标升强标：decide 行需 `goal + 候选带 chosen 标记 + post_delta 非空`（执行后有页面效果=选中被行为结果验证）；非 decide 命令行需 `post_delta 非空`。v30 两轮实证：全 real 混入/chosen-only 均劣化（弱标噪声稀释），verified-only 混入 top1 持平 top3 -2.5pt——**real 对未达千级+核验层攒量前不混训分发**。
+
 ## decide margin 契约
 
 `result.margin_source` ∈ `probs`（双侧真 margin）/ `single_side`（单边 probs，非真 margin）/ `conf_fallback`（无 probs 静默降级）——上层据此知 margin 可信度，勿当统一语义用。

@@ -1,6 +1,12 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.44] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.45] - 2026-11-04
+
+### 修复
+- **agent_loop decide 前 idle 水合等待+click `--effect` 接线**（`50b539b`）：espn 类懒加载 95% 候选漏抓→每步 `wait --idle 8s`；coursera 类 React 水合吞点击 98% 执行层归因→回路 click 挂 `--effect` 兜底
+- **CF 质询拦截面补全 run_task_pool**（本版）：`RISK_RE` 扩 `/(cloudflare|cdn-cgi)/` 路径段+`Just a moment`/`verify you are human` 标题——1485 行漏网路径（任务池分支）堵死；`cloudflare.com` 域名本身不误伤
+
+## [0.15.44] - 2026-11-04
 
 ### 修复
 - **agent_loop CF 质询页拦截**（`a7952a9`）：`/cloudflare`/`challenge`/`/cdn-cgi/` interstitial 入口判 `challenge_blocked`——v2 难案实锤质询页"重新加载"死循环 3326 行同形态

@@ -67,7 +67,11 @@ BUG_RE = re.compile('|'.join(re.escape(k) for k in BUG_KEYWORDS), re.IGNORECASE)
 # 会被误记为产品 fail；URL/title 双源判定）
 RISK_RE = re.compile(
     r'risk_handler|/privatedomain/|京东验证|验证中心|sec-captcha|'
-    r'__jsl_clearance|punish\?|captcha[-_]verify|waf_|slide[-_]verify',
+    r'__jsl_clearance|punish\?|captcha[-_]verify|waf_|slide[-_]verify|'
+    # CF 质询 interstitial——x.com/cloudflare 类"重新加载"死循环
+    # 1485 行实锤；/cloudflare|/cdn-cgi 按路径段匹配（cloudflare.com
+    # 域名本身是合法任务目标不误伤）+标题 Just a moment 兜底
+    r'/(cloudflare|cdn-cgi)(/|$)|just a moment|verify you are human',
     re.IGNORECASE)
 NAV_CMDS = {'open', 'goto', 'tab-new', 'press'}
 

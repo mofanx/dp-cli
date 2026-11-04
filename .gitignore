@@ -30,6 +30,8 @@ test.json
 hard_cases*.jsonl
 decide_train*.jsonl
 netlog-*.jsonl
+bench/agent_verified*.jsonl
+bench/reports/
 adapters/
 *.dp_cli
 sessions/*.session
@@ -46,3 +48,17 @@ bench/reports/
 
 # Mind2Web 转换训练数据（m2w_convert.py 一条命令可再生——2.7M/1.1M 产物不入库）
 bench/data/
+
+# 历史实验产物（可再生批次/报告——AGENTS 入库纪律，需入库显式 -f）
+bench/*.jsonl
+bench/merge_out_*.json
+bench/seed_train*.json
+bench/miss_targets*.json
+bench/*_report.json
+bench/*_results.json
+bench/decide_*.json
+bench/distill_*.json
+bench/*_pairs.json
+bench/v*_in.json
+bench/r2_*.json
+bench/eval*.json

@@ -139,8 +139,10 @@ def _decide(session: str, goal: str) -> dict:
 def _exec_op(session: str, action: str, ref) -> dict:
     """执行 decide 出的 op——执行成功才落 verified_real 执行后证据。"""
     if action in ('click',) and ref:
-        return run_dpx(['click', f'@e{ref}', '--no-wait'], session,
-                       _STEP_TIMEOUT)
+        # --effect：link 点击 URL/title 零变化 JS 重试——coursera 类
+        # React 水合吞点击归因（解剖 98% goalpresent 桶实锤）
+        return run_dpx(['click', f'@e{ref}', '--no-wait', '--effect'],
+                       session, _STEP_TIMEOUT)
     if action in ('type', 'fill', 'type_text', 'select'):
         # 文本 op 无通用取值来源——返回 not_impl 让回路判 blocked
         return {'status': 'not_impl', 'code': 'SKIP_OP',
@@ -192,6 +194,9 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
     last_fp = None
     fp_streak = 0
     for i in range(max_steps):
+        # 懒加载水合等待——espn 类动态 DOM 95% goalabsent 归因：
+        # decide 时目标内容未挂载，候选漏抓。idle 等异步 XHR 落定再快照
+        run_dpx(['wait', '--idle', '--timeout', '8'], session, 12)
         d = _decide(session, g['goal'])
         act = d['action'] or 'blocked'
         rec['steps'].append({'i': i, 'op': act, 'ref': d.get('ref'),

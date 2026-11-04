@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -282,6 +283,29 @@ def _fill_dom_names(page, cands, max_nodes=25):
 
 # ── 引擎 ────────────────────────────────────────────────────
 
+_ANSWER_TIMEOUT = int(os.environ.get('DPX_ANSWER_TIMEOUT', '60'))
+
+
+def _read_stdin_line(timeout: float):
+    """stdin 答复行 watchdog：超时/EOF fail-closed——引擎僵死/
+    掉线时裸 readline 永久阻塞（select 在 Windows 管道不可用，
+    跨平台走线程 join 超时）。"""
+    box = {}
+
+    def _rd():
+        try:
+            box['l'] = sys.stdin.readline()
+        except Exception:
+            box['l'] = ''
+
+    t = threading.Thread(target=_rd, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None          # 超时
+    return box.get('l')      # ''=EOF/异常
+
+
 def _engine_external(request, answer, answer_file):
     """零依赖协议：输出 request JSON，收答复（--answer/文件/stdin）。"""
     if answer:
@@ -295,7 +319,13 @@ def _engine_external(request, answer, answer_file):
              'hint': '请给一行 JSON，如 {"action":"click","target":3,'
                      '"done":false,"stuck":false,"probs":{}}\n'},
             ensure_ascii=False) + '\n')
-        raw = sys.stdin.readline().strip()
+        line = _read_stdin_line(_ANSWER_TIMEOUT)
+        if line is None:
+            return {'_error': f'引擎答复超时（{_ANSWER_TIMEOUT}s'
+                    ' DPX_ANSWER_TIMEOUT 可调）'}
+        if not line.strip():
+            return {'_error': '引擎答复 EOF——stdin 关闭/异常'}
+        raw = line.strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:

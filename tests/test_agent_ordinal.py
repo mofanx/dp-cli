@@ -405,3 +405,28 @@ def test_meta_font_symbol_no_false_fire():
            'state': {'title': 'Page', 'url': 'https://x'},
            'epoch': 'x', 'truncated': False}
     assert _meta_decide(st2, '查看图文详情') is None       # 无调大意图
+
+
+def test_engine_external_stdin_hang_fails_closed(monkeypatch):
+    """stdin 答复通道僵死→超时 fail-closed 非永久阻塞。"""
+    import io, threading
+    from dp_cli import agent
+    hang = threading.Event()
+
+    class _S:
+        def readline(self):
+            hang.wait(30)
+
+    monkeypatch.setattr('sys.stdin', _S())
+    monkeypatch.setattr(agent, '_ANSWER_TIMEOUT', 0.2)
+    r = agent._engine_external({}, None, None)
+    assert '超时' in r['_error']
+
+
+def test_engine_external_stdin_eof_fails_closed(monkeypatch):
+    """stdin EOF→fail-closed 非 JSONDecodeError 假解析。"""
+    import io
+    from dp_cli import agent
+    monkeypatch.setattr('sys.stdin', io.StringIO(''))
+    r = agent._engine_external({}, None, None)
+    assert 'EOF' in r['_error']

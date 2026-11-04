@@ -1,6 +1,11 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.42] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.43] - 2026-11-04
+
+### 修复
+- **agent_loop blocked 回锚**（`ba5e55b`）：decide 拒选先回任务锚点重开 URL 一次再判死——decide_unsure 87% 根因=goal-页面错配（中间步漂移后错页反复拒选，模型行为正确非缺陷）
+
+## [0.15.42] - 2026-11-04
 
 ### 修复
 - **post_delta 快照面扩展**（`0c02646`）：`_snap_state` 单次 eval 取回 url+scrollY+焦点元素+DOM 文本长；`_STATE_KEYS` 双端同步加 scroll/focus/dom_len——no_effect 58% 盲区簇判据漏检回收

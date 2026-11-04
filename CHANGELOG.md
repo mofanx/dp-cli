@@ -1,6 +1,12 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.41] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.42] - 2026-11-04
+
+### 修复
+- **post_delta 快照面扩展**（`0c02646`）：`_snap_state` 单次 eval 取回 url+scrollY+焦点元素+DOM 文本长；`_STATE_KEYS` 双端同步加 scroll/focus/dom_len——no_effect 58% 盲区簇判据漏检回收
+- **click `--effect` 效果断言兜底**（`a969538`）：opt-in 旗——link 元素点击后 URL/title 零变化则 JS 派发重试，`fallback=effect_retry` 如实标注；仅兜 `<a>` 防 checkbox 类双触发反转（React 水合吞点击归因修）
+
+## [0.15.41] - 2026-11-04
 
 ### 修复
 - **verified 候选构造对齐**（`62451f5`）：positive 双帽去重（同 goal≤3/全局≤10——防"通用导航元素总产 delta"伪影虚胖）+负例同 role 优先采样至 24（难负例 15%→62% 对齐 m2w 形态）

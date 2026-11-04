@@ -189,6 +189,8 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
         return rec
     stuck = 0
     reanchored = False
+    last_fp = None
+    fp_streak = 0
     for i in range(max_steps):
         d = _decide(session, g['goal'])
         act = d['action'] or 'blocked'
@@ -225,6 +227,31 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
                 rec['verdict'] = 'exec_dead'
                 break
             continue
+        # stuck 探测：url+候选集指纹连续 3 步不变=原地打转（click/scroll
+        # 死循环烧满 max_steps 归因——CF 拦截只兜质询页，这是通用形态）
+        _fr = run_dpx(['eval', 'location.href'], session, 15)
+        _fu = (((_fr.get('data') or {}).get('result')) or '')
+        _cd = ((d.get('raw') or {}).get('data') or {}).get('candidates') or []
+        fp = (_fu, tuple(sorted(str(c.get('name'))[:30]
+                                for c in _cd if isinstance(c, dict))))
+        if fp == last_fp:
+            fp_streak += 1
+            if fp_streak >= 2:
+                rec['verdict'] = 'stuck'
+                rec['steps'][-1]['stuck'] = True
+                try:
+                    with open(Path.home() / '.dp_cli' / 'hard_cases.jsonl',
+                              'a', encoding='utf-8') as hf:
+                        hf.write(json.dumps(
+                            {'ts': int(time.time()), 'session': session,
+                             'kind': 'stuck', 'goal': g.get('goal', '')[:100],
+                             'url': _fu[:200]}, ensure_ascii=False) + '\n')
+                except OSError:
+                    pass
+                break
+        else:
+            fp_streak = 0
+            last_fp = fp
         time.sleep(1.0)
     else:
         rec['verdict'] = 'max_steps'

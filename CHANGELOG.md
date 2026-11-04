@@ -1,6 +1,11 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.40] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.41] - 2026-11-04
+
+### 修复
+- **verified 候选构造对齐**（`62451f5`）：positive 双帽去重（同 goal≤3/全局≤10——防"通用导航元素总产 delta"伪影虚胖）+负例同 role 优先采样至 24（难负例 15%→62% 对齐 m2w 形态）
+
+## [0.15.40] - 2026-11-04
 
 ### 修复
 - **contenteditable 断言对齐**（`064fb3a`）：isContentEditable 探测入序+exists_only kwarg 入 mock——存量红清零 72/72 绿

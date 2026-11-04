@@ -29,11 +29,16 @@ def verified_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-def to_pairs(rows: list[dict]) -> list[dict]:
+def to_pairs(rows: list[dict], weak: bool = False) -> list[dict]:
     pairs = []
     for r in rows:
         refs = (r.get("state") or {}).get("refs") or []
         ch = next((x for x in refs if x.get("chosen")), None)
+        w = False
+        if not ch and r.get("engine_ref") and weak:
+            # 低置信 decide 未执行——engine 选中作 weak 标（降权而非丢弃）
+            ch = next((x for x in refs if x.get("ref") == r["engine_ref"]), None)
+            w = True
         if not ch or not ch.get("name"):
             # 脱敏态 refs name=''（DPX_REFS_PRIVATE 默认开）——无文本对是噪声必拒
             continue
@@ -48,8 +53,24 @@ def to_pairs(rows: list[dict]) -> list[dict]:
         q = r.get("goal") or (r.get("chosen") or "").split(" -S ")[0]
         if not q or not negs:
             continue
-        pairs.append({"query": q, "positive": pos, "negatives": negs, "src": "verified"})
+        p = {"query": q, "positive": pos, "negatives": negs, "src": "verified"}
+        if w:
+            p["weak"] = True
+        pairs.append(p)
     return pairs
+
+
+def split_holdout(pairs: list[dict], ratio: float = 0.2) -> tuple[list[dict], list[dict]]:
+    """按 goal 所在站（query 内 site 不可知——用 goal 首词/域名近似不可行，
+    改用行级 site 字段已剥：fallback 按 goal 文本聚簇切分防同 goal 跨集）。"""
+    seen: dict[str, int] = {}
+    holdout, train = [], []
+    for i, p in enumerate(pairs):
+        key = p["query"]
+        if key not in seen:
+            seen[key] = 1 if hash(key) % 5 == 0 else 0   # ~20% 按 goal 隔离
+        (holdout if seen[key] else train).append(p)
+    return train, holdout
 
 
 def main() -> int:
@@ -57,12 +78,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="verify_pairs.py")
     ap.add_argument("--src", default=str(Path.home() / ".dp_cli/sessions/decide_train.jsonl"))
     ap.add_argument("--out", default=None)
+    ap.add_argument("--weak", action="store_true", help="engine_ref 无执行证据的行作 weak 标回收")
+    ap.add_argument("--holdout-out", default=None, help="输出 20%% goal 隔离 held-out 集路径")
     a = ap.parse_args()
     src, out = a.src, a.out
     rows = [json.loads(l) for l in open(src) if l.strip()]
     ver = verified_rows(rows)
-    pairs = to_pairs(ver)
-    print(f"verified rows: {len(ver)}/{len(rows)}  pairs: {len(pairs)}")
+    pairs = to_pairs(ver, weak=a.weak)
+    print(f"verified rows: {len(ver)}/{len(rows)}  pairs: {len(pairs)}"
+          f"  weak: {sum(1 for p in pairs if p.get('weak'))}")
+    if a.holdout_out:
+        train, holdout = split_holdout(pairs)
+        json.dump(holdout, open(a.holdout_out, "w"), ensure_ascii=False)
+        pairs = train
+        print(f"held-out: {len(holdout)}  train: {len(train)}")
     if out:
         json.dump(pairs, open(out, "w"), ensure_ascii=False)
     return 0

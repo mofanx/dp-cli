@@ -63,12 +63,14 @@ def to_pairs(rows: list[dict], weak: bool = False) -> list[dict]:
 def split_holdout(pairs: list[dict], ratio: float = 0.2) -> tuple[list[dict], list[dict]]:
     """按 goal 所在站（query 内 site 不可知——用 goal 首词/域名近似不可行，
     改用行级 site 字段已剥：fallback 按 goal 文本聚簇切分防同 goal 跨集）。"""
+    import hashlib
     seen: dict[str, int] = {}
     holdout, train = [], []
-    for i, p in enumerate(pairs):
+    for p in pairs:
         key = p["query"]
         if key not in seen:
-            seen[key] = 1 if hash(key) % 5 == 0 else 0   # ~20% 按 goal 隔离
+            # hashlib 确定性摘要——str hash 跨进程随机会致 held-out 漂移泄漏
+            seen[key] = 1 if int(hashlib.md5(key.encode()).hexdigest(), 16) % 5 == 0 else 0
         (holdout if seen[key] else train).append(p)
     return train, holdout
 

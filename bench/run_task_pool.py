@@ -163,6 +163,11 @@ def step_calls(step: dict, cfg) -> list:
             return [['tab-new', url]] if url else []
         return [['goto', url, *extra]] if url else []
 
+    if cmd == 'open':
+        # 独立浏览器（非 auto-connect）双修：Wayland headed 崩
+        # →--headless；DP 默认 browser_path='chrome' 裸名不在 PATH
+        # →--browser 显式路径（BROWSER_START_FAILED 归因）
+        extra = ['--headless', '--browser', cfg.browser, *extra]
     return [[cmd, *args, *extra]]
 
 

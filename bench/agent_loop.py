@@ -177,6 +177,16 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
         rec['verdict'] = 'fail'
         return rec
     run_dpx(['wait', '--loaded', '--timeout', '20'], session, 30)
+    # CF 质询页拦截——v2 难案实锤：x.com/cloudflare 类 interstitial
+    # 上 decide 高置信连点"重新加载"死循环（3326 行同形态），
+    # 入口即判 challenge 不烧步数
+    _pu = run_dpx(['eval', 'location.href'], session, 15)
+    _pu = (((_pu.get('data') or {}).get('result')) or '')
+    if isinstance(_pu, str) and ('/cloudflare' in _pu
+                                 or 'challenge' in _pu
+                                 or '/cdn-cgi/' in _pu):
+        rec['verdict'] = 'challenge_blocked'
+        return rec
     stuck = 0
     reanchored = False
     for i in range(max_steps):

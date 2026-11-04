@@ -1,6 +1,17 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.45] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.46] - 2026-11-04
+
+### 修复
+- **close+daemon 卡死三修**（`6b8b7d4`）：Windows 僵尸 chrome（端口监听但 CDP 死）实测病灶——`browser.quit()` 线程化 10s 超时+按调试端口属主 pid 强杀兜底（`_kill_port_owner`：Win netstat→taskkill/POSIX proc+lsof）；daemon idle 探测 `_port_open`→`_probe_cdp_http` 强探针（TCP 通≠可 attach）；daemon per-command 看门狗 `_invoke` 线程化超时 `EXEC_TIMEOUT` fail-closed，防 worker 僵死并发位泄漏
+- **僵死态测试矩阵**（`72f6879`）：quit 挂起强杀兜底/CDP 半死探针/看门狗 EXEC_TIMEOUT 三断言——回归网纳入状态轴"活/死/僵"第三态（挂死非 API 缺失是半活形态）
+- **agent external stdin 答复通道 watchdog**（`fc8ceac`）：`_engine_external` 交互路径 `stdin.readline` 无界→线程化超时/EOF fail-closed（`DPX_ANSWER_TIMEOUT` 默认 60s）
+- **taskpool stale-attach 自愈**（`61c92d4`）：`SESSION_DISCONNECTED`→daemon-stop 清缓存 attach+清死绑定+重试一次——89 任务全灭死 bridge 绑定归因闭环
+
+### 文档
+- **AGENTS.md 阻塞调用三件套门禁**（`1913976`）：新外部阻塞调用必须 ①超时边界 ②僵死态测试断言 ③对照超时审计清单自查
+
+## [0.15.45] - 2026-11-04
 
 ### 修复
 - **agent_loop decide 前 idle 水合等待+click `--effect` 接线**（`50b539b`）：espn 类懒加载 95% 候选漏抓→每步 `wait --idle 8s`；coursera 类 React 水合吞点击 98% 执行层归因→回路 click 挂 `--effect` 兜底

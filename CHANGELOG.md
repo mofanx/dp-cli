@@ -1,6 +1,15 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.39] - 2026-11-03
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.40] - 2026-11-04
+
+### 修复
+- **contenteditable 断言对齐**（`064fb3a`）：isContentEditable 探测入序+exists_only kwarg 入 mock——存量红清零 72/72 绿
+- **verify_pairs argparse 严校验**（`87d7abb`）：未知旗子拒绝非静默吞
+
+### 新增
+- **verified 管线基建**（`194020b`）：held-out 切分 hashlib 确定性摘要（跨进程可复现防泄漏）+`--weak` 低置信回收+`--holdout-out` goal 隔离 real 评测集+`TRAIN_LR` 低 LR 续训支持
+
+## [0.15.39] - 2026-11-03
 
 ### 修复
 - **refs 脱敏断链修**（`cd1a74c`）：decide_train refs 取自 load_refs（已脱敏 name=''）致 verified 训练对 positive 只剩 role 串、negatives 全空——verify_pairs 加 name 空/无 named negs 硬过滤；AGENTS 登记"飞轮训练批必须 DPX_REFS_PRIVATE=0"判据

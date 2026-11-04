@@ -783,7 +783,34 @@ def _handle_conn(conn, session):
                     pass
                 _rs = _record_session(argv, session)
                 _pre = _snap_state(_rs)   # 执行前快照——未开录制 {} 零开销
-                code, result = _invoke(argv)
+                # per-command 看门狗：命令执行线程化+超时 fail-closed——
+                # 裸 _invoke 阻塞会让 worker 线程僵死（close 卡死归因：
+                # quit() 无超时挂 CDP 后并发位泄漏至全 daemon BUSY）。
+                # 超时回 EXEC_TIMEOUT 结构化错误；线程 daemon 化不拖
+                # 进程退出，残留 worker 只耗一位不堵全局。
+                import threading as _th
+                _box = {}
+
+                def _run_invoke():
+                    try:
+                        _box['r'] = _invoke(argv)
+                    except Exception as _e:
+                        _box['r'] = (1, {'status': 'error',
+                                         'code': 'INTERNAL',
+                                         'message': str(_e)})
+
+                _wt = _th.Thread(target=_run_invoke, daemon=True)
+                _wt.start()
+                _wt.join(_cmd_timeout(argv))
+                if _wt.is_alive():
+                    code, result = 1, {
+                        'status': 'error', 'code': 'EXEC_TIMEOUT',
+                        'message': '命令执行超时（daemon 看门狗）',
+                        'detail': 'worker 可能仍在执行——非幂等命令勿盲重试'}
+                else:
+                    code, result = _box.get(
+                        'r', (1, {'status': 'error', 'code': 'INTERNAL',
+                                  'message': 'worker 无响应'}))
                 _rec = (_rs, argv, result, code, _pre)
         out = {'exit': code, 'result': result}
         if req_id is not None:
@@ -845,7 +872,7 @@ def _idle_watcher(sock_path, meta_path, stop_ev, session):
     """
     while not stop_ev.wait(_WATCH_TICK):
         try:
-            from dp_cli.session import load_session, _port_open
+            from dp_cli.session import load_session, _probe_cdp_http
             sess = load_session(session) or {}
             idle = time.time() - _state['last_activity']
             ttl = _IDLE_TTL
@@ -853,7 +880,10 @@ def _idle_watcher(sock_path, meta_path, stop_ev, session):
                 port = sess.get('port')
                 if port:
                     try:
-                        if _port_open('127.0.0.1', int(port)):
+                        # TCP 通≠可 attach——僵尸 chrome 监听端口但
+                        # CDP 已死（Windows close 卡死同源），强探针
+                        # /json/version 才作数
+                        if _probe_cdp_http(int(port)):
                             ttl = _IDLE_TTL_ATTACHED
                     except Exception:
                         ttl = _IDLE_TTL_ATTACHED   # 探测失败保守豁免

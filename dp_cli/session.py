@@ -917,6 +917,52 @@ def _dl_path(session_name: str) -> str | None:
     return (load_session(session_name) or {}).get('download_dir')
 
 
+def _kill_port_owner(port: int) -> None:
+    """按调试端口强杀属主进程——browser.quit 超时兜底。
+
+    Windows 走 netstat 找 LISTENING pid→taskkill /F /T；
+    POSIX 扫 /proc cmdline 找 --remote-debugging-port= 匹配
+    （macOS 无 /proc 退 lsof -ti）。全部 best-effort 静默。"""
+    import subprocess
+    try:
+        if os.name == 'nt':
+            out = subprocess.run(['netstat', '-ano'],
+                                 capture_output=True, text=True,
+                                 timeout=10).stdout
+            pid = None
+            for ln in out.splitlines():
+                if f':{port}' in ln and 'LISTENING' in ln:
+                    pid = ln.split()[-1]
+                    break
+            if pid:
+                subprocess.run(['taskkill', '/F', '/T', '/PID', pid],
+                               capture_output=True, timeout=10)
+            return
+        from pathlib import Path
+        pid = None
+        proc = Path('/proc')
+        if proc.exists():
+            for p in proc.iterdir():
+                if not p.name.isdigit():
+                    continue
+                try:
+                    cmd = (p / 'cmdline').read_text(errors='ignore')
+                    if f'--remote-debugging-port={port}' in cmd:
+                        pid = p.name
+                        break
+                except OSError:
+                    continue
+        else:                                   # macOS 无 /proc
+            out = subprocess.run(['lsof', '-ti', f'tcp:{port}'],
+                                 capture_output=True, text=True,
+                                 timeout=10).stdout.strip()
+            pid = out.splitlines()[0] if out else None
+        if pid:
+            os.kill(int(pid), 9)
+    except Exception:
+        pass
+
+
 def close_browser(session_name: str = 'default', del_data: bool = False,
                   force: bool = False, stop_bridge_flag: bool = False) -> bool:
     """关闭指定会话的浏览器。
@@ -994,7 +1040,23 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
         if _detect_headless(port):
             co.headless(True)
         page = _attach_page(co)
-        page.browser.quit(del_data=del_data)
+        # quit 线程化+超时强杀——Windows 僵尸 chrome 实测卡点：
+        # TCP 监听通但 CDP WS 死，Browser.close 应答永不回，裸
+        # quit() 无限阻塞（daemon worker 线程卡死并发位泄漏）。
+        # 10s 不返回→按调试端口找到属主 pid 强杀兜底。
+        import threading
+        _done = threading.Event()
+
+        def _quit():
+            try:
+                page.browser.quit(del_data=del_data)
+            finally:
+                _done.set()
+
+        threading.Thread(target=_quit, daemon=True).start()
+        if not _done.wait(10):
+            debug(f'browser.quit(port={port}) 10s 超时——强杀兜底')
+            _kill_port_owner(port)
     except Exception as e:
         debug(f'browser.quit(port={port}) 失败，仍清理会话', e)
 

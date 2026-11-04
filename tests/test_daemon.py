@@ -878,8 +878,8 @@ def test_idle_watcher_attached_live_port_extended_ttl(monkeypatch):
                         time.time() - daemon._IDLE_TTL - 10)
     monkeypatch.setattr('dp_cli.session.load_session',
                         lambda s: {'user_connected': True, 'port': 9333})
-    monkeypatch.setattr('dp_cli.session._port_open',
-                        lambda ip, p, timeout=0.3: True)
+    monkeypatch.setattr('dp_cli.session._probe_cdp_http',
+                        lambda p, timeout=1.5: True)
     daemon._idle_watcher(None, None, ev, 's')
     assert ev.flag is False        # 宽限 TTL 内——不自退
 
@@ -893,8 +893,8 @@ def test_idle_watcher_attached_dead_port_normal_ttl(monkeypatch):
                         time.time() - daemon._IDLE_TTL - 10)
     monkeypatch.setattr('dp_cli.session.load_session',
                         lambda s: {'user_connected': True, 'port': 9333})
-    monkeypatch.setattr('dp_cli.session._port_open',
-                        lambda ip, p, timeout=0.3: False)
+    monkeypatch.setattr('dp_cli.session._probe_cdp_http',
+                        lambda p, timeout=1.5: False)
     wakes = []
     monkeypatch.setattr(daemon, '_wake_acceptor', lambda s: wakes.append(s))
     daemon._idle_watcher(None, None, ev, 's')
@@ -910,8 +910,8 @@ def test_idle_watcher_attached_live_port_beyond_extended(monkeypatch):
                         time.time() - daemon._IDLE_TTL_ATTACHED - 10)
     monkeypatch.setattr('dp_cli.session.load_session',
                         lambda s: {'user_connected': True, 'port': 9333})
-    monkeypatch.setattr('dp_cli.session._port_open',
-                        lambda ip, p, timeout=0.3: True)
+    monkeypatch.setattr('dp_cli.session._probe_cdp_http',
+                        lambda p, timeout=1.5: True)
     wakes = []
     monkeypatch.setattr(daemon, '_wake_acceptor', lambda s: wakes.append(s))
     daemon._idle_watcher(None, None, ev, 's')

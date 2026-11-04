@@ -109,12 +109,16 @@ def register(cli):
                   help='点击次数（2=双击）')
     @click.option('--force', is_flag=True, help='跳过 actionability 检查')
     @click.option('--no-wait', is_flag=True, help='不等待可交互，立即执行')
+    @click.option('--effect', is_flag=True,
+                  help='效果断言兜底：点 link 类元素后页面零变化（URL/title/'
+                       '焦点同）则 JS 点击重试一次，response 如实标 '
+                       'fallback=effect_retry——React handler 吞点击归因修')
     @human_options
     @frame_option
     @click.option('--timeout', default=10, help='等待超时秒数', show_default=True)
     def cmd_click(locator, session, index, by_js, by_mouse, button, modifiers,
                   position, click_count, force, no_wait, human, human_min,
-                  human_max, frame, timeout):
+                  human_max, frame, timeout, effect):
         """点击元素（默认等待可见/稳定/无遮挡，--force 跳过）。
 
         成功响应 data.hints.touched_apis：动作 ±窗口内 netlog 捕获的
@@ -168,6 +172,8 @@ def register(cli):
             if ele is None:
                 return
             _t0 = time.time()      # touched_apis 因果窗口锚（动作时刻）
+            _sig0 = (getattr(page, 'url', None),
+                     getattr(page, 'title', None)) if effect else None
             if fb is not None or by_js:
                 ele.run_js('this.click()')
             elif by_mouse:
@@ -189,7 +195,25 @@ def register(cli):
                     return
             else:
                 ele.click()
+            _retry_js = False
+            if effect and fb is None and not (by_js or by_mouse or human
+                                              or advanced or force):
+                # 效果断言兜底——link 元素点击后 url/title 零变化=
+                # handler 疑似吞事件（React 水合竞态归因）：JS 派发重试
+                # 一次。只兜 <a>（双发导航幂等）；checkbox 类双触发
+                # 会反转状态故不兜。stale/探针异常静默跳过不阻塞。
+                time.sleep(0.25)
+                try:
+                    if getattr(ele, 'tag', None) == 'a' \
+                            and (getattr(page, 'url', None),
+                                 getattr(page, 'title', None)) == _sig0:
+                        ele.run_js('this.click()')
+                        _retry_js = True
+                except Exception:
+                    pass
             data = {'locator': locator}
+            if _retry_js:
+                data['fallback'] = 'effect_retry'
             if fb is not None:
                 data['fallback'] = 'by_js'   # advisory：明示非原路径
                 data['occluded'] = True

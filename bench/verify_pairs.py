@@ -29,8 +29,27 @@ def verified_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-def to_pairs(rows: list[dict], weak: bool = False) -> list[dict]:
+_POS_DUP_CAP = 3     # m2w 对中 positive 最大重复 3——real 对同元素跨步重复 ≤cap 防单点虚胖
+_POS_GLOBAL_CAP = 10 # 同 positive 跨无关 goal 全标正是"通用导航总产 delta"伪影——全局封顶
+_NEG_CAP = 24        # m2w 负例密度
+
+
+def _rank_negs(refs: list[dict], ch: dict) -> list[str]:
+    """难负例对齐：同 role 优先采样（m2w ~64% hard neg 形态），异 role 序贯补齐至 _NEG_CAP。"""
+    prole = ch.get("role", "")
+    same, other = [], []
+    for x in refs:
+        if x["ref"] == ch["ref"] or not x.get("name"):
+            continue
+        t = f"{x.get('role', '')} {x['name']}".strip()
+        (same if x.get("role", "") == prole else other).append(t)
+    return (same + other)[:_NEG_CAP]
+
+
+def to_pairs(rows: list[dict], weak: bool = False, dedupe: bool = True) -> list[dict]:
     pairs = []
+    pos_seen: dict[tuple[str, str], int] = {}
+    pos_global: dict[str, int] = {}
     for r in rows:
         refs = (r.get("state") or {}).get("refs") or []
         ch = next((x for x in refs if x.get("chosen")), None)
@@ -45,14 +64,16 @@ def to_pairs(rows: list[dict], weak: bool = False) -> list[dict]:
         pos = f"{ch.get('role', '')} {ch.get('name', '')}".strip()
         if not pos:
             continue
-        negs = [
-            f"{x.get('role', '')} {x.get('name', '')}".strip()
-            for x in refs
-            if x["ref"] != ch["ref"] and x.get("name")
-        ]
+        negs = _rank_negs(refs, ch)
         q = r.get("goal") or (r.get("chosen") or "").split(" -S ")[0]
         if not q or not negs:
             continue
+        if dedupe:
+            k = (q, pos)
+            if pos_seen.get(k, 0) >= _POS_DUP_CAP or pos_global.get(pos, 0) >= _POS_GLOBAL_CAP:
+                continue
+            pos_seen[k] = pos_seen.get(k, 0) + 1
+            pos_global[pos] = pos_global.get(pos, 0) + 1
         p = {"query": q, "positive": pos, "negatives": negs, "src": "verified"}
         if w:
             p["weak"] = True

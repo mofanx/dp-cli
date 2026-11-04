@@ -1160,3 +1160,35 @@ def test_run_daemon_meta_writes_version(
     monkeypatch.setattr(daemon, '_IDLE_TTL', 0)   # 触发 idle 自退
     t.join(timeout=10)
     assert not t.is_alive()
+
+
+def test_watchdog_exec_timeout_on_hung_invoke(monkeypatch):
+    """per-command 看门狗：_invoke 僵死→EXEC_TIMEOUT fail-closed
+    而非 worker 僵死。"""
+    import threading
+    from dp_cli import daemon
+
+    monkeypatch.setattr('dp_cli.commands.batch._invoke',
+                        lambda a: threading.Event().wait(30))
+    monkeypatch.setattr(daemon, '_cmd_timeout', lambda a: 0.2)
+    monkeypatch.setattr('dp_cli.commands.serve._snap_state',
+                        lambda s: {})
+    monkeypatch.setattr('dp_cli.decide_train._record_decide_row',
+                        lambda *a, **k: None)
+
+    class _C:
+        def __init__(self):
+            self.sent = []
+        def settimeout(self, t): pass
+        def recv(self, n):
+            if hasattr(self, '_done'):
+                return b''
+            self._done = True
+            return __import__('json').dumps({'argv':['eval','x']}).encode()+b'\n'
+        def sendall(self, b): self.sent.append(b)
+        def close(self): pass
+
+    conn = _C()
+    daemon._handle_conn(conn, 's')
+    out = __import__('json').loads(conn.sent[0].split(b'\n')[0])
+    assert out['result']['code'] == 'EXEC_TIMEOUT'

@@ -1433,3 +1433,45 @@ def test_spawn_page_tmpdir_fallback(monkeypatch, tmp_path):
     import pytest
     with pytest.raises(ConnectionError, match='临时目录.*不可写'):
         _spawn_page(AlwaysFail, object())
+
+
+# ── 僵死态矩阵（Windows 僵尸 chrome 归因回归）：活/死之外的第三态 ──
+
+def test_quit_hang_falls_back_to_kill(monkeypatch):
+    """quit() 挂起（WS 死）→ _QUIT_TIMEOUT 后 _kill_port_owner 兜底。"""
+    import threading, time
+    from dp_cli import session as S
+    killed = []
+    hang = threading.Event()
+
+    class _B:
+        def quit(self, del_data=False):
+            hang.wait(30)          # 模拟 WS 死——永不返回
+
+    class _P:
+        browser = _B()
+
+    monkeypatch.setattr(S, 'load_session',
+                        lambda s: {'port': 9333})
+    monkeypatch.setattr(S, '_evict_browser_cache', lambda s: None)
+    monkeypatch.setattr(S, 'delete_session', lambda s: None)
+    monkeypatch.setattr(S, '_port_open', lambda ip, p, timeout=0.3: True)
+    monkeypatch.setattr(S, '_detect_headless', lambda p: False)
+    monkeypatch.setattr(S, '_attach_page', lambda co: _P())
+    monkeypatch.setattr(S, '_kill_port_owner', lambda p: killed.append(p))
+    monkeypatch.setattr(S, '_QUIT_TIMEOUT', 0.2)
+    t0 = time.time()
+    S.close_browser('s')
+    assert killed == [9333] and time.time() - t0 < 5
+
+
+def test_probe_cdp_dead_http_is_dead(monkeypatch):
+    """TCP 通但 /json/version 超时/死 → _probe_cdp_http=False（僵尸态判死）。"""
+    from dp_cli import session as S
+
+    def _hang(*a, **k):
+        raise TimeoutError('read timed out')
+
+    monkeypatch.setitem(__import__('sys').modules, 'requests',
+                        type('M', (), {'get': _hang}))
+    assert S._probe_cdp_http(9222, timeout=0.1) is False

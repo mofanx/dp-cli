@@ -917,6 +917,9 @@ def _dl_path(session_name: str) -> str | None:
     return (load_session(session_name) or {}).get('download_dir')
 
 
+_QUIT_TIMEOUT = 10       # browser.quit 线程化等待上限（秒）——超时强杀兜底
+
+
 def _kill_port_owner(port: int) -> None:
     """按调试端口强杀属主进程——browser.quit 超时兜底。
 
@@ -1054,8 +1057,8 @@ def close_browser(session_name: str = 'default', del_data: bool = False,
                 _done.set()
 
         threading.Thread(target=_quit, daemon=True).start()
-        if not _done.wait(10):
-            debug(f'browser.quit(port={port}) 10s 超时——强杀兜底')
+        if not _done.wait(_QUIT_TIMEOUT):
+            debug(f'browser.quit(port={port}) {_QUIT_TIMEOUT}s 超时——强杀兜底')
             _kill_port_owner(port)
     except Exception as e:
         debug(f'browser.quit(port={port}) 失败，仍清理会话', e)

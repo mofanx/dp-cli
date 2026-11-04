@@ -178,6 +178,7 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
         return rec
     run_dpx(['wait', '--loaded', '--timeout', '20'], session, 30)
     stuck = 0
+    reanchored = False
     for i in range(max_steps):
         d = _decide(session, g['goal'])
         act = d['action'] or 'blocked'
@@ -185,6 +186,15 @@ def run_task(session: str, g: dict, max_steps: int) -> dict:
                              'engine': d.get('engine'),
                              'conf': d.get('conf'),
                              'decide_status': d['status']})
+        if act == 'blocked' and d['status'] == 'ok' and not reanchored:
+            # decide 拒选多为 goal-页面错配（解剖实锤：中间步漂移后
+            # 页面只剩营销导航/页脚，候选与 goal 无交集——模型拒选对）
+            # ——回任务锚点重开一次再判死，区分"真无路"与"漂丢了"
+            reanchored = True
+            rec['steps'][-1]['reanchor'] = True
+            run_dpx(['open', g['url'], *_CONNECT], session, 60)
+            run_dpx(['wait', '--loaded', '--timeout', '20'], session, 30)
+            continue
         if act == 'done' or (act == 'blocked' and d['status'] == 'ok'):
             rec['verdict'] = 'done' if act == 'done' else 'blocked'
             break

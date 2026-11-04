@@ -442,8 +442,23 @@ def run_task(task: dict, cfg) -> dict:
                 dict(st, args=[loc, *base_args[1:]])
             calls = step_calls(st_eff, cfg)
             worst = 'ok'
+            healed = False
             for argv in calls:
                 r = run_dpx(argv, cfg.session, timeout)
+                if (r.get('code') == 'SESSION_DISCONNECTED'
+                        and not healed):
+                    # stale-attach 自愈：session 记的死 bridge/port 被
+                    # 复用即判 DISCONNECTED（91 任务全灭归因）——停
+                    # daemon 清绑定+重试一次，让 auto-connect 重建通道
+                    healed = True
+                    run_dpx(['daemon-stop'], cfg.session, 20)
+                    try:
+                        from dp_cli.session import delete_session
+                        delete_session(cfg.session)
+                    except Exception:
+                        pass
+                    cfg.attached = False
+                    r = run_dpx(argv, cfg.session, timeout)
                 call_rec = {'argv': argv, 'status': r['status'],
                             'code': r.get('code'),
                             'elapsed_ms': r['elapsed_ms'],

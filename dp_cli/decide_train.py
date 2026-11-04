@@ -75,10 +75,11 @@ def _file() -> Path:
 
 
 # ── 快照 diff 证据判定（断言可执行性）─────────────────────────────
-# URL/hash/refs_epoch/DOM sig 任一变化=有执行后状态证据；全同=
-# 动作疑似未生效的空快照（不冒充 verified）。bench/verified_data.
-# _state_delta 与本函数同判据（bench 侧自包含副本，勿分叉）。
-_STATE_KEYS = ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig')
+# URL/hash/refs_epoch/DOM sig/scroll/焦点/dom_len 任一变化=有执行后
+# 状态证据；全同=动作疑似未生效的空快照（不冒充 verified）。
+# bench/verified_data._state_delta 与本函数同判据（bench 侧自包含副本，勿分叉）。
+_STATE_KEYS = ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig',
+               'scroll', 'focus', 'dom_len')
 
 
 def state_delta(pre: dict, post: dict) -> list:

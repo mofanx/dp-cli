@@ -76,7 +76,8 @@ def _state_delta(pre, post):
     bench 侧自包含副本，保持 verified_data 零依赖可独立 import。"""
     if not isinstance(pre, dict) or not isinstance(post, dict):
         return []
-    return [k for k in ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig')
+    return [k for k in ('url', 'hash', 'refs_epoch', 'sig', 'dom_sig',
+                        'scroll', 'focus', 'dom_len')
             if post.get(k) is not None and post.get(k) != pre.get(k)]
 
 

@@ -171,11 +171,24 @@ def _snap_state(session: str) -> dict:
     global _IN_SNAP
     _IN_SNAP = True
     try:
-        code, r = _invoke(['eval', 'location.href', '--session', session])
+        code, r = _invoke(['eval',
+                           "(function(){var a=document.activeElement||{};"
+                           "return JSON.stringify({u:location.href,"
+                           "s:window.scrollY|0,"
+                           "f:(a.tagName||'')+(a.id?'#'+a.id:''),"
+                           "l:document.body?document.body.innerText.length:0})})()",
+                           '--session', session])
         if code == 0 and isinstance(r, dict):
             url = (r.get('data') or {}).get('result')
+            snap = {}
             if isinstance(url, str):
-                snap = {'url': url}
+                try:
+                    d = __import__('json').loads(url)
+                    snap = {'url': d['u'], 'scroll': d['s'],
+                            'focus': d['f'], 'dom_len': d['l']}
+                except Exception:
+                    snap = {'url': url}     # 旧形态纯 url 串回退
+            if snap:
                 try:
                     from dp_cli.session import load_session
                     sig = ((load_session(session) or {}).get('refs_epoch')

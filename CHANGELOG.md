@@ -1,6 +1,12 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.43] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.44] - 2026-11-04
+
+### 修复
+- **agent_loop CF 质询页拦截**（`a7952a9`）：`/cloudflare`/`challenge`/`/cdn-cgi/` interstitial 入口判 `challenge_blocked`——v2 难案实锤质询页"重新加载"死循环 3326 行同形态
+- **agent_loop stuck 探测**（`57356c6`）：url+候选集指纹连续 3 步不变判 `stuck` 提前死，`kind=stuck` 入 hard_cases——click/scroll 原地打转烧满 max_steps（87% 难案形态）通用兜底
+
+## [0.15.43] - 2026-11-04
 
 ### 修复
 - **agent_loop blocked 回锚**（`ba5e55b`）：decide 拒选先回任务锚点重开 URL 一次再判死——decide_unsure 87% 根因=goal-页面错配（中间步漂移后错页反复拒选，模型行为正确非缺陷）

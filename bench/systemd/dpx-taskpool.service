@@ -1,0 +1,31 @@
+[Unit]
+Description=dpx task pool bench run (every 3h)
+# 用户态 oneshot——由 dpx-taskpool.timer 周期触发，auto-connect 挂用户 Chrome
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/yan/ubuntu/project/github/dp-cli
+# python/dpx 在 miniforge3/bin（systemd user 默认 PATH 不含）
+Environment=PATH=/home/yan/miniforge3/bin:/home/yan/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+# GUI 会话变量：auto-connect 连用户 Chrome（Wayland GNOME 实测值）
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+# 命令路由走常驻 daemon（preflight 里 daemon-start；免每步启动税+netlog arm）
+Environment=DPX_DAEMON=1
+# 跑批前先停残留 daemon 防陈旧码漂移——`-` 前缀容错：daemon 不在/
+# stop 失败不阻断跑批（build_id 警告只告警不拦截，必须前置物理停）
+ExecStartPre=-/home/yan/miniforge3/bin/python3.13 -m dp_cli.main daemon-stop -S taskpool
+# 裸跑=全量 20 任务（run_task_pool.py 无 --all 旗）
+# --no-auto-connect：auto-connect 只探测已运行用户 Chrome 不自启，
+# 用户浏览器不在即 91×DISCONNECTED 全灭（t2 归因）——独立自管浏览器稳态
+ExecStart=/home/yan/miniforge3/bin/python /home/yan/ubuntu/project/github/dp-cli/bench/run_task_pool.py --no-auto-connect
+# OOM 边界：taskpool Chrome+双飞轮+JVM 并发峰值曾触 kernel OOM kill
+# （23:52 手动轮 51/91 截断）——cgroup 内存上限先杀本 unit 不伤全局
+MemoryMax=2G
+MemorySwapMax=512M
+OOMPolicy=kill
+# 单步超时 120s × ~20 任务：给足上限，超时由 systemd 兜底
+TimeoutStartSec=5400
+# 有任务 fail 时脚本 exit 1——如实保留，unit 标 failed 供 journal 排查

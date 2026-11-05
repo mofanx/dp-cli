@@ -390,10 +390,34 @@ def _risk_check(session: str) -> str:
     return page if RISK_RE.search(page) else ''
 
 
+def _cookie_fallback(cfg, task) -> bool:
+    """requires_login 无头兜底：cookie 文件注入 session——一次性注入
+    标志跨任务共享（注入一次全池受益）。文件不在/注入失败→False。"""
+    if cfg.cookies_injected is not None:
+        return cfg.cookies_injected
+    cfg.cookies_injected = False
+    if not os.path.isfile(cfg.cookies):
+        debug(f'cookie 文件不存在: {cfg.cookies}')
+        return False
+    r = run_dpx(['cookies-import', cfg.cookies], cfg.session, 30)
+    cfg.cookies_injected = (r['status'] == 'ok')
+    return cfg.cookies_injected
+
+
 def run_task(task: dict, cfg) -> dict:
     tid = task.get('task_id', '?')
     steps = task.get('steps') or []
     t0 = time.monotonic()
+    # requires_login：auto-connect 直连用户 Chrome（带登录态）才能跑——
+    # 降级独立浏览器时先试 cookie 注入，失败判 skip 非 fail（不虚报）
+    if task.get('requires_login') and getattr(cfg, 'degraded', False):
+        if not _cookie_fallback(cfg, task):
+            return {'task_id': tid, 'goal': task.get('goal'),
+                    'verdict': 'skip',
+                    'total_ms': int((time.monotonic() - t0) * 1000),
+                    'steps_n': 0, 'steps_ok': 0, 'expects': [],
+                    'decide_calls': [], 'bugs': ['AUTH_SKIP'],
+                    'netlog_delta': 0, 'steps': []}
     nlog0 = netlog_lines(cfg.session)
     records, asserts, decide_calls, bugs = [], [], [], []
     hard_fail = False
@@ -686,6 +710,9 @@ def main():
                     action='store_true', default=True)
     ap.add_argument('--no-auto-connect', dest='auto_connect',
                     action='store_false')
+    ap.add_argument('--cookies', default=os.path.expanduser(
+                    '~/.dp_cli/taskpool_cookies.txt'),
+                    help='无头兜底 cookie 文件（requires_login 任务注入）')
     ap.add_argument('--timeout', type=int, default=120,
                     help='单步超时秒数（默认 120）')
     ap.add_argument('--daemon', dest='daemon', action='store_true',
@@ -695,6 +722,8 @@ def main():
     cfg = ap.parse_args()
     cfg.attached = False      # auto-connect attach 状态（跨任务共享 session）
     cfg.pinned = False        # active_tab 绑定状态
+    cfg.degraded = False      # auto-connect 失败→独立浏览器降级标记
+    cfg.cookies_injected = None  # requires_login cookie 注入一次性标志
 
     tasks = []
     for line in Path(cfg.tasks).read_text(encoding='utf-8').splitlines():
@@ -724,6 +753,13 @@ def main():
                           'elapsed_ms': r['elapsed_ms']})
         print(f'  preflight attach: {r["status"]} '
               f'{r.get("code") or ""}'.rstrip(), flush=True)
+        if not cfg.attached:
+            # 用户 Chrome 不在→降级独立浏览器（requires_login 走
+            # cookie 注入兜底，注入失败判 skip 非 fail）
+            cfg.auto_connect = False
+            cfg.degraded = True
+            print('  →降级独立浏览器（requires_login 走 cookie 兜底）',
+                  flush=True)
     if cfg.daemon and cfg.attached:
         r = run_dpx(['daemon-start'], cfg.session, 30)
         preflight.append({'argv': ['daemon-start'], 'status': r['status'],

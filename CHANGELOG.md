@@ -1,6 +1,13 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.46] - 2026-11-04
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.47] - 2026-11-05
+
+### 修复
+- **taskpool 独立浏览器路径补 `--browser`/`--headless`**（`955c219`）：DrissionPage 默认 `browser_path='chrome'` 裸名不在 PATH→spawn FileNotFoundError→30s 空转 `BROWSER_START_FAILED`；open 30s 超时→2s 实证修通，91 任务 0%→59% pass
+- **taskpool 登录态三态通道**（`aa328d6`）：auto-connect 优先复用用户 Chrome（保登录态+抗风控）→独立浏览器 cookie 注入兜底（`--cookies`）→`requires_login` 任务注入失败判 `AUTH_SKIP` 非 fail（不虚报）；site_tasks 4 任务标记；`bench/systemd/` unit 入库+`MemoryMax=2G`/`OOMPolicy` 防 OOM 复发
+- **site_tasks 选择器漂移维护批**（`18fe615`）：9 处 `ELEMENT_NOT_FOUND` 主选更新+`locators` 防漂回退（GitHub `qbsearch-input`/baidu `#kw`/zhihu `.SearchTabs`/jd `.pn-next` 等）
+
+## [0.15.46] - 2026-11-04
 
 ### 修复
 - **close+daemon 卡死三修**（`6b8b7d4`）：Windows 僵尸 chrome（端口监听但 CDP 死）实测病灶——`browser.quit()` 线程化 10s 超时+按调试端口属主 pid 强杀兜底（`_kill_port_owner`：Win netstat→taskkill/POSIX proc+lsof）；daemon idle 探测 `_port_open`→`_probe_cdp_http` 强探针（TCP 通≠可 attach）；daemon per-command 看门狗 `_invoke` 线程化超时 `EXEC_TIMEOUT` fail-closed，防 worker 僵死并发位泄漏

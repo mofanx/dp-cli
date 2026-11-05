@@ -722,7 +722,8 @@ def main():
     cfg = ap.parse_args()
     cfg.attached = False      # auto-connect attach 状态（跨任务共享 session）
     cfg.pinned = False        # active_tab 绑定状态
-    cfg.degraded = False      # auto-connect 失败→独立浏览器降级标记
+    cfg.degraded = not cfg.auto_connect  # 独立浏览器=登录态降级
+                                       # （auto-connect 失败分支另行置 True）
     cfg.cookies_injected = None  # requires_login cookie 注入一次性标志
 
     tasks = []

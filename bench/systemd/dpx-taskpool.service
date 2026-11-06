@@ -20,7 +20,7 @@ ExecStartPre=-/home/yan/miniforge3/bin/python3.13 -m dp_cli.main daemon-stop -S 
 # 裸跑=全量 20 任务（run_task_pool.py 无 --all 旗）
 # --no-auto-connect：auto-connect 只探测已运行用户 Chrome 不自启，
 # 用户浏览器不在即 91×DISCONNECTED 全灭（t2 归因）——独立自管浏览器稳态
-ExecStart=/home/yan/miniforge3/bin/python /home/yan/ubuntu/project/github/dp-cli/bench/run_task_pool.py --no-auto-connect
+ExecStart=/home/yan/miniforge3/bin/python /home/yan/ubuntu/project/github/dp-cli/bench/run_task_pool.py
 # OOM 边界：taskpool Chrome+双飞轮+JVM 并发峰值曾触 kernel OOM kill
 # （23:52 手动轮 51/91 截断）——cgroup 内存上限先杀本 unit 不伤全局
 MemoryMax=2G

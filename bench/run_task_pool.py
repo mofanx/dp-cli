@@ -837,7 +837,10 @@ def main():
          'summary': summary, 'tasks': results},
         ensure_ascii=False, indent=2), encoding='utf-8')
     print_table(results, summary, report)
-    return 0 if summary['verdicts'].get('fail', 0) == 0 else 1
+    # 退出码语义：跑完出 report 即 0——fail/partial 是数据不是故障，
+    # 非零只留给 aborted（连续 infra 错误中断），否则 systemd 每次
+    # 都标 FAILED 淹没真故障
+    return 1 if summary.get('aborted') else 0
 
 
 if __name__ == '__main__':

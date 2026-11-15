@@ -471,12 +471,15 @@ def register(cli):
                   help='等待元素 DOM 静默（outerHTML 连续 --for 秒不变）')
     @click.option('--for', 'stable_for', type=float, default=0.5,
                   show_default=True, help='--stable 的静默窗口秒数')
+    @click.option('--idle-ignore', 'idle_ignore', multiple=True,
+                  help='wait --idle 额外豁免的 URL 正则（可多次），'
+                       '叠加在内置遥测/心跳白名单之上')
     @click.option('--timeout', default=30, help='超时秒数', show_default=True)
     @click.option('--poll', '--no-events', 'force_poll', is_flag=True,
                   help='禁用事件驱动（--text/--js），强制纯轮询')
     def wait(session, url, title, locator, locator_gone, text, loaded, idle,
              downloads_done, downloads_done_alias, popup, js_expr, resp_pattern,
-             stable_loc, stable_for, timeout, force_poll):
+             stable_loc, stable_for, idle_ignore, timeout, force_poll):
         """等待条件满足。
 
         \b
@@ -502,8 +505,15 @@ def register(cli):
         try:
             if idle is not None:
                 _idle_stats = {}
+                _kw = {}
+                if idle_ignore:
+                    import re as _re
+                    from dp_cli.commands._utils import _IDLE_IGNORE_RE
+                    _kw['ignore_re'] = _re.compile(
+                        f'(?:{_IDLE_IGNORE_RE.pattern})|(?:{"|".join(idle_ignore)})',
+                        _re.IGNORECASE)
                 wait_network_idle(page, idle_time=idle, timeout=timeout,
-                                  stats=_idle_stats)
+                                  stats=_idle_stats, **_kw)
                 _idle_data = format_page_info(page)
                 # 长挂请求老化剔除计数透出——普通 fetch 长轮询
                 # 豁免可观测（jd/知乎 pending 永挂归因）

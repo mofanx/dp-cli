@@ -815,6 +815,16 @@ def _handle_conn(conn, session):
                     code, result = _box.get(
                         'r', (1, {'status': 'error', 'code': 'INTERNAL',
                                   'message': 'worker 无响应'}))
+                # 后置 arm：open/tab-new/tab-select 换绑的 tab 要立即
+                # 挂 netlog——否则新 tab 的请求在下一条命令前置 arm
+                # 之前全部漏捕（httpbin_api_adapter EMPTY_LIST 归因：
+                # eval fetch 在 open 新 tab 上零捕获）。serve 路径
+                # 本就有命令后 arm（serve.py），daemon 补齐同语义。
+                try:
+                    from dp_cli.commands.serve import _maybe_arm_netlog
+                    _maybe_arm_netlog()
+                except Exception:
+                    pass
                 _rec = (_rs, argv, result, code, _pre)
         out = {'exit': code, 'result': result}
         if req_id is not None:

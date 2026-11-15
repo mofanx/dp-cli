@@ -230,6 +230,8 @@ dpx snapshot                → 看页面结构，每个元素有 [N] 编号
 dpx fill "ref:15" <val>     → 用编号填写输入框
 dpx click "ref:19"          → 用编号点击按钮/链接
 dpx wait --text "xxx"       → 等待预期结果出现
+# wait --idle 遇站点高频轮询/心跳永不空闲时，用 --idle-ignore 加 URL 正则豁免：
+#   dpx wait --idle --idle-ignore "zhihu|example\.com/poll"（可多次，叠加内置白名单）
 dpx snapshot                → 确认操作结果（编号会刷新）
 ```
 

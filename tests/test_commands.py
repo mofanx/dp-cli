@@ -4153,7 +4153,8 @@ def test_mcp_without_sdk_actionable(runner, monkeypatch):
 
 @pytest.mark.unit
 def test_netlog_armed_before_invoke(tmp_path, monkeypatch, sock_dir):
-    """daemon 路径：_maybe_arm_netlog 在 _invoke 前（首导航命令流量可捕获）。"""
+    """daemon 路径：_maybe_arm_netlog 在 _invoke 前（首导航命令流量可捕获）
+    且在 _invoke 后（open/tab-new 换绑 tab 立即挂载）。"""
     import threading
     import dp_cli.daemon as dm
     order = []
@@ -4177,7 +4178,7 @@ def test_netlog_armed_before_invoke(tmp_path, monkeypatch, sock_dir):
             break
         _t.sleep(0.1)
     r = dm._send_recv('ord', {'argv': ['eval', '1']}, 10)
-    assert order == ['arm', 'invoke']
+    assert order == ['arm', 'invoke', 'arm']
 
 
 @pytest.mark.unit

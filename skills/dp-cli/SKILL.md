@@ -378,6 +378,12 @@ dpx tab close                           → 关闭绑定的标签页
 
 > `dpx tab <sub>` 与旧的连字符写法完全等价（如 `tab list` = `tab-list`），
 > 旧命令全部保留——历史脚本不受影响。
+>
+> **通用规则**：所有 `X-*` 命令族都有等价子命令组——`cookie list`=`cookie-list`、
+> `localstorage get`=`localstorage-get`、`assert visible`=`assert-visible`、
+> `rpc call`=`rpc-call`、`record start`=`record-start`、`daemon status`=`daemon-status` 等。
+> 族清单：agent/assert/clipboard/console/cookie/daemon/dialog/go/hook/http/
+> localstorage/record/rpc/sessionstorage/state/tab。裸 `dpx X`（无子命令）显示 usage。
 
 **关键特性：**
 - 绑定后所有 `dp` 命令只在指定标签页执行，无需标签页处于激活/前台状态——**绑定页即操作域**，用户之后手动打开的页面天然不受影响

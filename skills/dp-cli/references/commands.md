@@ -136,13 +136,28 @@
 | 元信息 | `install` | [with_skills], [directory], [all_layouts], [check_only], [agents_md] |
 | 模型 | `model` |  |
 | 模型 | `model-status` | [do_load] |
+| 其他 | `agent` |  |
 | 其他 | `agent-setup` | session, eng, cmd |
 | 其他 | `agent-state` | session, top_k |
+| 其他 | `assert` |  |
+| 其他 | `clipboard` |  |
+| 其他 | `console` |  |
+| 其他 | `cookie` |  |
+| 其他 | `daemon` |  |
 | 其他 | `daemon-start` | session |
 | 其他 | `daemon-status` | session |
 | 其他 | `daemon-stop` | session |
 | 其他 | `decide` | goal, session, engine, answer, answer_file, min_conf, min_margin, cascade, no_cache, top_k |
 | 其他 | `decide-feedback` | goal, session, chosen_ref, success, post_state |
 | 其他 | `decide-train-export` | out |
+| 其他 | `dialog` |  |
+| 其他 | `go` |  |
+| 其他 | `hook` |  |
+| 其他 | `http` |  |
+| 其他 | `localstorage` |  |
 | 其他 | `mcp` | session, unsafe_eval, domains |
+| 其他 | `record` |  |
+| 其他 | `rpc` |  |
+| 其他 | `sessionstorage` |  |
+| 其他 | `state` |  |
 | 其他 | `tab` |  |

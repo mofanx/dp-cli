@@ -365,26 +365,35 @@ dpx goto "https://my-site.com/dashboard"  → 已登录状态
 **标签页绑定（Tab Pinning）：自动化任务与手动浏览分离**
 
 ```
-dpx tab-list                           → 查看所有标签页（显示 [pinned] 标记）
-dpx tab-new "example.com" --new-window  → 新窗口创建标签页（自动化专用），自动绑定
-dpx tab-select example                  → 按 URL 关键词绑定标签页
-dpx tab-select 1                        → 按序号绑定（从 0 开始）
-dpx tab-select none                     → 解除绑定，恢复默认行为
-dpx snapshot                           → 操作绑定的标签页（无需激活）
-dpx tab-close                          → 关闭绑定的标签页
+dpx tab list                           → 查看所有标签页（pinned 显示 index）
+dpx tab new "example.com"              → 后台新建标签页并自动绑定（默认不抢前台）
+dpx tab new "example.com" --foreground → 显式要求前台激活时才用
+dpx tab select                          → 绑定浏览器当前激活页（用户正在看的页面）
+dpx tab select 1                        → 按序号绑定（从 0 开始，= tab-list 的 index）
+dpx tab select example                  → 按 URL 关键词绑定标签页
+dpx tab select none                     → 解除绑定，恢复默认行为
+dpx snapshot                            → 操作绑定的标签页（无需激活）
+dpx tab close                           → 关闭绑定的标签页
 ```
 
+> `dpx tab <sub>` 与旧的连字符写法完全等价（如 `tab list` = `tab-list`），
+> 旧命令全部保留——历史脚本不受影响。
+
 **关键特性：**
-- 绑定后所有 `dp` 命令只在指定标签页执行，无需标签页处于激活/前台状态
-- 支持按序号/tab_id/URL关键词/title关键词/none 解绑
+- 绑定后所有 `dp` 命令只在指定标签页执行，无需标签页处于激活/前台状态——**绑定页即操作域**，用户之后手动打开的页面天然不受影响
+- `tab-list`/`tab list` 输出 `pinned` 为 **index 整数**（直接喂 `tab select N`），`pinned_id` 保留全量 tab_id
+- `tab-new`/`tab new` 默认**后台打开**（不打扰用户当前页面）+ 自动绑定；`--foreground` 才切前台
+- `tab-select`/`tab select` 无参 = 绑定浏览器当前激活页（latest_tab）——用户说"操作当前页面"时用它。**注意：latest_tab 是"用户前台激活页"，不是"最近创建的 tab"**——`tab new` 后台开的页不成为 latest_tab，此时无参 select 会绑回用户前台页而非新页；`tab new` 返回时已自动绑定，**不要再 select**，直接操作即可
+- `--new-window` 每次调用新建一个**浏览器窗口**，仅在用户明确要求窗口隔离或长驻自动化任务时使用，用完记得 `tab-close` 回收
 - URL 可省略 `https://`（如 `dpx tab-new baidu.com`）
 
 **典型场景：**
 ```bash
 dpx open --auto-connect
-dpx tab-new https://shop.example.com --new-window   # 新窗口 + 自动绑定
-dpx snapshot                                        # 只操作绑定的标签页
-dpx click "ref:5"                                   # 同时你可在原窗口自由浏览
+dpx tab select                                  # 用户说"当前页面"→ 绑用户正在看的 tab
+dpx tab new https://shop.example.com            # 后台开新页+绑定，用户无感知
+dpx snapshot                                    # 只操作绑定的标签页
+dpx click "ref:5"                               # 同时你可在原窗口自由浏览
 ```
 
 ### 场景十：反自动化检测（遇到网站阻止/验证码/空白）

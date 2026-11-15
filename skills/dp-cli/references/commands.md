@@ -83,7 +83,7 @@
 | 观测 | `trace` | [session], [duration], [out_file], [categories] |
 | 标签页 | `tab-close` | [index_or_id], [session] |
 | 标签页 | `tab-list` | [session] |
-| 标签页 | `tab-new` | [url], [session], [background], [new_window] |
+| 标签页 | `tab-new` | [url], [session], [background], [foreground], [new_window] |
 | 标签页 | `tab-select` | [target], [index], [session] |
 | 存储 | `cookie-clear` | [session] |
 | 存储 | `cookie-delete` | <name>, [session] |
@@ -145,3 +145,4 @@
 | 其他 | `decide-feedback` | goal, session, chosen_ref, success, post_state |
 | 其他 | `decide-train-export` | out |
 | 其他 | `mcp` | session, unsafe_eval, domains |
+| 其他 | `tab` |  |

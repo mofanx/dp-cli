@@ -310,11 +310,14 @@ def test_b3_tab_select_index_with_none_conflict(monkeypatch):
 
 
 def test_b3_tab_select_no_target_errors(monkeypatch):
-    """TARGET 与 --index 双缺 → INVALID_ARGS（不再是裸 Usage）。"""
+    """无参 tab-select 语义已改为"绑定当前页"（B16）——
+    见 test_b16_tab_select_no_target_binds_current。"""
     _tab_mocks(monkeypatch)
     from dp_cli.main import cli
     r = CliRunner().invoke(cli, ['tab-select'])
-    assert json.loads(r.output)['code'] == 'INVALID_ARGS'
+    out = json.loads(r.output)
+    # _TabPage.latest_tab=None → 无当前页可绑 → TAB_NOT_FOUND
+    assert out['code'] in ('TAB_NOT_FOUND', 'INVALID_ARGS')
 
 
 def test_b3_tab_select_index_out_of_range(monkeypatch):
@@ -323,6 +326,164 @@ def test_b3_tab_select_index_out_of_range(monkeypatch):
     from dp_cli.main import cli
     r = CliRunner().invoke(cli, ['tab-select', '--index', '9'])
     assert json.loads(r.output)['code'] == 'TAB_NOT_FOUND'
+
+
+# ── B16：tab-new 默认后台+绑定；tab-select 无参绑当前页 ──────────
+
+class _NewTabPage(_TabPage):
+    """带 new_tab 的 fake page——记录 background/new_window 实参。"""
+
+    def __init__(self, ids=('AAA', 'BBB')):
+        super().__init__(ids)
+        self.created = []
+        self.latest_tab = self._tabs[ids[0]] if ids else None
+
+    def new_tab(self, url=None, new_window=False, background=False,
+                new_context=False):
+        tid = f'NEW{len(self.created) + 1}'
+        self.created.append({'url': url, 'new_window': new_window,
+                             'background': background})
+        self._tabs[tid] = _Tab(tid)
+        self.tab_ids.append(tid)
+        return self._tabs[tid]
+
+
+def _tabnew_mocks(monkeypatch, ids=('AAA', 'BBB')):
+    page = _NewTabPage(ids)
+    monkeypatch.setattr(tab_mod, '_get_page', lambda s, **kw: page)
+    monkeypatch.setattr(tab_mod, 'load_session', lambda s: {})
+    saved = []
+    monkeypatch.setattr(tab_mod, 'save_session',
+                        lambda s, d: saved.append(d))
+    return page, saved
+
+
+def test_b16_tab_new_default_background_and_bound(monkeypatch):
+    """默认 tab-new：后台打开（不打扰用户前台）+ 自动绑定。
+
+    不干扰用户原则——新标签页不应抢占前台，除非显式 --foreground。
+    """
+    page, saved = _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-new', 'example.com'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.created[0]['background'] is True
+    assert page.created[0]['new_window'] is False
+    assert saved and saved[-1]['active_tab'] == 'NEW1'
+
+
+def test_b16_tab_new_foreground_activates(monkeypatch):
+    """--foreground 显式要求前台时才 background=False。"""
+    page, saved = _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-new', 'example.com',
+                                 '--foreground'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.created[0]['background'] is False
+    assert saved and saved[-1]['active_tab'] == 'NEW1'
+
+
+def test_b16_tab_new_background_no_bind(monkeypatch):
+    """--background 保留旧义：后台打开且不绑定。"""
+    page, saved = _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-new', 'example.com',
+                                 '--background'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.created[0]['background'] is True
+    assert not saved or 'active_tab' not in saved[-1]
+
+
+def test_b16_tab_select_no_target_binds_current(monkeypatch):
+    """tab-select 无参 → 绑定浏览器当前激活页（latest_tab）。
+
+    用户说"操作当前页面"时，agent 绑的应是用户正在看的 tab，
+    而不是新开页面或报错。
+    """
+    page, saved = _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-select'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['id'] == 'AAA'      # latest_tab = 当前页
+    assert saved and saved[-1]['active_tab'] == 'AAA'
+
+
+def test_b16_tab_select_no_target_no_tabs(monkeypatch):
+    """无任何标签页时无参 tab-select → TAB_NOT_FOUND 而非崩溃。"""
+    page = _NewTabPage(())
+    page.latest_tab = None
+    page.tab_ids = []
+    monkeypatch.setattr(tab_mod, '_get_page', lambda s, **kw: page)
+    monkeypatch.setattr(tab_mod, 'load_session', lambda s: {})
+    monkeypatch.setattr(tab_mod, 'save_session', lambda s, d: None)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-select'])
+    assert json.loads(r.output)['code'] == 'TAB_NOT_FOUND'
+
+
+# ── B17：tab 子命令组 + tab-list pinned 显示 index ─────────────
+
+def test_b17_tab_group_list(monkeypatch):
+    """dpx tab list ≡ dpx tab-list——子命令组向后兼容入口。"""
+    page, _ = _tabnew_mocks(monkeypatch)
+    page._tabs['AAA'].url = 'https://a.example/'
+    page._tabs['AAA'].title = 'A'
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab', 'list'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['count'] == 2
+
+
+def test_b17_tab_group_new_binds(monkeypatch):
+    """dpx tab new URL ≡ tab-new——后台+自动绑定。"""
+    page, saved = _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab', 'new', 'example.com'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert page.created[0]['background'] is True
+    assert saved and saved[-1]['active_tab'] == 'NEW1'
+
+
+def test_b17_tab_group_select_current(monkeypatch):
+    """dpx tab select（无参）≡ tab-select——绑当前激活页。"""
+    _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab', 'select'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok' and out['data']['id'] == 'AAA'
+
+
+def test_b17_tab_list_pinned_is_index(monkeypatch):
+    """tab-list 顶层 pinned 输出 index（可直接喂 tab-select N），
+    pinned_id 保留全量 id 不丢信息。"""
+    page, _ = _tabnew_mocks(monkeypatch)
+    # 预置绑定到 BBB（index 1）
+    monkeypatch.setattr(tab_mod, 'load_session',
+                        lambda s: {'active_tab': 'BBB'})
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-list'])
+    out = json.loads(r.output)
+    assert out['status'] == 'ok', out
+    assert out['data']['pinned'] == 1
+    assert out['data']['pinned_id'] == 'BBB'
+    pinned_entries = [t for t in out['data']['tabs'] if t.get('pinned')]
+    assert pinned_entries and pinned_entries[0]['index'] == 1
+
+
+def test_b17_tab_list_pinned_none(monkeypatch):
+    """无绑定时 pinned=null、pinned_id=null。"""
+    _tabnew_mocks(monkeypatch)
+    from dp_cli.main import cli
+    r = CliRunner().invoke(cli, ['tab-list'])
+    out = json.loads(r.output)
+    assert out['data']['pinned'] is None
+    assert out['data']['pinned_id'] is None
 
 
 # ── B4：eval 多语句 IIFE 兜底 ───────────────────────────────────

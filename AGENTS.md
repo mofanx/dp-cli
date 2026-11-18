@@ -51,6 +51,8 @@
 - 模拟 click 对 React 页**偶发**静默空转：`ele.click()`/裸 CDP `Input.dispatchMouseEvent` 均返回 ok 但 handler 未触发（saucedemo 实测，eval `.click()` 同刻立生效）——fresh 态三条路径又全工作，未复现确定性路径；疑似会话态/水合竞态。任务层对策：React SPA 加购类动作走 eval 点击+效果断言兜底（saucedemo_full 归因）
 
 - daemon netlog arm 集合不含 `tab-new` 新建 tab——eval fetch 类请求在新 tab 发出时零捕获（netlog grep=0 实锤），`api-record` EMPTY_LIST 三连归因；任务定义需 fetch 捕获时走 `open`（绑定 tab 已 arm）勿 `tab-new`，或 eval 前先 tab-select 回绑定 tab（httpbin_api_adapter 修复路径）
+- `wait --idle` 曾把 `requestWillBeSent`/`loadingFailed` 回调置 **None**——set_callback 单槽覆盖把 netlog 被动日志永久掐断且 resp 独活呈"半活"假象（netlog 文件 526 行全 resp 零 req 实锤），`api-record`/`api-list` 恒 EMPTY_LIST——任何挂 Network 事件回调的命令退出必须**快照 event_handlers 逐事件恢复**（har-dump 已有同款修复，`_utils.wait_network_idle` 已对齐+`netlog.rearm_netlog_for_page` 兜底）；`test_wait_idle_restores_netlog_callbacks` 回归钉死
+- GitHub 首页 React AppHeader 已删 `qbsearch-input` 自定义元素——搜索入口只剩 `button[aria-label*="quick search"]`（class 名全部 CSS-module 哈希化不可选）；任务选择器锚 aria-label 语义属性，勿锚哈希 class
 
 ## 数据产物入库纪律
 

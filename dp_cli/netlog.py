@@ -139,6 +139,15 @@ def arm_netlog(page, session: str, force: bool = False) -> bool:
         return False
 
 
+def rearm_netlog_for_page(page) -> None:
+    """按 tab_id 找回已 arm 的 session 强制重挂——单槽回调被第三方
+    置 None（且无法快照恢复）后的被动日志兜底。"""
+    tab_id = getattr(page, 'tab_id', None)
+    for sess, armed_tab in list(_armed.items()):
+        if armed_tab == tab_id:
+            arm_netlog(page, sess, force=True)
+
+
 def prune_armed(active_sessions) -> None:
     """`_armed` 按活跃 session 集收编——session 删除/关闭后残留键回收
     （长驻 serve/daemon 进程的内存微漏，重启即清但长跑会积）。

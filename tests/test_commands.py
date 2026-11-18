@@ -1877,6 +1877,47 @@ def test_har_dump_restores_netlog_callbacks(runner, monkeypatch):
 
 
 @pytest.mark.unit
+def test_wait_idle_restores_netlog_callbacks():
+    """wait --idle 的 set_callback 单槽覆盖同 har-dump——退出必须恢复
+    netlog 已挂的 req/fail 回调而非置 None；否则被动日志断流（resp
+    独活的半活态），api-record/api-list 恒 EMPTY_LIST（taskpool
+    httpbin_api_adapter 实锤归因）。"""
+    from dp_cli.commands._utils import wait_network_idle
+
+    class _Drv:
+        def __init__(self):
+            self.event_handlers = {}
+            self.callbacks = self.event_handlers
+
+        def set_callback(self, ev, cb):
+            if cb:
+                self.event_handlers[ev] = cb
+            else:
+                self.event_handlers.pop(ev, None)
+
+    class _Page:
+        def __init__(self):
+            self.driver = _Drv()
+            self.tab_id = 't1'
+
+        def run_cdp(self, *a, **k):
+            return {}
+
+    page = _Page()
+    netlog_cbs = {ev: (lambda **kw: None)
+                  for ev in ('Network.requestWillBeSent',
+                             'Network.responseReceived',
+                             'Network.loadingFailed')}
+    page.driver.event_handlers.update(netlog_cbs)
+    assert wait_network_idle(page, idle_time=0.1, timeout=2) is True
+    h = page.driver.event_handlers
+    for ev, cb in netlog_cbs.items():
+        assert h[ev] is cb, ev
+    # loadingFinished 是 wait 自用事件（netlog 不占）恢复原状=摘除
+    assert 'Network.loadingFinished' not in h
+
+
+@pytest.mark.unit
 def test_intercept_mock_rule_and_fetch_enable(runner, monkeypatch):
     """intercept --mock：规则追加到 mocks、Fetch.enable 下发、回调注册。"""
     import dp_cli.commands.emulate as em

@@ -1055,6 +1055,16 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
 
     page.run_cdp('Network.enable')
     driver = page.driver
+    _evs = ('Network.requestWillBeSent',
+            'Network.loadingFinished',
+            'Network.loadingFailed')
+    # set_callback 是单槽覆盖——serve/daemon 托管时 netlog 已把
+    # req/fail 回调挂在这三个事件中的两个上。清 None 会永久掐断
+    # 被动日志（resp 幸存造成"半活"假象，api-record 恒 EMPTY_LIST）。
+    # 快照 event_handlers 后逐事件恢复而非置 None。
+    _handlers = getattr(driver, 'event_handlers', None)
+    _saved = ({ev: _handlers.get(ev) for ev in _evs}
+              if isinstance(_handlers, dict) else None)
     driver.set_callback('Network.requestWillBeSent', _on_request)
     driver.set_callback('Network.loadingFinished', _on_response)
     driver.set_callback('Network.loadingFailed', _on_response)
@@ -1082,9 +1092,19 @@ def wait_network_idle(page, idle_time: float = 2.0, timeout: float = 30,
             _sleep(0.1)
         raise TimeoutError(f'网络未在 {timeout}s 内空闲 {idle_time}s')
     finally:
-        driver.set_callback('Network.requestWillBeSent', None)
-        driver.set_callback('Network.loadingFinished', None)
-        driver.set_callback('Network.loadingFailed', None)
+        if _saved is not None:
+            for ev, cb in _saved.items():
+                driver.set_callback(ev, cb)
+        else:
+            for ev in _evs:
+                driver.set_callback(ev, None)
+            # 无 event_handlers 快照口——netlog 回调已被清掉，
+            # 按 tab_id 找回已 arm 的 session 强制重挂恢复被动日志
+            try:
+                from dp_cli.netlog import rearm_netlog_for_page
+                rearm_netlog_for_page(page)
+            except Exception:
+                pass
         if stats is not None:
             stats['stale_dropped'] = stale_dropped
             stats['ignored_reqs'] = ignored_reqs

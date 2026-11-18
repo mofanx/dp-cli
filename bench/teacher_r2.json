@@ -1,0 +1,1067 @@
+[
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击 Sign in 登录",
+  "query": "点击 Sign in 登录",
+  "page": "https://github.com/",
+  "chosen_ref": 4,
+  "positive": "link Sign in",
+  "negatives": [
+   "button Sign up for GitHub",
+   "button Sign up for GitHub"
+  ],
+  "engine_ref": 4,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "注册 GitHub 账号",
+  "query": "注册 GitHub 账号",
+  "page": "https://github.com/",
+  "chosen_ref": 7,
+  "positive": "button Sign up for GitHub",
+  "negatives": [
+   "link GitHub",
+   "button Sign up for GitHub"
+  ],
+  "engine_ref": 47,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "切换到密码登录",
+  "query": "切换到密码登录",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 5,
+  "positive": "button 密码登录",
+  "negatives": [
+   "button 验证码登录",
+   "button 忘记密码"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "获取短信验证码",
+  "query": "获取短信验证码",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 10,
+  "positive": "button 获取短信验证码",
+  "negatives": [
+   "button 验证码登录",
+   "link 欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。"
+  ],
+  "engine_ref": 10,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点登录按钮",
+  "query": "点登录按钮",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 13,
+  "positive": "button 登录/注册",
+  "negatives": [
+   "button 密码登录",
+   "button 验证码登录"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "查看知乎协议",
+  "query": "查看知乎协议",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 17,
+  "positive": "link 《知乎协议》",
+  "negatives": [
+   "link 欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+   "link 联系我们 ·"
+  ],
+  "engine_ref": 17,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "打开无障碍模式",
+  "query": "打开无障碍模式",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 3,
+  "positive": "button 无障碍模式",
+  "negatives": [
+   "link 欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。",
+   "button "
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在搜索框输入内容",
+  "query": "在搜索框输入内容",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 9,
+  "positive": "textbox LOL小绿毛资讯",
+  "negatives": [
+   "link 知识",
+   "link "
+  ],
+  "engine_ref": 9,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点频道栏的番剧入口",
+  "query": "点频道栏的番剧入口",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 2,
+  "positive": "link 番剧",
+  "negatives": [
+   "link 番剧",
+   "link 电视剧"
+  ],
+  "engine_ref": 2,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "看热门视频",
+  "query": "看热门视频",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 13,
+  "positive": "link 热门",
+  "negatives": [
+   "link 直播",
+   "link 直播"
+  ],
+  "engine_ref": 13,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "打开直播分区",
+  "query": "打开直播分区",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 3,
+  "positive": "link 直播",
+  "negatives": [
+   "link 直播",
+   "link 直播中 越捡鸡蛋我越美，咋打不服这一块"
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "进入会员购",
+  "query": "进入会员购",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 5,
+  "positive": "link 会员购",
+  "negatives": [
+   "link ",
+   "link 知识"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点下载客户端",
+  "query": "点下载客户端",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 8,
+  "positive": "link 下载客户端",
+  "negatives": [
+   "link ",
+   "link 热门"
+  ],
+  "engine_ref": 8,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "查看我的动态",
+  "query": "查看我的动态",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 12,
+  "positive": "link 动态",
+  "negatives": [
+   "link 热门",
+   "link "
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "找纪录片频道",
+  "query": "找纪录片频道",
+  "page": "https://www.bilibili.com/",
+  "chosen_ref": 19,
+  "positive": "link 纪录片",
+  "negatives": [
+   "link 电影",
+   "link 番剧"
+  ],
+  "engine_ref": 19,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮提交搜索",
+  "query": "点搜索按钮提交搜索",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 15,
+  "positive": "button 搜索",
+  "negatives": [
+   "combobox 请输入搜索文字",
+   "link 阅读"
+  ],
+  "engine_ref": 15,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在搜索框输入关键词",
+  "query": "在搜索框输入关键词",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 16,
+  "positive": "combobox 请输入搜索文字",
+  "negatives": [
+   "button 搜索",
+   "link 阅读"
+  ],
+  "engine_ref": 16,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "去登录",
+  "query": "去登录",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 2,
+  "positive": "link 亲，请登录",
+  "negatives": [
+   "link 立即登录",
+   "button 搜索"
+  ],
+  "engine_ref": 2,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "免费注册新账号",
+  "query": "免费注册新账号",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 3,
+  "positive": "link 免费注册",
+  "negatives": [
+   "link 注册",
+   "link 亲，请登录"
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "看我的收藏夹",
+  "query": "看我的收藏夹",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 9,
+  "positive": "link  收藏夹",
+  "negatives": [
+   "link  收藏夹",
+   "link 已买到的宝贝"
+  ],
+  "engine_ref": 9,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "进入我的淘宝",
+  "query": "进入我的淘宝",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 7,
+  "positive": "link 我的淘宝",
+  "negatives": [
+   "link 手机淘宝",
+   "link 淘宝网"
+  ],
+  "engine_ref": 7,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "切换企业版",
+  "query": "切换企业版",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 5,
+  "positive": "link 切换企业版",
+  "negatives": [
+   "link 商业",
+   "link 企业品牌"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "查看已买到的宝贝",
+  "query": "查看已买到的宝贝",
+  "page": "https://www.taobao.com/",
+  "chosen_ref": 6,
+  "positive": "link 已买到的宝贝",
+  "negatives": [
+   "link  已买到",
+   "link 商品"
+  ],
+  "engine_ref": 6,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜索微博内容",
+  "query": "搜索微博内容",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 1,
+  "positive": "textbox 搜索微博",
+  "negatives": [
+   "link  微博热搜",
+   "button 搜索"
+  ],
+  "engine_ref": 1,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮",
+  "query": "点搜索按钮",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 2,
+  "positive": "button 搜索",
+  "negatives": [
+   "link  热搜",
+   "link  热搜"
+  ],
+  "engine_ref": 2,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "登录或注册",
+  "query": "登录或注册",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 3,
+  "positive": "button 登录/注册",
+  "negatives": [
+   "link  我的",
+   "link  我的"
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮",
+  "query": "点搜索按钮",
+  "page": "https://www.douban.com/",
+  "chosen_ref": 12,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 电子",
+   "link "
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "去话题广场",
+  "query": "去话题广场",
+  "page": "https://www.douban.com/",
+  "chosen_ref": 15,
+  "positive": "link 去话题广场",
+  "negatives": [
+   "link 要去什麼地方",
+   "link 要去什麼地方"
+  ],
+  "engine_ref": 15,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击百度一下按钮",
+  "query": "点击百度一下按钮",
+  "page": "https://www.baidu.com/",
+  "chosen_ref": 13,
+  "positive": "link 点击一下，了解更多",
+  "negatives": [
+   "link 关于百度",
+   "link 百度搭子"
+  ],
+  "engine_ref": 26,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击新闻标签",
+  "query": "点击新闻标签",
+  "page": "https://www.baidu.com/",
+  "chosen_ref": 13,
+  "positive": "link 点击一下，了解更多",
+  "negatives": [
+   "link 新闻",
+   "link 百度热搜"
+  ],
+  "engine_ref": 1,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击搜狗搜索按钮",
+  "query": "点击搜狗搜索按钮",
+  "page": "https://www.sogou.com/",
+  "chosen_ref": 14,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 知乎",
+   "link 网址导航"
+  ],
+  "engine_ref": 14,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在搜索框输入 weather forecast",
+  "query": "在搜索框输入 weather forecast",
+  "page": "https://www.bing.com/",
+  "chosen_ref": 17,
+  "positive": "combobox 输入搜索词",
+  "negatives": [
+   "button 搜索网页",
+   "link 帮助"
+  ],
+  "engine_ref": 17,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击搜索按钮",
+  "query": "点击搜索按钮",
+  "page": "https://www.bing.com/",
+  "chosen_ref": 18,
+  "positive": "button 搜索网页",
+  "negatives": [
+   "combobox 输入搜索词",
+   "link 帮助"
+  ],
+  "engine_ref": 18,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在搜索框输入 linux",
+  "query": "在搜索框输入 linux",
+  "page": "https://www.oschina.net/",
+  "chosen_ref": 11,
+  "positive": "textbox 搜索资讯、博客、软件……",
+  "negatives": [
+   "link 实用在线工具",
+   "link 工具"
+  ],
+  "engine_ref": 11,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击登录",
+  "query": "点击登录",
+  "page": "https://www.oschina.net/",
+  "chosen_ref": 12,
+  "positive": "link 登录",
+  "negatives": [
+   "link 关于我们",
+   "textbox 搜索资讯、博客、软件……"
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "click the Questions tab",
+  "query": "click the Questions tab",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 10,
+  "positive": "link Questions",
+  "negatives": [
+   "link Questions",
+   "link Hot Network Questions"
+  ],
+  "engine_ref": 10,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "click the Log in button",
+  "query": "click the Log in button",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 7,
+  "positive": "link Log in",
+  "negatives": [
+   "link ",
+   "link "
+  ],
+  "engine_ref": 7,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击贴吧入口",
+  "query": "点击贴吧入口",
+  "page": "https://www.baidu.com/",
+  "chosen_ref": 13,
+  "positive": "link 点击一下，了解更多",
+  "negatives": [
+   "link 贴吧",
+   "link 关于百度"
+  ],
+  "engine_ref": 4,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击登录链接",
+  "query": "点击登录链接",
+  "page": "https://www.baidu.com/",
+  "chosen_ref": 12,
+  "positive": "link 登录",
+  "negatives": [
+   "link 点击一下，了解更多",
+   "link 百度热搜"
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "打开图片搜索频道",
+  "query": "打开图片搜索频道",
+  "page": "https://www.sogou.com/",
+  "chosen_ref": 14,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 图片",
+   "link 知乎"
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在输入框搜索今日汇率",
+  "query": "在输入框搜索今日汇率",
+  "page": "https://www.bing.com/",
+  "chosen_ref": 18,
+  "positive": "combobox 输入搜索词",
+  "negatives": [
+   "button 语音搜索",
+   "button 使用图像搜索"
+  ],
+  "engine_ref": 18,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "打开搜索结果里的文章",
+  "query": "打开搜索结果里的文章",
+  "page": "https://www.bing.com/search?q=%E4%BB%8A%E6%97%A5%E6%B1%87%E7%8E%87&rdr=1&rdrig=2B24A23DB35142AAB1AB745EC82A51D0",
+  "chosen_ref": 4,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 返回到必应搜索",
+   "searchbox 在此处输入你的搜索 — 输入时会显示搜索建议"
+  ],
+  "engine_ref": 4,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击相关搜索的建议词",
+  "query": "点击相关搜索的建议词",
+  "page": "https://www.bing.com/search?q=%E4%BB%8A%E6%97%A5%E6%B1%87%E7%8E%87&rdr=1&rdrig=2B24A23DB35142AAB1AB745EC82A51D0",
+  "chosen_ref": 5,
+  "positive": "searchbox 在此处输入你的搜索 — 输入时会显示搜索建议",
+  "negatives": [
+   "button 搜索",
+   "link 返回到必应搜索"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击搜索结果里的文章",
+  "query": "点击搜索结果里的文章",
+  "page": "https://www.oschina.net/search/?scope=news&q=linux",
+  "chosen_ref": 16,
+  "positive": "textbox 搜索资讯、博客、软件……",
+  "negatives": [
+   "link ",
+   "link 哔哩哔哩网站"
+  ],
+  "engine_ref": 16,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "open the page for a highly voted question",
+  "query": "open the page for a highly voted question",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 33,
+  "positive": "link show questions tagged 'hazard'",
+  "negatives": [
+   "link Questions",
+   "link Questions"
+  ],
+  "engine_ref": 33,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "click the tag under a question",
+  "query": "click the tag under a question",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 32,
+  "positive": "link show questions tagged 'solution'",
+  "negatives": [
+   "link show questions tagged 'jupyter'",
+   "link Questions"
+  ],
+  "engine_ref": 32,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "open the Unanswered filter",
+  "query": "open the Unanswered filter",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 27,
+  "positive": "link Unanswered",
+  "negatives": [
+   "button Filter",
+   "link "
+  ],
+  "engine_ref": 27,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "click the user card of an asker",
+  "query": "click the user card of an asker",
+  "page": "https://stackoverflow.com/questions",
+  "chosen_ref": 63,
+  "positive": "link user2419119",
+  "negatives": [
+   "link Users",
+   "link "
+  ],
+  "engine_ref": 17,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "open a bountied question",
+  "query": "open a bountied question",
+  "page": "https://stackoverflow.com/questions?tab=bountied",
+  "chosen_ref": 137,
+  "positive": "link more hot questions",
+  "negatives": [
+   "link Ask Question",
+   "link Questions"
+  ],
+  "engine_ref": 23,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "click the tag badge under a question",
+  "query": "click the tag badge under a question",
+  "page": "https://stackoverflow.com/questions?tab=bountied",
+  "chosen_ref": 33,
+  "positive": "link show questions tagged 'hazard'",
+  "negatives": [
+   "link Questions",
+   "link Questions"
+  ],
+  "engine_ref": 33,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点击登录按钮",
+  "query": "点击登录按钮",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 5,
+  "positive": "button 密码登录",
+  "negatives": [
+   "button 验证码登录",
+   "button 登录/注册"
+  ],
+  "engine_ref": 5,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "忘记密码",
+  "query": "忘记密码",
+  "page": "https://www.zhihu.com/signin?next=%2F",
+  "chosen_ref": 12,
+  "positive": "button 忘记密码",
+  "negatives": [
+   "button 密码登录",
+   "link 欢迎进入 知乎 - 有问题，就会有答案,盲人用户使用操作智能引导，请按快捷键Ctrl+Alt+R；阅读详细操作说明请按快捷键Ctrl+Alt+问号键。"
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "登录微博账号",
+  "query": "登录微博账号",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 3,
+  "positive": "button 登录/注册",
+  "negatives": [
+   "textbox 搜索微博",
+   "link  微博热搜"
+  ],
+  "engine_ref": 1,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜索微博",
+  "query": "搜索微博",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 1,
+  "positive": "textbox 搜索微博",
+  "negatives": [
+   "link  微博热搜",
+   "button 搜索"
+  ],
+  "engine_ref": 1,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "切换扫码登录",
+  "query": "切换扫码登录",
+  "page": "https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/",
+  "chosen_ref": 3,
+  "positive": "button 登录/注册",
+  "negatives": [
+   "button  关注",
+   "button  关注"
+  ],
+  "engine_ref": 3,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "发微博",
+  "query": "发微博",
+  "page": "https://s.weibo.com/top/summary",
+  "chosen_ref": 8,
+  "positive": "button 发微博",
+  "negatives": [
+   "link 关于微博",
+   "link 微博帮助"
+  ],
+  "engine_ref": 8,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "登录豆瓣账号",
+  "query": "登录豆瓣账号",
+  "page": "https://www.douban.com/group/explore",
+  "chosen_ref": 1,
+  "positive": "link 登录/注册",
+  "negatives": [
+   "link 豆瓣",
+   "link 关于豆瓣"
+  ],
+  "engine_ref": 7,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜索今日油价",
+  "query": "搜索今日油价",
+  "page": "https://www.sogou.com/",
+  "chosen_ref": 14,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 知乎",
+   "link 微信"
+  ],
+  "engine_ref": 14,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮",
+  "query": "点搜索按钮",
+  "page": "https://www.sogou.com/",
+  "chosen_ref": 14,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 知乎",
+   "link 网址导航"
+  ],
+  "engine_ref": 14,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点页面底部的免责声明",
+  "query": "点页面底部的免责声明",
+  "page": "https://www.sogou.com/",
+  "chosen_ref": 19,
+  "positive": "link 免责声明",
+  "negatives": [
+   "link 无障碍",
+   "link 知乎"
+  ],
+  "engine_ref": 19,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "在搜索框重新搜肯德基",
+  "query": "在搜索框重新搜肯德基",
+  "page": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "chosen_ref": 2,
+  "positive": "link 搜索",
+  "negatives": [
+   "button 搜索",
+   "link 知乎"
+  ],
+  "engine_ref": 2,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮",
+  "query": "点搜索按钮",
+  "page": "https://www.sogou.com/web?query=%E7%BE%8E%E5%9B%A2%E5%A4%96%E5%8D%96",
+  "chosen_ref": 18,
+  "positive": "button 搜索",
+  "negatives": [
+   "link 搜索",
+   "link 知乎"
+  ],
+  "engine_ref": 18,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜索美食视频",
+  "query": "搜索美食视频",
+  "page": "https://www.douyin.com/jingxuan",
+  "chosen_ref": 15,
+  "positive": "button 搜索",
+  "negatives": [
+   "tab 美食",
+   "textbox 搜索你感兴趣的内容"
+  ],
+  "engine_ref": 22,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮而不是链接",
+  "query": "点搜索按钮而不是链接",
+  "page": "https://www.douyin.com/jingxuan",
+  "chosen_ref": 15,
+  "positive": "button 搜索",
+  "negatives": [
+   "textbox 搜索你感兴趣的内容",
+   "link 精选"
+  ],
+  "engine_ref": 15,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点搜索按钮",
+  "query": "点搜索按钮",
+  "page": "https://www.toutiao.com/?wid=1793266124476",
+  "chosen_ref": 12,
+  "positive": "button 搜索",
+  "negatives": [
+   "textbox 搜索",
+   "link 齐鲁壹点"
+  ],
+  "engine_ref": 12,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜一下今天的新闻",
+  "query": "搜一下今天的新闻",
+  "page": "https://www.toutiao.com/?wid=1793266124476",
+  "chosen_ref": 49,
+  "positive": "link 看看新闻",
+  "negatives": [
+   "link 闪电新闻",
+   "link 极目新闻"
+  ],
+  "engine_ref": 49,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点登录链接",
+  "query": "点登录链接",
+  "page": "https://www.toutiao.com/?wid=1793266124476",
+  "chosen_ref": 9,
+  "positive": "link 登录",
+  "negatives": [
+   "link 立即登录",
+   "link 友情链接"
+  ],
+  "engine_ref": 9,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点登录",
+  "query": "点登录",
+  "page": "https://www.ithome.com/",
+  "chosen_ref": 15,
+  "positive": "link 登录",
+  "negatives": [
+   "link 要知",
+   "button "
+  ],
+  "engine_ref": 15,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "搜索科幻小说",
+  "query": "搜索科幻小说",
+  "page": "https://zhuanlan.zhihu.com/",
+  "chosen_ref": 11,
+  "positive": "button 搜索",
+  "negatives": [
+   "combobox 搜索",
+   "link 知乎"
+  ],
+  "engine_ref": 11,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "看那个杂七杂八什么都写的专栏",
+  "query": "看那个杂七杂八什么都写的专栏",
+  "page": "https://zhuanlan.zhihu.com/",
+  "chosen_ref": 6,
+  "positive": "link 专栏",
+  "negatives": [
+   "link 知乎专栏",
+   "link 吾知乜名 这是一个很杂的专栏，想到什么写什么 318 人订阅 |55篇内容 进入专栏"
+  ],
+  "engine_ref": 6,
+  "teacher_note": "real r2"
+ },
+ {
+  "src": "teacher_real_r2",
+  "prov": "teacher_real",
+  "goal": "点登录",
+  "query": "点登录",
+  "page": "https://www.douban.com/group/explore",
+  "chosen_ref": 1,
+  "positive": "link 登录/注册",
+  "negatives": [
+   "button 搜索",
+   "link 阅读"
+  ],
+  "engine_ref": 1,
+  "teacher_note": "real r2"
+ }
+]

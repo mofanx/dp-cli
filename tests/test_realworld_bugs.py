@@ -1936,23 +1936,25 @@ def test_b18_stale_running_dropped_and_not_revived():
     assert active == []
 
 
-def test_b18_progress_resets_stale_clock():
+def test_b18_progress_resets_stale_clock(monkeypatch):
     """有进度的 running mission 不误判 stale——received_bytes 增长
-    重置停滞时钟。"""
-    import time
+    重置停滞时钟。mock 时钟不睡真觉——macOS CI 调度抖动曾把
+    sleep(0.03) 拉超 ttl=0.05 误剔除（flake 实锤）。"""
     from types import SimpleNamespace
+    clock = {'t': 0.0}
+    monkeypatch.setattr(_utils, 'perf_counter', lambda: clock['t'])
     m = _DlMission(state='running', received=0)
     mgr = SimpleNamespace(missions={'g1': m})
     seen, progress, dropped = {}, {}, set()
     _utils._missions_seen_update(mgr, seen, progress, dropped, ttl=0.05)
-    time.sleep(0.03)
+    clock['t'] += 0.03
     m.received_bytes = 100               # 进度推进 → 时钟重置
     _utils._missions_seen_update(mgr, seen, progress, dropped, ttl=0.05)
-    time.sleep(0.03)                     # 距上次进度 < ttl → 仍存活
+    clock['t'] += 0.03                   # 距上次进度 < ttl → 仍存活
     active = _utils._missions_seen_update(mgr, seen, progress, dropped,
                                           ttl=0.05)
     assert active == [m] and 'g1' not in dropped
-    time.sleep(0.06)                     # 停滞超 ttl → 剔除
+    clock['t'] += 0.06                   # 停滞超 ttl → 剔除
     active = _utils._missions_seen_update(mgr, seen, progress, dropped,
                                           ttl=0.05)
     assert active == [] and 'g1' in dropped

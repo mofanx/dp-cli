@@ -1,6 +1,19 @@
 # Changelog
 
-本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.47] - 2026-11-05
+本项目遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/## [0.15.48] - 2026-11-19
+
+### 修复
+- **`wait --idle` 掐断 netlog 被动日志**（`7258c3b`）：退出时 `requestWillBeSent`/`loadingFailed` 回调置 None——`set_callback` 单槽覆盖把 serve/daemon 态 netlog req/fail 永久断流且 resp 独活呈"半活"假象，`api-record`/`api-list`/`requests` 恒 EMPTY_LIST（httpbin_api_adapter 实锤）；快照 `event_handlers` 逐事件恢复+`netlog.rearm_netlog_for_page` 兜底，回归测试钉死
+- **daemon netlog 后置 arm + `wait --idle --idle-ignore`**（`4d7e9dd`）：站点私有心跳端点白名单可调
+- **taskpool exit code 语义修正+GitHub 选择器**（`809ed30`）
+- **taskpool 登录态三态落地批**（`8533089`/`26667f3`/`567b3f6`/`9701944`）：qbsearch 内层选择器修+`AUTH_SKIP` 降级态置位盲区修；20 任务标 `requires_login`（知乎 signin 强登/jd 风控/GitHub 未登录/百度 BDUSS）——登录边界不再虚报 fail；ExecStart 去 `--no-auto-connect`（auto-connect 优先+degraded 自动降级）
+- **site_tasks 3 fail 处置**（`7258c3b`）：GitHub React AppHeader 删 `qbsearch-input`→锚 `aria-label` 语义属性；xhs 心跳 idle 不达→`--loaded`
+
+### 功能
+- **tab 命令组+绑定语义强化**（`62e51e5`）：`tab-new` 默认后台+绑定、`tab-select` 无参绑当前页、`tab-list` 输出 pinned index
+- **X-\* 命令族别名组**（`120f64b`）：`dpx cookie list ≡ cookie-list` 等 15 族连字符/空格双写全覆盖
+
+## [0.15.47] - 2026-11-05
 
 ### 修复
 - **taskpool 独立浏览器路径补 `--browser`/`--headless`**（`955c219`）：DrissionPage 默认 `browser_path='chrome'` 裸名不在 PATH→spawn FileNotFoundError→30s 空转 `BROWSER_START_FAILED`；open 30s 超时→2s 实证修通，91 任务 0%→59% pass
